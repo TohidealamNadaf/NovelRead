@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { BookOpen, Headphones, History, CreditCard, Settings, Shield, LogOut, Edit, MoreVertical } from 'lucide-react';
-import { BottomNav } from '../components/BottomNav';
+import { Navbar } from '../components/Navbar';
 import { dbService } from '../services/database.service';
 
 export const Profile = () => {
@@ -142,7 +142,7 @@ export const Profile = () => {
                     </button>
                 </div>
 
-                <BottomNav />
+                <Navbar />
             </div>
         </div>
     );

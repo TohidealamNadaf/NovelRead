@@ -30,10 +30,7 @@ export class ScraperService {
         let author = '';
         let coverUrl = '';
 
-        try {
-            const response = await CapacitorHttp.get({ url: getProxyUrl(infoUrl) });
-            const $ = cheerio.load(response.data);
-
+        const extractMetadata = ($: any) => {
             const getMeta = (selectors: string[]) => {
                 for (const sel of selectors) {
                     const txt = $(sel).text().trim();
@@ -41,29 +38,69 @@ export class ScraperService {
                 }
                 return '';
             };
-            const getAttr = (selectors: string[], attr: string) => {
+            const getAttr = (selectors: string[], attrs: string[]) => {
                 for (const sel of selectors) {
-                    const val = $(sel).attr(attr);
-                    if (val) return val;
+                    for (const attr of attrs) {
+                        const val = $(sel).attr(attr);
+                        if (val && !val.startsWith('data:image')) return val;
+                    }
                 }
                 return '';
             };
 
-            title = getMeta([
+            const extractedTitle = getMeta([
                 '.novel-info .novel-title', '.title', 'h1', 'h2.title',
                 '.book-name', '.truyen-title', 'meta[property="og:title"]'
-            ]);
-            title = title.split(' Novel - Read')[0].trim();
+            ]).split(' Novel - Read')[0].trim();
 
-            author = getMeta([
+            const extractedAuthor = getMeta([
                 '.author', '.info-author', '.book-author',
                 'span[itemprop="author"]', '.txt-author'
             ]).replace('Author:', '').trim();
 
-            coverUrl = getAttr([
+            const extractedCover = getAttr([
                 '.novel-cover img', '.book img', '.book-cover img',
-                '.img-cover', 'meta[property="og:image"]'
-            ], 'src');
+                '.img-cover', 'meta[property="og:image"]', '.summary_image img'
+            ], ['data-src', 'data-original', 'src', 'content']);
+
+            return { title: extractedTitle, author: extractedAuthor, coverUrl: extractedCover };
+        };
+
+        try {
+            // First attempt: Scrape the derived infoUrl
+            let response = await CapacitorHttp.get({ url: getProxyUrl(infoUrl) });
+            let $ = cheerio.load(response.data);
+            let metadata = extractMetadata($);
+
+            title = metadata.title;
+            author = metadata.author;
+            coverUrl = metadata.coverUrl;
+
+            // Fallback: If cover is missing, we might be on a chapter page. Find the link to the Novel Info.
+            if (!coverUrl || !title) {
+                console.log("Metadata missing, attempting to find Novel Info link...");
+                const novelLink = $('a[title]').filter((_, el) => {
+                    const href = $(el).attr('href') || '';
+                    return href.includes('/novel/') || href.includes('/book/');
+                }).first().attr('href');
+
+                if (novelLink) {
+                    const origin = new URL(infoUrl).origin;
+                    let nextTarget = novelLink.startsWith('http') ? novelLink : `${origin}${novelLink.startsWith('/') ? '' : '/'}${novelLink}`;
+
+                    console.log(`Fetching fallback info URL: ${nextTarget}`);
+                    response = await CapacitorHttp.get({ url: getProxyUrl(nextTarget) });
+                    $ = cheerio.load(response.data);
+                    metadata = extractMetadata($);
+
+                    if (metadata.title) title = metadata.title;
+                    if (metadata.author) author = metadata.author;
+                    if (metadata.coverUrl) coverUrl = metadata.coverUrl;
+
+                    // Update listUrl since we found the real root
+                    if (!userProvidedChapters) listUrl = nextTarget;
+                }
+            }
 
             if (!userProvidedChapters) {
                 const chaptersLink = $('a[href*="/chapters"]').first().attr('href');
@@ -214,6 +251,40 @@ export class ScraperService {
         };
     }
 
+    private enhanceContent(html: string): string {
+        const $ = cheerio.load(html, { xmlMode: false }); // Use HTML mode
+
+        // Iterate over all text nodes to safely replace content without breaking HTML tags
+        $('*').contents().each((_, elem) => {
+            if (elem.type === 'text') {
+                let text = $(elem).text();
+
+                // 1. Format System Messages: [ System Notification ]
+                // Matches content inside square brackets
+                text = text.replace(/(\[[^\]]+\])/g, '<span class="smart-system">$1</span>');
+
+                // 2. Format Parenthetical Asides: ( Note )
+                // Matches content inside parentheses, but avoid likely math/code usage if possible
+                text = text.replace(/(\([^\)]+\))/g, '<span class="smart-note">$1</span>');
+
+                // 3. Format Thoughts: ' I should go ' 
+                // Heuristic: Single quotes surrounded by spaces or punctuation, avoiding contractions like "don't"
+                // This is tricky. We look for ' followed by text followed by '
+                // We use a negative lookbehind for alphanumeric to avoid "don't" (n't) matches at the start
+                // and negative lookahead to avoid contractions.
+                // Simplified: Space/Start + ' + text + ' + Space/End/Punctuation
+                text = text.replace(/(^|\s|>)(')([^']{2,}?)(')(?=$|\s|<|[.,;:?!])/g, '$1<span class="smart-thought">$2$3$4</span>');
+
+                // 4. Format Sound Effects: *Boom*
+                text = text.replace(/(^|\s|>)(\*)([^*]+)(\*)(?=$|\s|<|[.,;:?!])/g, '$1<span class="smart-sfx">$2$3$4</span>');
+
+                $(elem).replaceWith(text);
+            }
+        });
+
+        return $('body').html() || html;
+    }
+
     async fetchChapterContent(url: string): Promise<string> {
         let targetUrl = url;
         const isWeb = typeof window !== 'undefined' && window.location.protocol.startsWith('http');
@@ -237,12 +308,17 @@ export class ScraperService {
         let content = '';
         for (const sel of contentSelectors) {
             if ($(sel).length > 0) {
+                // Get inner HTML
                 content = $(sel).html() || '';
                 break;
             }
         }
 
-        return content || '<p>Content not found. Please verify the source.</p>';
+        if (!content) {
+            return '<p>Content not found. Please verify the source.</p>';
+        }
+
+        return this.enhanceContent(content);
     }
 }
 

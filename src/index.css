@@ -44,7 +44,70 @@
   color: #ffffff;
 }
 
+.reader-text p {
+  margin-bottom: 1.5em;
+  line-height: 1.8;
+}
+
+/* Smart Content Formatting */
+.smart-system {
+  font-weight: bold;
+  font-family: monospace;
+  opacity: 0.9;
+  background-color: rgba(128, 128, 128, 0.1);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.smart-note {
+  font-style: italic;
+  opacity: 0.8;
+  font-size: 0.95em;
+}
+
+.smart-thought {
+  font-style: italic;
+  color: inherit;
+  /* Allow theme color to take precedence but maybe 90% opacity? */
+  opacity: 0.85;
+}
+
+.smart-sfx {
+  font-weight: bold;
+  font-style: italic;
+  letter-spacing: 0.05em;
+}
+
 .reader-content-light {
   background-color: #ffffff;
   color: #1a1a1a;
+}
+
+/* Custom iOS-style components */
+.ios-list-item {
+  @apply flex items-center gap-3 py-3 px-4 active:bg-slate-200 dark:active:bg-slate-800 transition-colors border-b border-slate-200 dark:border-white/5 last:border-0;
+}
+
+.ios-section-title {
+  @apply px-4 pt-6 pb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400;
+}
+
+.ios-toggle {
+  @apply relative inline-flex h-6 w-11 items-center rounded-full bg-slate-300 dark:bg-slate-700 transition-colors cursor-pointer;
+}
+
+.ios-toggle-on {
+  @apply bg-primary;
+}
+
+.ios-toggle-circle {
+  @apply inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform;
+}
+
+.ios-toggle-circle-on {
+  @apply translate-x-5;
+}
+
+.ios-toggle-circle-off {
+  @apply translate-x-0.5;
 }

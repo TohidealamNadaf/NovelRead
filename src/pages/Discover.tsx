@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Play, SkipBack, SkipForward, Bolt, BookOpen, Rocket, Heart, Swords, Download } from 'lucide-react';
+import { Search, Bolt, BookOpen, Rocket, Heart, Swords, Download } from 'lucide-react';
 import { scraperService } from '../services/scraper.service';
 import { dbService } from '../services/database.service';
-import { BottomNav } from '../components/BottomNav';
+import { Navbar } from '../components/Navbar';
 
 export const Discover = () => {
     const navigate = useNavigate();
@@ -73,8 +73,9 @@ export const Discover = () => {
     };
 
     return (
-        <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen pb-24 font-sans selection:bg-primary/30">
-            <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden">
+        <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark font-sans selection:bg-primary/30 overflow-hidden">
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto pb-24">
                 {/* Header */}
                 <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md">
                     <div className="flex items-center p-4 pb-2 justify-between">
@@ -98,6 +99,8 @@ export const Discover = () => {
                                     className="flex w-full min-w-0 flex-1 border-none bg-transparent focus:outline-0 focus:ring-0 text-base font-normal placeholder:text-slate-500 dark:placeholder:text-[#a19db9] px-3"
                                     placeholder="Search titles or paste URL..."
                                     value={searchQuery}
+                                    id="search-input"
+                                    name="search-query"
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     onKeyDown={handleSearch}
                                     disabled={isScraping}
@@ -113,12 +116,12 @@ export const Discover = () => {
                 </div>
 
                 {/* Content */}
-                <div className="flex flex-col gap-6 pb-48">
+                <div className="flex flex-col gap-6">
                     {/* Trending Carousel */}
                     <div className="flex flex-col gap-3">
                         <div className="flex items-center justify-between px-4">
                             <h3 className="text-lg font-bold tracking-tight">Trending Now</h3>
-                            <button className="text-primary text-sm font-medium">See all</button>
+                            <button onClick={() => navigate('/discover/trending')} className="text-primary text-sm font-medium">See all</button>
                         </div>
                         <div className="carousel-container flex overflow-x-auto gap-4 px-4 hide-scrollbar snap-x snap-mandatory">
                             <div className="carousel-item flex-none w-[85%] aspect-[16/9] relative rounded-2xl overflow-hidden shadow-xl snap-center shrink-0">
@@ -146,7 +149,7 @@ export const Discover = () => {
                     <div className="flex flex-col gap-3">
                         <div className="flex items-center justify-between px-4">
                             <h3 className="text-lg font-bold tracking-tight">New Scrapes</h3>
-                            <button className="text-primary text-sm font-medium">View More</button>
+                            <button onClick={() => navigate('/discover/new')} className="text-primary text-sm font-medium">View More</button>
                         </div>
                         <div className="flex overflow-x-auto gap-4 px-4 hide-scrollbar">
                             {/* Static Examples + Real Data */}
@@ -193,53 +196,28 @@ export const Discover = () => {
                             <h3 className="text-lg font-bold tracking-tight">Top Genres</h3>
                         </div>
                         <div className="flex overflow-x-auto gap-3 px-4 hide-scrollbar">
-                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform">
+                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform cursor-pointer" onClick={() => navigate('/discover/fantasy')}>
                                 <BookOpen className="text-white mb-1" />
                                 <span className="text-white text-xs font-bold">Fantasy</span>
                             </div>
-                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform">
+                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform cursor-pointer" onClick={() => navigate('/discover/sci-fi')}>
                                 <Rocket className="text-white mb-1" />
                                 <span className="text-white text-xs font-bold">Sci-Fi</span>
                             </div>
-                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-rose-600 to-pink-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform">
+                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-rose-600 to-pink-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform cursor-pointer" onClick={() => navigate('/discover/romance')}>
                                 <Heart className="text-white mb-1" />
                                 <span className="text-white text-xs font-bold">Romance</span>
                             </div>
-                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-amber-600 to-orange-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform">
+                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-amber-600 to-orange-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform cursor-pointer" onClick={() => navigate('/discover/action')}>
                                 <Swords className="text-white mb-1" />
                                 <span className="text-white text-xs font-bold">Action</span>
                             </div>
                         </div>
                     </div>
                 </div>
-
-                {/* Floating "Now Playing" Widget (Mock for now, or connect to AudioService state later) */}
-                <div className="fixed bottom-24 left-4 right-4 z-30">
-                    <div className="flex items-center gap-3 bg-white/90 dark:bg-[#2b2839]/90 backdrop-blur-lg border border-slate-200 dark:border-white/10 rounded-xl p-2 shadow-2xl">
-                        <div className="size-10 rounded-lg overflow-hidden bg-cover bg-center shrink-0" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuDbYlPlCtl5nXUzCPiYMP7SCXWeQ84w9NmucBWNGlCDCGQ5pM3kiBXVc7tioeSumgFh2OxNfH01ImNdLaNPzO4R_J9tbfFWpFd61DqeK0yIbeCsjidWDANWpgko2zXbKIAuorbpjfDeP40e_YWPjaRx4bAugS8X3vqlRfn8Urw1tJVQS759n8g7KEr8QXYU4Bp1XDj-xK8t60KBQ1ZRnhSBWjvb6C7qQvMtGq0XfGwZePwWhdpejt3Fe1wLRYozX1-LXpL_is3Okeww')" }}></div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-xs font-bold truncate">The Shadow Weaver</p>
-                            <p className="text-[10px] text-primary font-medium flex items-center gap-1">
-                                <span className="animate-pulse">●</span>
-                                AI TTS Active
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-1 pr-1">
-                            <button className="size-8 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10">
-                                <SkipBack size={20} />
-                            </button>
-                            <button className="size-9 flex items-center justify-center rounded-full bg-primary text-white shadow-md">
-                                <Play size={20} className="ml-0.5" />
-                            </button>
-                            <button className="size-8 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10">
-                                <SkipForward size={20} />
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <BottomNav />
             </div>
+
+            <Navbar />
         </div>
     );
 };

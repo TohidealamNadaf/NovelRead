@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { BookOpen, Compass, Upload, BarChart2, User } from 'lucide-react';
+import { BookOpen, Compass, Upload, BarChart2, Settings } from 'lucide-react';
 import clsx from 'clsx';
 
 export const Navbar = () => {
@@ -10,7 +10,7 @@ export const Navbar = () => {
         { icon: Compass, label: 'Discover', path: '/discover' },
         { icon: Upload, label: 'Import', path: '/import', primary: true },
         { icon: BarChart2, label: 'AI Audio', path: '/audio' },
-        { icon: User, label: 'Profile', path: '/profile' },
+        { icon: Settings, label: 'Settings', path: '/settings' },
     ];
 
     return (

@@ -61,6 +61,12 @@ class DatabaseService {
         return this.db;
     }
 
+    async save() {
+        if (Capacitor.getPlatform() === 'web') {
+            await this.sqlite.saveToStore('novel_db');
+        }
+    }
+
     async addNovel(novel: { id: string; title: string; author: string; coverUrl: string; sourceUrl: string; category?: string }) {
         const db = await this.getDB();
         if (!db) return;
@@ -69,6 +75,7 @@ class DatabaseService {
             VALUES (?, ?, ?, ?, ?, ?, ?);
         `;
         await db.run(query, [novel.id, novel.title, novel.author, novel.coverUrl, novel.sourceUrl, novel.category || 'Unknown', null]);
+        await this.save();
     }
 
     async addChapter(chapter: { id: string; novelId: string; title: string; content: string; orderIndex: number; audioPath?: string }) {
@@ -79,6 +86,7 @@ class DatabaseService {
             VALUES (?, ?, ?, ?, ?, ?, 0);
         `;
         await db.run(query, [chapter.id, chapter.novelId, chapter.title, chapter.content, chapter.orderIndex, chapter.audioPath || null]);
+        await this.save();
     }
 
     async getNovels() {

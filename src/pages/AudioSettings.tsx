@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Play, SkipBack, SkipForward, Zap, Flame, Trees, CloudRain, Music, Mic } from 'lucide-react';
+import { ArrowLeft, Zap, Flame, Trees, CloudRain, Music, Mic } from 'lucide-react';
 import { audioService } from '../services/audio.service';
-import { BottomNav } from '../components/BottomNav';
+import { Navbar } from '../components/Navbar';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
 
@@ -15,21 +15,30 @@ export const AudioSettings = () => {
     const [voiceVolume, setVoiceVolume] = useState(80);
     const [bgmVolume, setBgmVolume] = useState(35);
 
-    // Apply settings whenever they change
+    // Load voices and update settings
     useEffect(() => {
-        // Find a matching voice from synthesis
-        const voices = audioService.getVoices();
-        const selectedVoice = voices.find(v =>
-            voice === 'female' ? v.name.includes('Female') || v.name.includes('Sira') || v.name.includes('Zira')
-                : v.name.includes('Male') || v.name.includes('David')
-        ) || voices[0];
+        const updateVoices = () => {
+            const voices = audioService.getVoices();
+            if (voices.length > 0) {
+                const selectedVoice = voices.find(v =>
+                    voice === 'female' ? v.name.includes('Female') || v.name.includes('Sira') || v.name.includes('Zira') || v.name.includes('Google')
+                        : v.name.includes('Male') || v.name.includes('David')
+                ) || voices[0];
 
-        audioService.setSettings({
-            rate: rate,
-            // Convert slider -5 to 5 range to 0.5 to 1.5 pitch (approx)
-            pitch: 1.0 + (pitch * 0.1),
-            voice: selectedVoice
-        });
+                audioService.setSettings({
+                    rate: rate,
+                    pitch: 1.0 + (pitch * 0.1),
+                    voice: selectedVoice
+                });
+            }
+        };
+
+        updateVoices();
+        window.speechSynthesis.onvoiceschanged = updateVoices;
+
+        return () => {
+            window.speechSynthesis.onvoiceschanged = null;
+        };
     }, [rate, pitch, voice]);
 
     const toggleAmbience = (track: 'rainy' | 'fireplace' | 'forest') => {
@@ -42,18 +51,7 @@ export const AudioSettings = () => {
         }
     };
 
-    const handleTestAudio = async () => {
-        audioService.stopSpeaking();
-        audioService.stopBGM();
 
-        if (bgmEnabled) {
-            // Basic category loop for now, ideally this plays selected ambience or specific BGM
-            audioService.playBGM('fantasy');
-        }
-
-        const sampleText = "This is a preview of the AI narrator voice. The background music should be playing softly.";
-        audioService.speak(sampleText);
-    };
 
     return (
         <div className="bg-background-dark text-white min-h-screen pb-24 font-sans">
@@ -70,10 +68,10 @@ export const AudioSettings = () => {
                 </div>
 
                 <div className="flex-1 px-4 pb-40">
-                    {/* Voice Selector */}
+    // Voice Selector
                     <div className="mt-4 mb-8">
                         <h3 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">Voice Selector</h3>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-3 mb-4">
                             <button
                                 onClick={() => setVoice('male')}
                                 className={clsx(
@@ -85,7 +83,7 @@ export const AudioSettings = () => {
                                     <span className="text-3xl">👨</span>
                                 </div>
                                 <div className="text-center">
-                                    <p className="font-bold text-sm">Natural Male</p>
+                                    <p className="font-bold text-sm">Male Voices</p>
                                     <p className="text-[10px] text-slate-400">Deep & Resonance</p>
                                 </div>
                                 {voice === 'male' && (
@@ -105,7 +103,7 @@ export const AudioSettings = () => {
                                     <span className="text-3xl">👩</span>
                                 </div>
                                 <div className="text-center">
-                                    <p className="font-bold text-sm">Natural Female</p>
+                                    <p className="font-bold text-sm">Female Voices</p>
                                     <p className="text-[10px] text-slate-400">Soft & Clear</p>
                                 </div>
                                 {voice === 'female' && (
@@ -114,6 +112,55 @@ export const AudioSettings = () => {
                                     </div>
                                 )}
                             </button>
+                        </div>
+
+                        {/* Specific Voice Dropdown */}
+                        <div className="w-full">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 block">Specific Voice</label>
+                            <select
+                                className="w-full bg-[#2b2839] border border-white/10 text-white rounded-lg p-3 outline-none focus:border-primary/50 text-sm"
+                                onChange={(e) => {
+                                    const voices = audioService.getVoices();
+                                    const selected = voices.find(v => v.name === e.target.value);
+                                    if (selected) {
+                                        audioService.setSettings({ voice: selected });
+                                    }
+                                }}
+                            >
+                                {audioService.getVoices()
+                                    .filter(v => {
+                                        // Filter for English voices only
+                                        if (!v.lang.startsWith('en')) return false;
+
+                                        const name = v.name.toLowerCase();
+                                        // Keywords for female voices
+                                        const femaleKeywords = ['female', 'zira', 'sira', 'susan', 'catherine', 'linda', 'heather', 'hazel', 'heera'];
+                                        // Keywords for male voices
+                                        const maleKeywords = ['male', 'david', 'james', 'mark', 'richard', 'george', 'ravi', 'sean'];
+
+                                        const isExplicitlyFemale = femaleKeywords.some(k => name.includes(k));
+                                        const isExplicitlyMale = maleKeywords.some(k => name.includes(k));
+
+                                        if (voice === 'female') {
+                                            // Show if explicitly female OR (not explicitly male AND not a known male name)
+                                            return isExplicitlyFemale || !isExplicitlyMale;
+                                        } else {
+                                            // Show if explicitly male OR (not explicitly female AND not a known female name)
+                                            return isExplicitlyMale || !isExplicitlyFemale;
+                                        }
+                                    })
+                                    .sort((a, b) => {
+                                        // Prioritize Natural / Google voices
+                                        const aPriority = a.name.includes('Natural') || a.name.includes('Google');
+                                        const bPriority = b.name.includes('Natural') || b.name.includes('Google');
+                                        if (aPriority && !bPriority) return -1;
+                                        if (!aPriority && bPriority) return 1;
+                                        return a.name.localeCompare(b.name);
+                                    })
+                                    .map(v => (
+                                        <option key={v.name} value={v.name}>{v.name}</option>
+                                    ))}
+                            </select>
                         </div>
                     </div>
 
@@ -265,39 +312,9 @@ export const AudioSettings = () => {
                     </div>
                 </div>
 
-                {/* Mini Player */}
-                <div className="fixed bottom-24 left-4 right-4 z-30">
-                    <div className="flex items-center gap-3 bg-[#2b2839]/95 backdrop-blur-xl border border-white/10 rounded-2xl p-3 shadow-2xl">
-                        <div className="size-12 rounded-xl overflow-hidden bg-cover bg-center shrink-0 shadow-lg ring-1 ring-white/10" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuDbYlPlCtl5nXUzCPiYMP7SCXWeQ84w9NmucBWNGlCDCGQ5pM3kiBXVc7tioeSumgFh2OxNfH01ImNdLaNPzO4R_J9tbfFWpFd61DqeK0yIbeCsjidWDANWpgko2zXbKIAuorbpjfDeP40e_YWPjaRx4bAugS8X3vqlRfn8Urw1tJVQS759n8g7KEr8QXYU4Bp1XDj-xK8t60KBQ1ZRnhSBWjvb6C7qQvMtGq0XfGwZePwWhdpejt3Fe1wLRYozX1-LXpL_is3Okeww')" }}></div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold truncate">The Shadow Weaver</p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                                <div className="flex gap-0.5 items-end h-2.5">
-                                    <div className="w-0.5 bg-purple-500 h-2 animate-pulse"></div>
-                                    <div className="w-0.5 bg-purple-500 h-full animate-pulse"></div>
-                                    <div className="w-0.5 bg-purple-500 h-1.5 animate-pulse"></div>
-                                </div>
-                                <p className="text-[10px] text-purple-400 font-bold uppercase tracking-wider">AI Voice Active</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-1">
-                            <button className="size-9 flex items-center justify-center rounded-full hover:bg-white/10">
-                                <SkipBack size={20} />
-                            </button>
-                            <button
-                                className="size-10 flex items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/20"
-                                onClick={handleTestAudio}
-                            >
-                                <Play size={24} className="ml-0.5 fill-current" />
-                            </button>
-                            <button className="size-9 flex items-center justify-center rounded-full hover:bg-white/10">
-                                <SkipForward size={20} />
-                            </button>
-                        </div>
-                    </div>
-                </div>
 
-                <BottomNav />
+
+                <Navbar />
             </div>
         </div>
     );

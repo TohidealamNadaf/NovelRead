@@ -4,41 +4,59 @@ import clsx from 'clsx';
 import { useNavigate, useParams } from 'react-router-dom';
 import { dbService } from '../services/database.service';
 import { audioService } from '../services/audio.service';
+import { settingsService } from '../services/settings.service';
 
 export const Reader = () => {
     const navigate = useNavigate();
     const { novelId, chapterId } = useParams();
     const [chapter, setChapter] = useState<any>(null);
+    const [novel, setNovel] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
     // Audio State
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isMusicPlaying, setIsMusicPlaying] = useState(false);
 
-    // User Settings State
-    const [theme, setTheme] = useState<'light' | 'sepia' | 'dark' | 'oled'>('dark');
-    const [font, setFont] = useState<'serif' | 'sans'>('serif');
-    const [fontSize, setFontSize] = useState(1.125); // 1.125rem = text-lg
+    // User Settings State (Global)
+    const [settings, setSettings] = useState(settingsService.getSettings());
     const [showSettings, setShowSettings] = useState(false);
+
+    const theme = settings.theme;
+    const font = settings.fontFamily;
+    const fontSize = settings.fontSize;
 
     useEffect(() => {
         if (novelId && chapterId) {
-            loadChapter(novelId, chapterId);
+            loadData(novelId, chapterId);
         }
+
+        // Sync with global audio state
+        const audioUnsub = audioService.subscribe((state) => {
+            setIsSpeaking(state.isTtsPlaying);
+            setIsMusicPlaying(state.isBgmPlaying);
+        });
+
+        // Sync with global app settings
+        const settingsUnsub = settingsService.subscribe((newSettings) => {
+            setSettings(newSettings);
+        });
+
         return () => {
-            audioService.stopSpeaking();
-            audioService.stopBGM();
+            audioUnsub();
+            settingsUnsub();
         };
     }, [novelId, chapterId]);
 
-    const loadChapter = async (nid: string, cid: string) => {
+    const loadData = async (nid: string, cid: string) => {
         setLoading(true);
         try {
             await dbService.initialize();
-            const data = await dbService.getChapter(nid, cid);
-            setChapter(data);
+            const cData = await dbService.getChapter(nid, cid);
+            setChapter(cData);
+            const nData = await dbService.getNovel(nid);
+            setNovel(nData);
         } catch (error) {
-            console.error("Failed to load chapter", error);
+            console.error("Failed to load data", error);
         } finally {
             setLoading(false);
         }
@@ -60,7 +78,8 @@ export const Reader = () => {
             if (audioService.isSpeaking()) {
                 audioService.resumeSpeaking();
             } else if (chapter?.content) {
-                audioService.speak(chapter.content);
+                // Remove HTML tags for speaking, but pass metadata for the player
+                audioService.speak(chapter.content, chapter.title, novel?.title || 'Unknown Novel', novel?.coverUrl);
             }
             setIsSpeaking(true);
         }
@@ -86,6 +105,29 @@ export const Reader = () => {
         }
     };
 
+    // Global double-click handler
+    useEffect(() => {
+        const handleDoubleClick = (e: MouseEvent) => {
+            // Ignore double clicks on buttons, inputs, or inside the settings menu itself
+            const target = e.target as HTMLElement;
+            if (target.closest('button') || target.closest('input') || target.closest('.settings-menu')) {
+                return;
+            }
+            setShowSettings(prev => !prev);
+        };
+
+        window.addEventListener('dblclick', handleDoubleClick);
+        return () => window.removeEventListener('dblclick', handleDoubleClick);
+    }, []);
+
+    const fontSizes = [
+        { label: '12', value: 0.75 },
+        { label: '14', value: 0.875 },
+        { label: '16', value: 1 },
+        { label: '18', value: 1.125 },
+        { label: '22', value: 1.375 },
+    ];
+
     if (loading) {
         return (
             <div className="flex h-screen w-full items-center justify-center bg-background-light dark:bg-background-dark text-primary">
@@ -104,7 +146,9 @@ export const Reader = () => {
     }
 
     return (
-        <div className={`relative flex h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-hidden ${getThemeClass()}`}>
+        <div
+            className={`relative flex h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-hidden ${getThemeClass()}`}
+        >
             {/* Top App Bar */}
             <div className="flex items-center bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md p-4 pb-2 justify-between sticky top-0 z-10 border-b border-gray-200 dark:border-gray-800">
                 <button onClick={handlePrevChapter} className="text-gray-900 dark:text-white flex size-12 shrink-0 items-center justify-center cursor-pointer">
@@ -123,7 +167,13 @@ export const Reader = () => {
 
             {/* Main Reading Area */}
             <div className={`flex-1 overflow-y-auto px-6 py-8 ${getThemeClass()}`}>
-                <div className={clsx("max-w-2xl mx-auto space-y-6 reader-text", font === 'serif' ? 'font-serif' : 'font-sans')} style={{ fontSize: `${fontSize}rem` }}>
+                <div
+                    className={clsx("max-w-2xl mx-auto space-y-6 reader-text", font === 'serif' ? 'font-serif' : font === 'sans' ? 'font-sans' : '')}
+                    style={{
+                        fontSize: `${fontSize}rem`,
+                        fontFamily: font === 'comfortable' ? 'Georgia, "Merriweather", "Palatino Linotype", "Book Antiqua", Inter, Roboto, serif' : undefined
+                    }}
+                >
                     <div dangerouslySetInnerHTML={{ __html: chapter.content }} />
                 </div>
                 {/* Bottom Padding for Scrubber/HUD */}
@@ -154,98 +204,101 @@ export const Reader = () => {
 
             {/* Customization Overlay */}
             {showSettings && (
-                <div className="absolute bottom-0 left-0 w-full bg-white dark:bg-[#1a182b] rounded-t-3xl shadow-2xl border-t border-white/10 z-20 animate-in slide-in-from-bottom">
-                    {/* Grab Handle */}
-                    <div className="flex justify-center py-3" onClick={() => setShowSettings(false)}>
-                        <div className="w-10 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
-                    </div>
-                    <div className="px-6 pb-10 space-y-6">
-                        {/* TTS Controls */}
-                        <div className="flex items-center justify-between gap-4">
-                            <button onClick={toggleMusic} className={clsx("flex-1 flex items-center justify-center gap-2 h-12 rounded-xl  font-semibold transition-colors", isMusicPlaying ? "bg-primary/20 text-primary border border-primary/50" : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white")}>
-                                <Music size={20} />
-                                <span className="text-xs">{isMusicPlaying ? 'On' : 'Off'}</span>
-                            </button>
-                            <button onClick={toggleTTS} className="size-16 flex items-center justify-center bg-primary rounded-full shadow-lg shadow-primary/40 active:scale-95 transition-transform">
-                                {isSpeaking ? <Pause className="text-white fill-white ml-1" size={32} /> : <Play className="text-white fill-white ml-1" size={32} />}
-                            </button>
-                            <button onClick={handleNextChapter} className="flex-1 flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 h-12 rounded-xl text-gray-900 dark:text-white font-semibold">
-                                <FastForward size={20} />
-                            </button>
-                        </div>
+                <>
+                    {/* Backdrop to close settings on click outside */}
+                    <div className="fixed inset-0 z-10 bg-black/5" onClick={() => setShowSettings(false)}></div>
 
-                        {/* Font Customization */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Font Style</p>
-                                <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-                                    <button
-                                        onClick={() => setFont('serif')}
-                                        className={clsx("flex-1 py-1.5 text-xs font-bold rounded shadow-sm transition-colors", font === 'serif' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white" : "text-gray-500")}
-                                    >
-                                        Serif
-                                    </button>
-                                    <button
-                                        onClick={() => setFont('sans')}
-                                        className={clsx("flex-1 py-1.5 text-xs font-bold rounded shadow-sm transition-colors", font === 'sans' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white" : "text-gray-500")}
-                                    >
-                                        Sans
-                                    </button>
-                                </div>
+                    <div className="settings-menu absolute bottom-0 left-0 w-full bg-white dark:bg-[#1a182b] rounded-t-3xl shadow-2xl border-t border-white/10 z-20 animate-in slide-in-from-bottom">
+                        {/* Grab Handle */}
+                        <div className="flex justify-center py-3" onClick={() => setShowSettings(false)}>
+                            <div className="w-10 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
+                        </div>
+                        <div className="px-6 pb-10 space-y-6">
+                            {/* TTS Controls */}
+                            <div className="flex items-center justify-between gap-4">
+                                <button onClick={toggleMusic} className={clsx("flex-1 flex items-center justify-center gap-2 h-12 rounded-xl  font-semibold transition-colors", isMusicPlaying ? "bg-primary/20 text-primary border border-primary/50" : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white")}>
+                                    <Music size={20} />
+                                    <span className="text-xs">{isMusicPlaying ? 'On' : 'Off'}</span>
+                                </button>
+                                <button onClick={toggleTTS} className="size-16 flex items-center justify-center bg-primary rounded-full shadow-lg shadow-primary/40 active:scale-95 transition-transform">
+                                    {isSpeaking ? <Pause className="text-white fill-white ml-1" size={32} /> : <Play className="text-white fill-white ml-1" size={32} />}
+                                </button>
+                                <button onClick={handleNextChapter} className="flex-1 flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 h-12 rounded-xl text-gray-900 dark:text-white font-semibold">
+                                    <FastForward size={20} />
+                                </button>
                             </div>
-                            <div className="space-y-2">
-                                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Font Size</p>
-                                <div className="flex items-center gap-3">
-                                    <span className="text-xs font-bold text-gray-500">A</span>
-                                    {/* Font Size Slider */}
-                                    <div className="flex-1 relative h-6 flex items-center cursor-pointer select-none touch-none"
-                                        onClick={(e) => {
-                                            const rect = e.currentTarget.getBoundingClientRect();
-                                            const percentage = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                                            // Map percentage to font size range: 0.8 to 2.0
-                                            const newSize = 0.8 + (percentage * 1.2);
-                                            setFontSize(Math.round(newSize * 10) / 10);
-                                        }}
-                                    >
-                                        <div className="absolute w-full h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
-                                        <div
-                                            className="absolute h-1.5 bg-primary rounded-full"
-                                            style={{ width: `${((fontSize - 0.8) / 1.2) * 100}%` }}
-                                        ></div>
-                                        <div
-                                            className="absolute size-4 bg-primary rounded-full border-2 border-white shadow-md transition-transform active:scale-110"
-                                            style={{ left: `${((fontSize - 0.8) / 1.2) * 100}%`, transform: 'translateX(-50%)' }}
-                                        ></div>
+
+                            {/* Font Customization */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Font Style</p>
+                                    <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+                                        <button
+                                            onClick={() => settingsService.updateSettings({ fontFamily: 'serif' })}
+                                            className={clsx("flex-1 py-1.5 text-xs font-bold rounded shadow-sm transition-colors", font === 'serif' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white" : "text-gray-500")}
+                                        >
+                                            Serif
+                                        </button>
+                                        <button
+                                            onClick={() => settingsService.updateSettings({ fontFamily: 'sans' })}
+                                            className={clsx("flex-1 py-1.5 text-xs font-bold rounded shadow-sm transition-colors", font === 'sans' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white" : "text-gray-500")}
+                                        >
+                                            Sans
+                                        </button>
+                                        <button
+                                            onClick={() => settingsService.updateSettings({ fontFamily: 'comfortable' })}
+                                            className={clsx("flex-1 py-1.5 text-xs font-bold rounded shadow-sm transition-colors", font === 'comfortable' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white" : "text-gray-500")}
+                                        >
+                                            Soft
+                                        </button>
                                     </div>
-                                    <span className="text-lg font-bold text-gray-500">A</span>
+                                </div>
+                                <div className="space-y-2">
+                                    <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Font Size (px)</p>
+                                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+                                        {fontSizes.map((size) => (
+                                            <button
+                                                key={size.label}
+                                                onClick={() => settingsService.updateSettings({ fontSize: size.value })}
+                                                className={clsx(
+                                                    "w-8 h-7 text-xs font-bold rounded shadow-sm transition-all",
+                                                    fontSize === size.value
+                                                        ? "bg-white dark:bg-gray-700 text-primary dark:text-white ring-1 ring-primary/20 scale-110"
+                                                        : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                                                )}
+                                            >
+                                                {size.label}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Theme Selection */}
-                        <div className="space-y-3">
-                            <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Reading Theme</p>
-                            <div className="grid grid-cols-4 gap-3">
-                                <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => setTheme('light')}>
-                                    <div className={clsx("w-full aspect-video bg-white border-2 rounded-lg shadow-inner", theme === 'light' ? "border-primary" : "border-transparent")}></div>
-                                    <span className={clsx("text-[10px] font-bold", theme === 'light' ? "text-primary" : "text-gray-400")}>Light</span>
-                                </div>
-                                <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => setTheme('sepia')}>
-                                    <div className={clsx("w-full aspect-video bg-[#f4ecd8] border-2 rounded-lg shadow-inner", theme === 'sepia' ? "border-primary" : "border-transparent")}></div>
-                                    <span className={clsx("text-[10px] font-bold", theme === 'sepia' ? "text-primary" : "text-gray-400")}>Sepia</span>
-                                </div>
-                                <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => setTheme('dark')}>
-                                    <div className={clsx("w-full aspect-video bg-[#1e1e1e] border-2 rounded-lg shadow-inner", theme === 'dark' ? "border-primary" : "border-transparent")}></div>
-                                    <span className={clsx("text-[10px] font-bold", theme === 'dark' ? "text-primary" : "text-gray-400")}>Dark</span>
-                                </div>
-                                <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => setTheme('oled')}>
-                                    <div className={clsx("w-full aspect-video bg-black border-2 rounded-lg shadow-inner", theme === 'oled' ? "border-primary" : "border-transparent")}></div>
-                                    <span className={clsx("text-[10px] font-bold", theme === 'oled' ? "text-primary" : "text-gray-400")}>OLED</span>
+                            {/* Theme Selection */}
+                            <div className="space-y-3">
+                                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Reading Theme</p>
+                                <div className="grid grid-cols-4 gap-3">
+                                    <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => settingsService.updateSettings({ theme: 'light' })}>
+                                        <div className={clsx("w-full aspect-video bg-white border-2 rounded-lg shadow-inner", theme === 'light' ? "border-primary" : "border-transparent")}></div>
+                                        <span className={clsx("text-[10px] font-bold", theme === 'light' ? "text-primary" : "text-gray-400")}>Light</span>
+                                    </div>
+                                    <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => settingsService.updateSettings({ theme: 'sepia' })}>
+                                        <div className={clsx("w-full aspect-video bg-[#f4ecd8] border-2 rounded-lg shadow-inner", theme === 'sepia' ? "border-primary" : "border-transparent")}></div>
+                                        <span className={clsx("text-[10px] font-bold", theme === 'sepia' ? "text-primary" : "text-gray-400")}>Sepia</span>
+                                    </div>
+                                    <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => settingsService.updateSettings({ theme: 'dark' })}>
+                                        <div className={clsx("w-full aspect-video bg-[#1e1e1e] border-2 rounded-lg shadow-inner", theme === 'dark' ? "border-primary" : "border-transparent")}></div>
+                                        <span className={clsx("text-[10px] font-bold", theme === 'dark' ? "text-primary" : "text-gray-400")}>Dark</span>
+                                    </div>
+                                    <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => settingsService.updateSettings({ theme: 'oled' })}>
+                                        <div className={clsx("w-full aspect-video bg-black border-2 rounded-lg shadow-inner", theme === 'oled' ? "border-primary" : "border-transparent")}></div>
+                                        <span className={clsx("text-[10px] font-bold", theme === 'oled' ? "text-primary" : "text-gray-400")}>OLED</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                </>
             )}
         </div>
     );
