@@ -150,7 +150,7 @@ export const Reader = () => {
             className={`relative flex h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-hidden ${getThemeClass()}`}
         >
             {/* Top App Bar */}
-            <div className="flex items-center bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md p-4 pb-2 justify-between sticky top-0 z-10 border-b border-gray-200 dark:border-gray-800">
+            <div className="flex items-center bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md p-4 pb-2 pt-[35px] justify-between sticky top-0 z-10 border-b border-gray-200 dark:border-gray-800">
                 <button onClick={handlePrevChapter} className="text-gray-900 dark:text-white flex size-12 shrink-0 items-center justify-center cursor-pointer">
                     <ArrowLeft />
                 </button>

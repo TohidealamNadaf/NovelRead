@@ -71,7 +71,7 @@ export const DiscoverList = () => {
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white h-screen w-full flex flex-col font-display overflow-hidden">
             {/* Header - Fixed at top */}
-            <div className="bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md z-40 shrink-0 pt-safe">
+            <div className="bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md z-40 shrink-0 pt-[35px]">
                 <div className="flex items-center p-4 pb-2">
                     <button onClick={() => navigate(-1)} className="flex size-10 items-center justify-start rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
                         <ArrowLeft size={24} />
