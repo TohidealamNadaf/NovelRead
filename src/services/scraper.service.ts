@@ -68,7 +68,17 @@ export class ScraperService {
 
         try {
             // First attempt: Scrape the derived infoUrl
-            let response = await CapacitorHttp.get({ url: getProxyUrl(infoUrl) });
+            // Helper for common headers
+            const getHeaders = () => ({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9'
+            });
+
+            let response = await CapacitorHttp.get({
+                url: getProxyUrl(infoUrl),
+                headers: getHeaders()
+            });
             let $ = cheerio.load(response.data);
             let metadata = extractMetadata($);
 
@@ -293,7 +303,13 @@ export class ScraperService {
         }
 
         console.log(`Fetching chapter content from: ${targetUrl}`);
-        const response = await CapacitorHttp.get({ url: targetUrl });
+        const response = await CapacitorHttp.get({
+            url: targetUrl,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+            }
+        });
         const $ = cheerio.load(response.data);
 
         // Remove known junk
