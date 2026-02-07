@@ -1,11 +1,16 @@
 
 import { useState, useEffect } from 'react';
-import { BookOpen, Headphones, History, CreditCard, Settings, Shield, LogOut, Edit, MoreVertical } from 'lucide-react';
+import { BookOpen, Headphones, History, Settings, Shield, Edit, Check, Camera } from 'lucide-react';
 import { Navbar } from '../components/Navbar';
 import { dbService } from '../services/database.service';
+import { useNavigate } from 'react-router-dom';
 
 export const Profile = () => {
+    const navigate = useNavigate();
     const [stats, setStats] = useState({ chaptersRead: 0, novelsCount: 0 });
+    const [isEditing, setIsEditing] = useState(false);
+    const [profileName, setProfileName] = useState("Alex Rivera");
+    const [profileImage, setProfileImage] = useState("https://lh3.googleusercontent.com/aida-public/AB6AXuDjCOham51YfTM7PcgkgKspU9PvDHuom_3rGeCzHDOnhZnOzp09BhpYTuEnobo9LY8vOsfLsujPy9_QEMQ7WaQQSrFMdLgnji7T5irQ-C7DSmSq-0RKsDtEHLdFk2Jd7O9Qpw1VCPG_71gSZCD9ROyRef4a9hy1bzxv5Kmeyh5eiAx9wKqIXAtSkLrqYxyMQFSb2RIi6syEVabDEHarMZ8ece6wHlOJW3ky5o3LtKvE3JC2EZaJpRlwT5R61uO6G-mUqtqV5qNjIYyE");
 
     useEffect(() => {
         loadStats();
@@ -30,31 +35,62 @@ export const Profile = () => {
     };
 
     return (
-        <div className="bg-background-dark text-white min-h-screen pb-24 font-sans">
-            <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden">
-                {/* Header */}
-                <div className="sticky top-0 z-20 bg-background-dark/80 backdrop-blur-md px-4 py-4 pb-2 pt-safe">
-                    <div className="flex items-center justify-between">
-                        <div className="w-10"></div>
-                        <h2 className="text-xl font-bold leading-tight tracking-tight flex-1 text-center">Profile</h2>
-                        <div className="flex w-10 items-center justify-end">
-                            <button className="flex items-center justify-center p-2 rounded-full hover:bg-white/10 transition-colors">
-                                <MoreVertical size={20} />
-                            </button>
-                        </div>
+        <div className="bg-background-dark text-white min-h-screen font-sans flex flex-col">
+            {/* Header */}
+            <div className="sticky top-0 z-20 bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-safe shrink-0 border-b border-white/5">
+                <div className="flex items-center justify-between">
+                    <div className="w-10"></div>
+                    <h2 className="text-xl font-bold leading-tight tracking-tight flex-1 text-center">Profile</h2>
+                    <div className="flex w-10 items-center justify-end">
+                        <button onClick={() => navigate('/settings')} className="flex items-center justify-center p-2 rounded-full hover:bg-white/10 transition-colors">
+                            <Settings size={20} />
+                        </button>
                     </div>
                 </div>
+            </div>
 
+            <div className="flex-1 overflow-y-auto w-full pb-24">
                 <div className="flex flex-col items-center px-4 py-8">
                     <div className="relative group">
                         <div className="size-28 shrink-0 items-center overflow-hidden rounded-full ring-4 ring-primary/20 shadow-2xl">
-                            <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuDjCOham51YfTM7PcgkgKspU9PvDHuom_3rGeCzHDOnhZnOzp09BhpYTuEnobo9LY8vOsfLsujPy9_QEMQ7WaQQSrFMdLgnji7T5irQ-C7DSmSq-0RKsDtEHLdFk2Jd7O9Qpw1VCPG_71gSZCD9ROyRef4a9hy1bzxv5Kmeyh5eiAx9wKqIXAtSkLrqYxyMQFSb2RIi6syEVabDEHarMZ8ece6wHlOJW3ky5o3LtKvE3JC2EZaJpRlwT5R61uO6G-mUqtqV5qNjIYyE')" }}></div>
+                            <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url('${profileImage}')` }}></div>
                         </div>
-                        <button className="absolute bottom-0 right-0 size-8 bg-primary rounded-full flex items-center justify-center border-2 border-background-dark shadow-lg">
-                            <Edit size={14} />
-                        </button>
+                        {isEditing && (
+                            <button
+                                onClick={() => {
+                                    const url = prompt("Enter new image URL:", profileImage);
+                                    if (url) setProfileImage(url);
+                                }}
+                                className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full cursor-pointer hover:bg-black/50 transition-colors"
+                            >
+                                <Camera className="text-white" size={24} />
+                            </button>
+                        )}
+                        {!isEditing && (
+                            <button
+                                onClick={() => setIsEditing(true)}
+                                className="absolute bottom-0 right-0 size-8 bg-primary rounded-full flex items-center justify-center border-2 border-background-dark shadow-lg active:scale-95 transition-transform"
+                            >
+                                <Edit size={14} />
+                            </button>
+                        )}
                     </div>
-                    <h1 className="mt-4 text-2xl font-bold">Alex Rivera</h1>
+
+                    {isEditing ? (
+                        <div className="mt-4 flex items-center gap-2">
+                            <input
+                                value={profileName}
+                                onChange={(e) => setProfileName(e.target.value)}
+                                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1 text-lg font-bold text-center outline-none focus:border-primary w-40"
+                                autoFocus
+                            />
+                            <button onClick={() => setIsEditing(false)} className="size-8 rounded-full bg-green-500/20 text-green-500 flex items-center justify-center hover:bg-green-500/30">
+                                <Check size={16} />
+                            </button>
+                        </div>
+                    ) : (
+                        <h1 className="mt-4 text-2xl font-bold">{profileName}</h1>
+                    )}
                     <p className="text-slate-400 text-sm">Premium Member</p>
                 </div>
 
@@ -81,10 +117,10 @@ export const Profile = () => {
                 </div>
 
                 {/* Settings List */}
-                <div className="px-4 flex flex-col gap-3 pb-32">
+                <div className="px-4 flex flex-col gap-3 pb-8">
                     <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest px-1">Settings & History</h3>
 
-                    <button className="group flex items-center justify-between w-full p-4 rounded-xl border border-white/5 bg-[#121118] hover:bg-white/5 transition-all">
+                    <button onClick={() => navigate('/history')} className="group flex items-center justify-between w-full p-4 rounded-xl border border-white/5 bg-[#121118] hover:bg-white/5 transition-all">
                         <div className="flex items-center gap-3">
                             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-slate-300 group-hover:bg-primary group-hover:text-white transition-colors">
                                 <History size={20} />
@@ -97,20 +133,7 @@ export const Profile = () => {
                         <div className="text-slate-500">{'>'}</div>
                     </button>
 
-                    <button className="group flex items-center justify-between w-full p-4 rounded-xl border border-white/5 bg-[#121118] hover:bg-white/5 transition-all">
-                        <div className="flex items-center gap-3">
-                            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-slate-300 group-hover:bg-primary group-hover:text-white transition-colors">
-                                <CreditCard size={20} />
-                            </div>
-                            <div className="text-left">
-                                <p className="font-semibold text-sm">Subscription</p>
-                                <p className="text-slate-500 text-[11px]">Premium expires in 12 days</p>
-                            </div>
-                        </div>
-                        <div className="text-slate-500">{'>'}</div>
-                    </button>
-
-                    <button className="group flex items-center justify-between w-full p-4 rounded-xl border border-white/5 bg-[#121118] hover:bg-white/5 transition-all">
+                    <button onClick={() => navigate('/settings')} className="group flex items-center justify-between w-full p-4 rounded-xl border border-white/5 bg-[#121118] hover:bg-white/5 transition-all">
                         <div className="flex items-center gap-3">
                             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-slate-300 group-hover:bg-primary group-hover:text-white transition-colors">
                                 <Settings size={20} />
@@ -123,7 +146,7 @@ export const Profile = () => {
                         <div className="text-slate-500">{'>'}</div>
                     </button>
 
-                    <button className="group flex items-center justify-between w-full p-4 rounded-xl border border-white/5 bg-[#121118] hover:bg-white/5 transition-all">
+                    <button onClick={() => navigate('/privacy')} className="group flex items-center justify-between w-full p-4 rounded-xl border border-white/5 bg-[#121118] hover:bg-white/5 transition-all">
                         <div className="flex items-center gap-3">
                             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-slate-300 group-hover:bg-primary group-hover:text-white transition-colors">
                                 <Shield size={20} />
@@ -136,14 +159,9 @@ export const Profile = () => {
                         <div className="text-slate-500">{'>'}</div>
                     </button>
 
-                    <button className="mt-4 flex items-center justify-center w-full p-4 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all">
-                        <LogOut size={20} className="mr-2" />
-                        <p className="font-semibold text-sm">Logout</p>
-                    </button>
                 </div>
-
-                <Navbar />
             </div>
+            <Navbar />
         </div>
     );
 };

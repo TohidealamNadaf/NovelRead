@@ -8,6 +8,8 @@ import { AudioSettings } from './pages/AudioSettings';
 import { Profile } from './pages/Profile';
 import { Settings } from './pages/Settings';
 import { Reader } from './pages/Reader';
+import { ScrapingHistory } from './pages/ScrapingHistory';
+import { PrivacySecurity } from './pages/PrivacySecurity';
 import { MiniPlayer } from './components/MiniPlayer';
 import { Capacitor } from '@capacitor/core';
 
@@ -28,6 +30,8 @@ function App() {
         <Route path="/audio" element={<AudioSettings />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/history" element={<ScrapingHistory />} />
+        <Route path="/privacy" element={<PrivacySecurity />} />
 
         {/* Route alias for development/testing UI */}
         <Route path="/reader" element={<Reader />} />

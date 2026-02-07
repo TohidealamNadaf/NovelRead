@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Search, Bolt, BookOpen, Rocket, Heart, Swords, Download } from 'lucide-react';
 import { scraperService } from '../services/scraper.service';
 import { dbService } from '../services/database.service';
@@ -10,6 +10,7 @@ export const Discover = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isScraping, setIsScraping] = useState(false);
     const [recentScrapes, setRecentScrapes] = useState<any[]>([]);
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
 
     useEffect(() => {
         loadRecentScrapes();
@@ -79,14 +80,34 @@ export const Discover = () => {
                 {/* Header */}
                 <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md pt-safe">
                     <div className="flex items-center p-4 pb-2 justify-between">
-                        <div className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20">
+                        <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
                             <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDjCOham51YfTM7PcgkgKspU9PvDHuom_3rGeCzHDOnhZnOzp09BhpYTuEnobo9LY8vOsfLsujPy9_QEMQ7WaQQSrFMdLgnji7T5irQ-C7DSmSq-0RKsDtEHLdFk2Jd7O9Qpw1VCPG_71gSZCD9ROyRef4a9hy1bzxv5Kmeyh5eiAx9wKqIXAtSkLrqYxyMQFSb2RIi6syEVabDEHarMZ8ece6wHlOJW3ky5o3LtKvE3JC2EZaJpRlwT5R61uO6G-mUqtqV5qNjIYyE")' }}></div>
-                        </div>
+                        </Link>
                         <h2 className="text-xl font-bold leading-tight tracking-tight flex-1 text-center mr-[-40px]">Discover</h2>
-                        <div className="flex w-10 items-center justify-end">
-                            <button className="flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
+                        <div className="flex w-10 items-center justify-end relative">
+                            <button
+                                onClick={() => setIsFilterOpen(!isFilterOpen)}
+                                className="flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                            >
                                 <span className="material-symbols-outlined">filter_list</span>
                             </button>
+                            {isFilterOpen && (
+                                <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-[#1c1c1e] rounded-xl shadow-xl border border-slate-200 dark:border-white/10 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
+                                    <h3 className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">Categories</h3>
+                                    {['Fantasy', 'Sci-Fi', 'Romance', 'Action', 'Mystery', 'Horror'].map(cat => (
+                                        <button
+                                            key={cat}
+                                            onClick={() => {
+                                                navigate(`/discover/${cat.toLowerCase()}`);
+                                                setIsFilterOpen(false);
+                                            }}
+                                            className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                                        >
+                                            {cat}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                     <div className="px-4 py-3">

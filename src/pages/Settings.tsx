@@ -1,14 +1,14 @@
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import type { AppSettings } from '../services/settings.service';
 import { settingsService } from '../services/settings.service';
-import { ChevronLeft, ChevronRight, Palette, Globe, MoveVertical, BookOpen, Trash2, FolderOpen, Shield, Cloud, RefreshCw } from 'lucide-react';
+import { ChevronRight, Palette, Globe, MoveVertical, BookOpen, Trash2, FolderOpen, Shield, Cloud, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 
 export const Settings = () => {
-    const navigate = useNavigate();
+    // const navigate = useNavigate(); // Unused now
     const [settings, setSettings] = useState<AppSettings>(settingsService.getSettings());
     const [cacheSize, setCacheSize] = useState("Calculating...");
 
@@ -56,10 +56,11 @@ export const Settings = () => {
             <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden">
                 <div className="sticky top-0 z-30 bg-background-light/90 dark:bg-background-dark/90 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 pt-safe">
                     <div className="flex items-center justify-between h-14 px-4">
-                        <button onClick={() => navigate(-1)} className="flex items-center text-primary">
-                            <ChevronLeft size={24} />
-                            <span className="text-base font-medium">Back</span>
-                        </button>
+                        <Link to="/profile" className="flex items-center justify-center p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
+                            <div className="flex size-9 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20">
+                                <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDjCOham51YfTM7PcgkgKspU9PvDHuom_3rGeCzHDOnhZnOzp09BhpYTuEnobo9LY8vOsfLsujPy9_QEMQ7WaQQSrFMdLgnji7T5irQ-C7DSmSq-0RKsDtEHLdFk2Jd7O9Qpw1VCPG_71gSZCD9ROyRef4a9hy1bzxv5Kmeyh5eiAx9wKqIXAtSkLrqYxyMQFSb2RIi6syEVabDEHarMZ8ece6wHlOJW3ky5o3LtKvE3JC2EZaJpRlwT5R61uO6G-mUqtqV5qNjIYyE")' }}></div>
+                            </div>
+                        </Link>
                         <h1 className="text-lg font-bold">Settings</h1>
                         <div className="w-16"></div>
                     </div>
