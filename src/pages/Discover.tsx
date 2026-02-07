@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Play, SkipBack, SkipForward, Bolt, AutoStories, Star, Rocket, Heart, Swords, Download } from 'lucide-react';
+import { Search, Play, SkipBack, SkipForward, Bolt, BookOpen, Star, Rocket, Heart, Swords, Download } from 'lucide-react';
 import { scraperService } from '../services/scraper.service';
 import { dbService } from '../services/database.service';
 import { BottomNav } from '../components/BottomNav';
@@ -174,7 +174,7 @@ export const Discover = () => {
                                             <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url('${novel.coverUrl}')` }}></div>
                                         ) : (
                                             <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
-                                                <AutoStories className="text-4xl text-slate-400" />
+                                                <BookOpen className="text-4xl text-slate-400" />
                                             </div>
                                         )}
                                     </div>
@@ -194,7 +194,7 @@ export const Discover = () => {
                         </div>
                         <div className="flex overflow-x-auto gap-3 px-4 hide-scrollbar">
                             <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform">
-                                <AutoStories className="text-white mb-1" />
+                                <BookOpen className="text-white mb-1" />
                                 <span className="text-white text-xs font-bold">Fantasy</span>
                             </div>
                             <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform">
