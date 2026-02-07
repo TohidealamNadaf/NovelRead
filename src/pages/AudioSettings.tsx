@@ -57,7 +57,7 @@ export const AudioSettings = () => {
         <div className="bg-background-dark text-white min-h-screen pb-24 font-sans">
             <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden">
                 {/* Header */}
-                <div className="sticky top-0 z-20 bg-background-dark/80 backdrop-blur-md px-4 py-4">
+                <div className="sticky top-0 z-20 bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-safe">
                     <div className="flex items-center justify-between">
                         <button onClick={() => navigate(-1)} className="flex size-10 items-center justify-center rounded-full hover:bg-white/10 transition-colors">
                             <ArrowLeft size={20} />

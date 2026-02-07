@@ -108,7 +108,7 @@ export const Import = () => {
     return (
         <div className="relative w-full h-screen bg-background-light dark:bg-background-dark flex flex-col overflow-hidden">
             {/* Top App Bar */}
-            <div className="flex flex-col pt-6 px-4 pb-2 bg-background-light dark:bg-background-dark/80 backdrop-blur-md sticky top-0 z-50">
+            <div className="flex flex-col pt-6 px-4 pb-2 bg-background-light dark:bg-background-dark/80 backdrop-blur-md sticky top-0 z-50 pt-safe">
                 <div className="flex items-center justify-between py-2">
                     <button onClick={() => navigate(-1)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                         <ArrowLeft className="text-2xl" />

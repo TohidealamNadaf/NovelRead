@@ -33,7 +33,7 @@ export const Profile = () => {
         <div className="bg-background-dark text-white min-h-screen pb-24 font-sans">
             <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden">
                 {/* Header */}
-                <div className="sticky top-0 z-20 bg-background-dark/80 backdrop-blur-md px-4 py-4 pb-2">
+                <div className="sticky top-0 z-20 bg-background-dark/80 backdrop-blur-md px-4 py-4 pb-2 pt-safe">
                     <div className="flex items-center justify-between">
                         <div className="w-10"></div>
                         <h2 className="text-xl font-bold leading-tight tracking-tight flex-1 text-center">Profile</h2>
