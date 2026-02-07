@@ -34,10 +34,14 @@ export const AudioSettings = () => {
         };
 
         updateVoices();
-        window.speechSynthesis.onvoiceschanged = updateVoices;
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+            window.speechSynthesis.onvoiceschanged = updateVoices;
+        }
 
         return () => {
-            window.speechSynthesis.onvoiceschanged = null;
+            if (typeof window !== 'undefined' && window.speechSynthesis) {
+                window.speechSynthesis.onvoiceschanged = null;
+            }
         };
     }, [rate, pitch, voice]);
 
@@ -56,7 +60,7 @@ export const AudioSettings = () => {
     return (
         <div className="bg-background-dark text-white min-h-screen font-sans flex flex-col">
             {/* Header */}
-            <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-[35px] shrink-0 border-b border-slate-200 dark:border-white/5">
+            <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-[10px] shrink-0 border-b border-slate-200 dark:border-white/5">
                 <div className="flex items-center justify-between">
                     <Link to="/profile" className="flex items-center justify-center p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
                         <div className="flex size-9 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20">

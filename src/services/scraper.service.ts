@@ -1,4 +1,4 @@
-import { CapacitorHttp } from '@capacitor/core';
+import { CapacitorHttp, Capacitor } from '@capacitor/core';
 import * as cheerio from 'cheerio';
 
 export interface NovelMetadata {
@@ -18,7 +18,7 @@ export class ScraperService {
 
         // Helper to get proxy URL
         const getProxyUrl = (target: string) => {
-            const isWeb = typeof window !== 'undefined' && window.location.protocol.startsWith('http');
+            const isWeb = Capacitor.getPlatform() === 'web';
             if (isWeb && !target.includes('corsproxy.io')) {
                 return `https://corsproxy.io/?${encodeURIComponent(target)}`;
             }
@@ -287,11 +287,12 @@ export class ScraperService {
 
     async fetchChapterContent(url: string): Promise<string> {
         let targetUrl = url;
-        const isWeb = typeof window !== 'undefined' && window.location.protocol.startsWith('http');
+        const isWeb = Capacitor.getPlatform() === 'web';
         if (isWeb && !targetUrl.includes('corsproxy.io')) {
             targetUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
         }
 
+        console.log(`Fetching chapter content from: ${targetUrl}`);
         const response = await CapacitorHttp.get({ url: targetUrl });
         const $ = cheerio.load(response.data);
 

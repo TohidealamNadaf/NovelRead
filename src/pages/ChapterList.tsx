@@ -167,7 +167,7 @@ export const ChapterList = () => {
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans min-h-screen pb-20">
             {/* Top Navigation Bar */}
-            <div className="sticky top-0 z-50 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 pt-[35px]">
+            <div className="sticky top-0 z-50 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 pt-[10px]">
                 <div className="flex items-center p-4 justify-between max-w-lg mx-auto">
                     <div className="flex items-center gap-2" onClick={() => navigate(-1)}>
                         <ArrowLeft className="text-primary cursor-pointer" />

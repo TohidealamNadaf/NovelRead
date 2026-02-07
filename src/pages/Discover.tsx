@@ -18,10 +18,13 @@ export const Discover = () => {
 
     const loadRecentScrapes = async () => {
         try {
+            console.log("Initializing database for Discover...");
+            await dbService.initialize();
             const novels = await dbService.getNovels();
             setRecentScrapes(novels.slice(0, 5));
         } catch (e) {
             console.error("Failed to load recent scrapes", e);
+            setRecentScrapes([]);
         }
     };
 
@@ -40,9 +43,10 @@ export const Discover = () => {
             setIsScraping(true);
             try {
                 const novel = await scraperService.fetchNovel(url);
+                const novelId = novel.title.replace(/\s+/g, '-').toLowerCase().slice(0, 32) + '-' + Date.now().toString(36);
                 await dbService.initialize();
                 await dbService.addNovel({
-                    id: btoa(novel.title),
+                    id: novelId,
                     title: novel.title,
                     author: novel.author,
                     coverUrl: novel.coverUrl,
@@ -54,8 +58,8 @@ export const Discover = () => {
                 for (let i = 0; i < chaptersToSave.length; i++) {
                     const ch = chaptersToSave[i];
                     await dbService.addChapter({
-                        id: `${btoa(novel.title)}-ch-${i + 1}`,
-                        novelId: btoa(novel.title),
+                        id: `${novelId}-ch-${i + 1}`,
+                        novelId: novelId,
                         title: ch.title,
                         content: '',
                         orderIndex: i,
@@ -78,7 +82,7 @@ export const Discover = () => {
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto pb-24">
                 {/* Header */}
-                <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md pt-[35px]">
+                <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md pt-[10px]">
                     <div className="flex items-center p-4 pb-2 justify-between">
                         <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
                             <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDjCOham51YfTM7PcgkgKspU9PvDHuom_3rGeCzHDOnhZnOzp09BhpYTuEnobo9LY8vOsfLsujPy9_QEMQ7WaQQSrFMdLgnji7T5irQ-C7DSmSq-0RKsDtEHLdFk2Jd7O9Qpw1VCPG_71gSZCD9ROyRef4a9hy1bzxv5Kmeyh5eiAx9wKqIXAtSkLrqYxyMQFSb2RIi6syEVabDEHarMZ8ece6wHlOJW3ky5o3LtKvE3JC2EZaJpRlwT5R61uO6G-mUqtqV5qNjIYyE")' }}></div>

@@ -37,7 +37,7 @@ export const Profile = () => {
     return (
         <div className="bg-background-dark text-white min-h-screen font-sans flex flex-col">
             {/* Header */}
-            <div className="sticky top-0 z-20 bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-[35px] shrink-0 border-b border-white/5">
+            <div className="sticky top-0 z-20 bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-[10px] shrink-0 border-b border-white/5">
                 <div className="flex items-center justify-between">
                     <div className="w-10"></div>
                     <h2 className="text-xl font-bold leading-tight tracking-tight flex-1 text-center">Profile</h2>

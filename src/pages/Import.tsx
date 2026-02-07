@@ -3,7 +3,7 @@ import { ArrowLeft, MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2 
 import { scraperService, type NovelMetadata } from '../services/scraper.service';
 import { dbService } from '../services/database.service';
 import { useNavigate } from 'react-router-dom';
-import { clsx } from 'clsx';
+import clsx from 'clsx';
 
 export const Import = () => {
     const navigate = useNavigate();
@@ -54,7 +54,7 @@ export const Import = () => {
 
         try {
             // Save Novel Metadata first
-            const novelId = btoa(url).slice(0, 16); // Simple ID generation
+            const novelId = targetNovel.title.replace(/\s+/g, '-').toLowerCase().slice(0, 24) + '-' + Math.random().toString(36).slice(2, 7);
             await dbService.addNovel({
                 id: novelId,
                 title: targetNovel.title,
@@ -108,7 +108,7 @@ export const Import = () => {
     return (
         <div className="relative w-full h-screen bg-background-light dark:bg-background-dark flex flex-col overflow-hidden">
             {/* Top App Bar */}
-            <div className="flex flex-col pt-[35px] px-4 pb-2 bg-background-light dark:bg-background-dark/80 backdrop-blur-md sticky top-0 z-50 ">
+            <div className="flex flex-col pt-[10px] px-4 pb-2 bg-background-light dark:bg-background-dark/80 backdrop-blur-md sticky top-0 z-50 ">
                 <div className="flex items-center justify-between py-2">
                     <button onClick={() => navigate(-1)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                         <ArrowLeft className="text-2xl" />

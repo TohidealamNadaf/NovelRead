@@ -17,7 +17,7 @@ interface AudioState {
 
 export class AudioService {
     private bgmAudio: HTMLAudioElement | null = null;
-    private synthesis: SpeechSynthesis;
+    private synthesis: SpeechSynthesis | null = null;
     private utterance: SpeechSynthesisUtterance | null = null;
 
     // State for persistence/settings
@@ -35,7 +35,7 @@ export class AudioService {
     };
 
     constructor() {
-        this.synthesis = window.speechSynthesis;
+        this.synthesis = typeof window !== 'undefined' ? window.speechSynthesis : null;
     }
 
     // --- State Management ---
@@ -62,7 +62,7 @@ export class AudioService {
         }
 
         // Update global flags based on internal state
-        this.state.isTtsPlaying = this.synthesis.speaking && !this.synthesis.paused;
+        this.state.isTtsPlaying = this.synthesis ? (this.synthesis.speaking && !this.synthesis.paused) : false;
         this.state.isBgmPlaying = this.bgmAudio !== null && !this.bgmAudio.paused;
 
         // Ensure consistency if track says it's playing
@@ -172,6 +172,10 @@ export class AudioService {
     }
 
     speak(text: string, title?: string, subtitle?: string, coverUrl?: string) {
+        if (!this.synthesis) {
+            console.warn("Speech synthesis not supported on this device");
+            return;
+        }
         this.stopSpeaking(false);
         const cleanText = text.replace(/<[^>]*>/g, '');
 
@@ -206,21 +210,23 @@ export class AudioService {
     }
 
     pauseSpeaking() {
-        if (this.synthesis.speaking && !this.synthesis.paused) {
+        if (this.synthesis && this.synthesis.speaking && !this.synthesis.paused) {
             this.synthesis.pause();
             this.updateState({ isPlaying: false });
         }
     }
 
     resumeSpeaking() {
-        if (this.synthesis.paused) {
+        if (this.synthesis && this.synthesis.paused) {
             this.synthesis.resume();
             this.updateState({ isPlaying: true });
         }
     }
 
     stopSpeaking(clearState = true) {
-        this.synthesis.cancel();
+        if (this.synthesis) {
+            this.synthesis.cancel();
+        }
         if (clearState) {
             this.updateState(null);
         } else {
@@ -229,11 +235,11 @@ export class AudioService {
     }
 
     isSpeaking(): boolean {
-        return this.synthesis.speaking;
+        return this.synthesis ? this.synthesis.speaking : false;
     }
 
     getVoices(): SpeechSynthesisVoice[] {
-        return this.synthesis.getVoices();
+        return this.synthesis ? this.synthesis.getVoices() : [];
     }
 
     getBestVoice(gender: 'male' | 'female'): SpeechSynthesisVoice | null {

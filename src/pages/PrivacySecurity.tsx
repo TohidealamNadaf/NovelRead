@@ -9,7 +9,7 @@ export const PrivacySecurity = () => {
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen font-sans flex flex-col transition-colors">
             {/* Header */}
-            <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-[35px] shrink-0 border-b border-slate-200 dark:border-white/5">
+            <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-[10px] shrink-0 border-b border-slate-200 dark:border-white/5">
                 <div className="flex items-center gap-4">
                     <button onClick={() => navigate(-1)} className="size-10 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
                         <ArrowLeft size={20} />
