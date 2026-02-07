@@ -5,7 +5,18 @@ export interface NovelMetadata {
     title: string;
     author: string;
     coverUrl: string;
+    summary?: string;
+    status?: string;
+    category?: string;
     chapters: { title: string; url: string }[];
+}
+
+export interface HomeData {
+    recommended: NovelMetadata[];
+    ranking: NovelMetadata[];
+    latest: NovelMetadata[];
+    recentlyAdded: NovelMetadata[];
+    completed: NovelMetadata[];
 }
 
 export class ScraperService {
@@ -58,12 +69,39 @@ export class ScraperService {
                 'span[itemprop="author"]', '.txt-author'
             ]).replace('Author:', '').trim();
 
-            const extractedCover = getAttr([
-                '.novel-cover img', '.book img', '.book-cover img',
-                '.img-cover', 'meta[property="og:image"]', '.summary_image img'
-            ], ['data-src', 'data-original', 'src', 'content']);
+            const extractedSummary = getMeta([
+                '.summary__content', '.description', '#editdescription',
+                '.book-info-desc', '.content', 'meta[name="description"]'
+            ]).trim();
 
-            return { title: extractedTitle, author: extractedAuthor, coverUrl: extractedCover };
+            const extractedStatus = getMeta([
+                '.status', '.info-status', '.book-status',
+                '.post-content_item:contains("Status") .summary-content'
+            ]).trim();
+
+            let extractedCover = getAttr([
+                '.novel-cover img', '.book img', '.book-cover img',
+                '.img-cover', 'meta[property="og:image"]', '.summary_image img',
+                '.book-info-cover img'
+            ], ['data-src', 'data-lazy-src', 'data-original', 'src', 'content']);
+
+            if (extractedCover && !extractedCover.startsWith('http')) {
+                const origin = 'https://novelfire.net';
+                if (extractedCover.startsWith('//')) {
+                    extractedCover = `https:${extractedCover}`;
+                } else {
+                    if (!extractedCover.startsWith('/')) extractedCover = '/' + extractedCover;
+                    extractedCover = `${origin}${extractedCover}`;
+                }
+            }
+
+            return {
+                title: extractedTitle,
+                author: extractedAuthor,
+                coverUrl: extractedCover,
+                summary: extractedSummary,
+                status: extractedStatus
+            };
         };
 
         try {
@@ -337,6 +375,166 @@ export class ScraperService {
 
         return this.enhanceContent(content);
     }
+
+    async fetchHomeData(): Promise<HomeData> {
+        const urls = ['https://novelfire.net/home', 'https://novelfire.net/'];
+        const proxies = [
+            (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+            (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
+        ];
+
+        const isWeb = Capacitor.getPlatform() === 'web';
+        const origin = 'https://novelfire.net';
+
+        const parseNovels = ($: any, selector: string) => {
+            const novels: (NovelMetadata & { sourceUrl: string })[] = [];
+            $(selector).each((_: number, el: any) => {
+                const $el = $(el);
+                let title = $el.find('h3, h4, h5, .title, .book-name, .novel-title').first().text().trim();
+                let url = $el.find('a[href*="/book/"], a[href*="/novel/"]').first().attr('href') || $el.find('a').first().attr('href') || '';
+
+                if (!title) {
+                    title = $el.find('a').first().attr('title')?.trim() || $el.find('a').first().text().trim();
+                }
+
+                if (url && !url.startsWith('http')) {
+                    if (!url.startsWith('/')) url = '/' + url;
+                    url = `${origin}${url}`;
+                }
+
+                let coverUrl = $el.find('img').attr('data-src') ||
+                    $el.find('img').attr('data-lazy-src') ||
+                    $el.find('img').attr('data-original') ||
+                    $el.find('img').attr('src') || '';
+
+                // Handle relative image paths
+                if (coverUrl && !coverUrl.startsWith('http')) {
+                    if (coverUrl.startsWith('//')) {
+                        coverUrl = `https:${coverUrl}`;
+                    } else {
+                        if (!coverUrl.startsWith('/')) coverUrl = '/' + coverUrl;
+                        coverUrl = `${origin}${coverUrl}`;
+                    }
+                }
+
+                const author = $el.find('.author, .book-author').first().text().trim() || 'Unknown';
+
+                if (title && url && (url.includes('/book/') || url.includes('/novel/'))) {
+                    novels.push({
+                        title,
+                        author,
+                        coverUrl,
+                        summary: $el.find('.description, .excerpt').first().text().trim() || '',
+                        status: 'Ongoing',
+                        sourceUrl: url,
+                        chapters: []
+                    });
+                }
+            });
+            return novels;
+        };
+
+        const results: HomeData = { recommended: [], ranking: [], latest: [], recentlyAdded: [], completed: [] };
+
+        for (const url of urls) {
+            for (const getProxyUrl of proxies) {
+                try {
+                    const targetUrl = isWeb ? getProxyUrl(url) : url;
+                    console.log(`[Scraper] Fetching: ${targetUrl}`);
+
+                    const response = await CapacitorHttp.get({
+                        url: targetUrl,
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+                        }
+                    });
+
+                    console.log(`[Scraper] Status: ${response.status} for ${url}`);
+
+                    let html = '';
+                    if (typeof response.data === 'string') {
+                        html = response.data;
+                    } else if (response.data && typeof response.data === 'object') {
+                        // Some proxies like allorigins return { contents: "..." }
+                        html = response.data.contents || JSON.stringify(response.data);
+                    }
+
+                    if (!html || html.length < 500) {
+                        console.warn(`[Scraper] Suspiciously short response (${html?.length || 0} bytes)`);
+                        continue;
+                    }
+
+                    const $ = cheerio.load(html);
+
+                    const recommended = parseNovels($, '.recommended-novels .item, .featured .item, .hot-novels .item, .carousel-item, .trending-item, .item-recommended, .section-recommended .item, .home-recommended .item, .recommended .item, [class*="recommended"] .item');
+                    const ranking = parseNovels($, '.ranking-list .item, .top-rated .item, .ranking .item, .list-ranking .item, .item-ranking, .section-ranking .item, .home-ranking .item, .ranking .list-row, [class*="ranking"] .item, [class*="top-rated"] .item');
+                    const latest = parseNovels($, '.latest-updates .item, .new-novels .item, .list-novel .item, .update-item, .latest-releases .item, .section-latest .item, .home-latest .item, .latest-releases .item, [class*="latest"] .item, [class*="new-novels"] .item');
+                    const recentlyAdded = parseNovels($, '.recent-chapters .item, .recent-updates .item, .newest-item, .item-recent, .section-recent .item, .home-recent .item, [class*="recent"] .item');
+                    const completed = parseNovels($, '.completed-stories .item, .completed .item, .item-completed, .section-completed .item, .home-completed .item, .completed-source .item, [class*="completed"] .item');
+
+                    // Aggregate
+                    if (recommended.length > 0) results.recommended = [...results.recommended, ...recommended.slice(0, 5)];
+                    if (ranking.length > 0) results.ranking = [...results.ranking, ...ranking.slice(0, 10)];
+                    if (latest.length > 0) results.latest = [...results.latest, ...latest.slice(0, 10)];
+                    if (recentlyAdded.length > 0) results.recentlyAdded = [...results.recentlyAdded, ...recentlyAdded.slice(0, 10)];
+                    if (completed.length > 0) results.completed = [...results.completed, ...completed.slice(0, 10)];
+
+                    // Global Fallback if NO specific sections found but we have content
+                    if (results.recommended.length === 0 && results.latest.length === 0) {
+                        console.log("[Scraper] No specific sections found, trying global fallback for any novel links...");
+
+                        // Very broad fallback for ANY item-like structure
+                        const broadNovels = parseNovels($, '.item, .col-6, .box, .list-row, .novel-item, .book-item, [class*="novel"], [class*="book"]');
+
+                        if (broadNovels.length > 0) {
+                            console.log(`[Scraper] Global fallback found ${broadNovels.length} novels, distributing...`);
+                            // Distribute into sections for better UI
+                            if (results.recommended.length === 0) results.recommended = broadNovels.slice(0, 5);
+                            if (results.ranking.length === 0) results.ranking = broadNovels.slice(5, 15);
+                            if (results.latest.length === 0) results.latest = broadNovels.slice(15, 25);
+                            if (results.completed.length === 0) results.completed = broadNovels.slice(25, 35);
+                        } else {
+                            const allLinks = parseNovels($, 'a[href*="/book/"], a[href*="/novel/"]').slice(0, 20);
+                            if (allLinks.length > 0) {
+                                results.latest = allLinks;
+                                console.log(`[Scraper] Global fallback (links only) found ${allLinks.length} novels`);
+                            }
+                        }
+                    }
+
+                    // If we found significant data, we can stop
+                    if (results.recommended.length > 2 || results.latest.length > 2 || results.ranking.length > 2) {
+                        console.log(`[Scraper] Successfully found data on ${url} via proxy`);
+                        break;
+                    }
+                } catch (error) {
+                    console.error(`[Scraper] Failed to fetch home data from ${url} with proxy`, error);
+                }
+            }
+            if (results.recommended.length > 2 || results.latest.length > 2) break;
+        }
+
+        const dedupe = (arr: any[]) => {
+            const seen = new Set();
+            return arr.filter(item => {
+                if (!item.title) return false;
+                const k = item.title.toLowerCase();
+                if (seen.has(k)) return false;
+                seen.add(k);
+                return true;
+            });
+        };
+
+        results.recommended = dedupe(results.recommended);
+        results.ranking = dedupe(results.ranking);
+        results.latest = dedupe(results.latest);
+        results.recentlyAdded = dedupe(results.recentlyAdded);
+        results.completed = dedupe(results.completed);
+
+        return results;
+    }
+
 }
 
 export const scraperService = new ScraperService();

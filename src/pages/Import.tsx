@@ -3,6 +3,7 @@ import { ArrowLeft, MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2 
 import { scraperService, type NovelMetadata } from '../services/scraper.service';
 import { dbService } from '../services/database.service';
 import { useNavigate } from 'react-router-dom';
+import { CompletionModal } from '../components/CompletionModal';
 import clsx from 'clsx';
 
 export const Import = () => {
@@ -12,6 +13,7 @@ export const Import = () => {
     const [novel, setNovel] = useState<NovelMetadata | null>(null);
     const [scraping, setScraping] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0, currentTitle: '', logs: [] as string[] });
+    const [showSuccess, setShowSuccess] = useState(false);
 
     const handlePreview = async () => {
         if (!url) return;
@@ -95,8 +97,7 @@ export const Import = () => {
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
 
-            alert('Scraping completed!');
-            navigate('/');
+            setShowSuccess(true);
         } catch (error) {
             console.error(error);
             alert('Scraping failed');
@@ -108,7 +109,7 @@ export const Import = () => {
     return (
         <div className="relative w-full h-screen bg-background-light dark:bg-background-dark flex flex-col overflow-hidden">
             {/* Top App Bar */}
-            <div className="flex flex-col pt-[10px] px-4 pb-2 bg-background-light dark:bg-background-dark/80 backdrop-blur-md sticky top-0 z-50 ">
+            <div className="flex flex-col pt-[14px] px-4 pb-2 bg-background-light dark:bg-background-dark/80 backdrop-blur-md sticky top-0 z-50 ">
                 <div className="flex items-center justify-between py-2">
                     <button onClick={() => navigate(-1)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                         <ArrowLeft className="text-2xl" />
@@ -222,6 +223,16 @@ export const Import = () => {
                 {/* iOS Home Indicator Spacing */}
                 <div className="h-4"></div>
             </div>
+
+            <CompletionModal
+                isOpen={showSuccess}
+                onClose={() => {
+                    setShowSuccess(false);
+                    navigate('/');
+                }}
+                title="Success!"
+                message={`Successfully imported ${novel?.title || 'the novel'} with ${progress.total} chapters.`}
+            />
         </div>
     );
 };

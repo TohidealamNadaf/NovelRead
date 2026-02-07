@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { dbService } from '../services/database.service';
 import { audioService } from '../services/audio.service';
 import { settingsService } from '../services/settings.service';
+import { CompletionModal } from '../components/CompletionModal';
 
 export const Reader = () => {
     const navigate = useNavigate();
@@ -20,6 +21,7 @@ export const Reader = () => {
     // User Settings State (Global)
     const [settings, setSettings] = useState(settingsService.getSettings());
     const [showSettings, setShowSettings] = useState(false);
+    const [showComingSoon, setShowComingSoon] = useState(false);
 
     const theme = settings.theme;
     const font = settings.fontFamily;
@@ -63,7 +65,7 @@ export const Reader = () => {
     };
 
     const handleNextChapter = async () => {
-        alert("Next chapter navigation to be implemented");
+        setShowComingSoon(true);
     };
 
     const handlePrevChapter = () => {
@@ -73,15 +75,13 @@ export const Reader = () => {
     const toggleTTS = () => {
         if (isSpeaking) {
             audioService.pauseSpeaking();
-            setIsSpeaking(false);
         } else {
             if (audioService.isSpeaking()) {
                 audioService.resumeSpeaking();
             } else if (chapter?.content) {
-                // Remove HTML tags for speaking, but pass metadata for the player
+                // Ensure content is loaded and strip minimal HTML if needed, though audioService handles it
                 audioService.speak(chapter.content, chapter.title, novel?.title || 'Unknown Novel', novel?.coverUrl);
             }
-            setIsSpeaking(true);
         }
     };
 
@@ -150,18 +150,20 @@ export const Reader = () => {
             className={`relative flex h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-hidden ${getThemeClass()}`}
         >
             {/* Top App Bar */}
-            <div className="flex items-center bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md p-4 pb-2 pt-[10px] justify-between sticky top-0 z-10 border-b border-gray-200 dark:border-gray-800">
-                <button onClick={handlePrevChapter} className="text-gray-900 dark:text-white flex size-12 shrink-0 items-center justify-center cursor-pointer">
-                    <ArrowLeft />
-                </button>
-                <div className="flex flex-col items-center flex-1 min-w-0 px-2">
-                    <h2 className="text-gray-900 dark:text-white text-sm font-bold leading-tight tracking-tight truncate w-full text-center">{chapter.title}</h2>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">Chapter {chapter.orderIndex + 1}</p>
-                </div>
-                <div className="flex w-12 items-center justify-end">
-                    <button onClick={() => setShowSettings(!showSettings)} className="flex items-center justify-center size-10 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
-                        <MoreHorizontal />
+            <div className="sticky top-0 z-10 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 pt-[14px]">
+                <div className="flex items-center p-4 pb-2 justify-between">
+                    <button onClick={handlePrevChapter} className="text-gray-900 dark:text-white flex size-12 shrink-0 items-center justify-center cursor-pointer">
+                        <ArrowLeft />
                     </button>
+                    <div className="flex flex-col items-center flex-1 min-w-0 px-2">
+                        <h2 className="text-gray-900 dark:text-white text-sm font-bold leading-tight tracking-tight truncate w-full text-center">{chapter.title}</h2>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">Chapter {chapter.orderIndex + 1}</p>
+                    </div>
+                    <div className="flex w-12 items-center justify-end">
+                        <button onClick={() => setShowSettings(!showSettings)} className="flex items-center justify-center size-10 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
+                            <MoreHorizontal />
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -300,6 +302,13 @@ export const Reader = () => {
                     </div>
                 </>
             )}
+
+            <CompletionModal
+                isOpen={showComingSoon}
+                onClose={() => setShowComingSoon(false)}
+                title="Coming Soon!"
+                message="Next chapter navigation is being optimized and will be available in the next update."
+            />
         </div>
     );
 };

@@ -1,15 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
 import { Play, Pause, BookOpen, X } from 'lucide-react';
 import { audioService } from '../services/audio.service';
 
 export const MiniPlayer = () => {
     const [track, setTrack] = useState<any>(null);
-    const location = useLocation();
 
-    // Hide on Reader page as it has its own controls
-    // Also hide if no track is loaded
-    const isReaderPage = location.pathname.startsWith('/read');
+    // Auto-update track state
 
     useEffect(() => {
         const unsubscribe = audioService.subscribe((state) => {
@@ -18,7 +14,7 @@ export const MiniPlayer = () => {
         return unsubscribe;
     }, []);
 
-    if (!track || isReaderPage) return null;
+    if (!track) return null;
 
     const togglePlayback = (e: React.MouseEvent) => {
         e.stopPropagation();

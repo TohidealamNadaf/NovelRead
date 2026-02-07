@@ -12,8 +12,36 @@ import { ScrapingHistory } from './pages/ScrapingHistory';
 import { PrivacySecurity } from './pages/PrivacySecurity';
 import { MiniPlayer } from './components/MiniPlayer';
 import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
 
 function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    let backButtonListener: any;
+
+    const setupListener = async () => {
+      backButtonListener = await CapApp.addListener('backButton', () => {
+        if (location.pathname === '/') {
+          CapApp.exitApp();
+        } else {
+          navigate(-1);
+        }
+      });
+    };
+
+    setupListener();
+
+    return () => {
+      if (backButtonListener) {
+        backButtonListener.remove();
+      }
+    };
+  }, [location, navigate]);
+
   return (
     <>
       {Capacitor.getPlatform() === 'web' && (

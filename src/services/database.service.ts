@@ -32,6 +32,7 @@ class DatabaseService {
                     author TEXT,
                     coverUrl TEXT,
                     sourceUrl TEXT NOT NULL,
+                    summary TEXT,
                     category TEXT,
                     status TEXT,
                     lastReadChapterId TEXT,
@@ -51,6 +52,28 @@ class DatabaseService {
             `;
 
             await this.db.execute(schema);
+
+            // Migration: Ensure new columns exist for older databases
+            const columnsToAdd = [
+                { name: 'summary', type: 'TEXT' },
+                { name: 'category', type: 'TEXT' },
+                { name: 'status', type: 'TEXT' }
+            ];
+
+            for (const col of columnsToAdd) {
+                try {
+                    // Check if column exists
+                    const tableInfo = await this.db.query(`PRAGMA table_info(novels)`);
+                    const exists = tableInfo.values?.some((c: any) => c.name === col.name);
+
+                    if (!exists) {
+                        console.log(`Migration: Adding column ${col.name} to novels table`);
+                        await this.db.execute(`ALTER TABLE novels ADD COLUMN ${col.name} ${col.type}`);
+                    }
+                } catch (e) {
+                    console.error(`Failed to migrate column ${col.name}`, e);
+                }
+            }
         } catch (error) {
             console.error("Database initialization failed", error);
         }
@@ -67,14 +90,24 @@ class DatabaseService {
         }
     }
 
-    async addNovel(novel: { id: string; title: string; author: string; coverUrl: string; sourceUrl: string; category?: string }) {
+    async addNovel(novel: { id: string; title: string; author?: string; coverUrl?: string; sourceUrl: string; category?: string; status?: string; summary?: string }) {
         const db = await this.getDB();
         if (!db) return;
         const query = `
-            INSERT OR REPLACE INTO novels (id, title, author, coverUrl, sourceUrl, category, lastReadChapterId)
-            VALUES (?, ?, ?, ?, ?, ?, ?);
+            INSERT OR REPLACE INTO novels (id, title, author, coverUrl, sourceUrl, category, status, summary, lastReadChapterId)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
         `;
-        await db.run(query, [novel.id, novel.title, novel.author, novel.coverUrl, novel.sourceUrl, novel.category || 'Unknown', null]);
+        await db.run(query, [
+            novel.id,
+            novel.title,
+            novel.author || 'Unknown',
+            novel.coverUrl || null,
+            novel.sourceUrl,
+            novel.category || 'Unknown',
+            novel.status || 'Ongoing',
+            novel.summary || null,
+            null
+        ]);
         await this.save();
     }
 
