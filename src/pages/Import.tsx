@@ -8,7 +8,7 @@ import clsx from 'clsx';
 
 export const Import = () => {
     const navigate = useNavigate();
-    const [url, setUrl] = useState('https://novelfire.com/novel/the-shadow-alchemist');
+    const [url, setUrl] = useState('');
     const [loading, setLoading] = useState(false);
     const [novel, setNovel] = useState<NovelMetadata | null>(null);
     const [scraping, setScraping] = useState(false);
@@ -56,7 +56,7 @@ export const Import = () => {
 
         try {
             // Save Novel Metadata first
-            const novelId = targetNovel.title.replace(/\s+/g, '-').toLowerCase().slice(0, 24) + '-' + Math.random().toString(36).slice(2, 7);
+            const novelId = targetNovel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) + '-' + Math.random().toString(36).slice(2, 7);
             await dbService.addNovel({
                 id: novelId,
                 title: targetNovel.title,

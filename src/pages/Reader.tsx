@@ -182,14 +182,6 @@ export const Reader = () => {
                 <div className="h-40"></div>
             </div>
 
-            {/* Mood Indicator */}
-            <div className="absolute top-20 right-4 flex items-center gap-2 bg-black/40 backdrop-blur-xl border border-white/10 rounded-full px-3 py-1.5 shadow-lg">
-                <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <span className="text-[10px] font-bold tracking-widest uppercase text-white">Mood: Calm</span>
-            </div>
 
             {/* AI Music Indicator */}
             {isMusicPlaying && (

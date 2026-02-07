@@ -60,7 +60,7 @@ export const ChapterList = () => {
         setIsScrapingNew(true);
         try {
             const scraped = await scraperService.fetchNovel(novel.sourceUrl);
-            const finalId = novel.id || (scraped.title.replace(/\s+/g, '-').toLowerCase().slice(0, 32) + '-' + Date.now().toString(36));
+            const finalId = novel.id || (scraped.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 32) + '-' + Date.now().toString(36));
 
             await dbService.addNovel({
                 ...scraped,
@@ -71,11 +71,22 @@ export const ChapterList = () => {
             // Save chapters
             for (let i = 0; i < scraped.chapters.length; i++) {
                 const ch = scraped.chapters[i];
+                let content = '';
+
+                // Scrape first 10 chapters immediately for better UX
+                if (i < 10) {
+                    try {
+                        content = await scraperService.fetchChapterContent(ch.url);
+                    } catch (e) {
+                        console.error(`Failed to scrape chapter ${i + 1} during initial import`, e);
+                    }
+                }
+
                 await dbService.addChapter({
                     id: `${finalId}-ch-${i + 1}`,
                     novelId: finalId,
                     title: ch.title,
-                    content: '',
+                    content: content,
                     orderIndex: i,
                     audioPath: ch.url
                 });
@@ -174,12 +185,22 @@ export const ChapterList = () => {
                     for (const ch of newChapters) {
                         const index = updatedNovel.chapters.findIndex(c => c.url === ch.url);
                         const chapterId = `${novel.id}-ch-${index + 1}`;
+                        let content = '';
+
+                        // Scrape first 5 new chapters immediately
+                        if (addedCount < 5) {
+                            try {
+                                content = await scraperService.fetchChapterContent(ch.url);
+                            } catch (e) {
+                                console.error(`Failed to scrape new chapter ${addedCount + 1} during sync`, e);
+                            }
+                        }
 
                         await dbService.addChapter({
                             id: chapterId,
                             novelId: novel.id,
                             title: ch.title,
-                            content: '',
+                            content: content,
                             orderIndex: index,
                             audioPath: ch.url
                         });

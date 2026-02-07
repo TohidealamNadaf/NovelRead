@@ -91,7 +91,7 @@ export const Discover = () => {
             setIsScraping(true);
             try {
                 const novel = await scraperService.fetchNovel(url);
-                const novelId = novel.title.replace(/\s+/g, '-').toLowerCase().slice(0, 32) + '-' + Date.now().toString(36);
+                const novelId = novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 32) + '-' + Date.now().toString(36);
                 await dbService.initialize();
                 await dbService.addNovel({
                     id: novelId,
@@ -105,11 +105,22 @@ export const Discover = () => {
                 const chaptersToSave = novel.chapters.slice(0, 50);
                 for (let i = 0; i < chaptersToSave.length; i++) {
                     const ch = chaptersToSave[i];
+                    let content = '';
+
+                    // Scrape first 5 chapters immediately for better UX
+                    if (i < 5) {
+                        try {
+                            content = await scraperService.fetchChapterContent(ch.url);
+                        } catch (e) {
+                            console.error(`Failed to scrape chapter ${i + 1} during quick import`, e);
+                        }
+                    }
+
                     await dbService.addChapter({
                         id: `${novelId}-ch-${i + 1}`,
                         novelId: novelId,
                         title: ch.title,
-                        content: '',
+                        content: content,
                         orderIndex: i,
                         audioPath: ch.url
                     });

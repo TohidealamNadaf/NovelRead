@@ -24,6 +24,8 @@ export const Home = () => {
         }
     };
 
+    const profileImage = localStorage.getItem('profileImage') || "https://lh3.googleusercontent.com/aida-public/AB6AXuDjCOham51YfTM7PcgkgKspU9PvDHuom_3rGeCzHDOnhZnOzp09BhpYTuEnobo9LY8vOsfLsujPy9_QEMQ7WaQQSrFMdLgnji7T5irQ-C7DSmSq-0RKsDtEHLdFk2Jd7O9Qpw1VCPG_71gSZCD9ROyRef4a9hy1bzxv5Kmeyh5eiAx9wKqIXAtSkLrqYxyMQFSb2RIi6syEVabDEHarMZ8ece6wHlOJW3ky5o3LtKvE3JC2EZaJpRlwT5R61uO6G-mUqtqV5qNjIYyE";
+
     return (
         <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark overflow-hidden">
             {/* Scrollable Content */}
@@ -32,7 +34,7 @@ export const Home = () => {
                 <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md pt-[14px]">
                     <div className="flex items-center p-4 pb-2 justify-between">
                         <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
-                            <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDjCOham51YfTM7PcgkgKspU9PvDHuom_3rGeCzHDOnhZnOzp09BhpYTuEnobo9LY8vOsfLsujPy9_QEMQ7WaQQSrFMdLgnji7T5irQ-C7DSmSq-0RKsDtEHLdFk2Jd7O9Qpw1VCPG_71gSZCD9ROyRef4a9hy1bzxv5Kmeyh5eiAx9wKqIXAtSkLrqYxyMQFSb2RIi6syEVabDEHarMZ8ece6wHlOJW3ky5o3LtKvE3JC2EZaJpRlwT5R61uO6G-mUqtqV5qNjIYyE")' }}></div>
+                            <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${profileImage}")` }}></div>
                         </Link>
                         <h2 className="text-xl font-bold leading-tight tracking-tight flex-1 text-center mr-[-40px]">Library</h2>
                         <div className="flex w-10 items-center justify-end">
@@ -67,7 +69,7 @@ export const Home = () => {
                     <h3 className="text-lg font-bold tracking-tight">My Collection</h3>
                     <button className="text-primary text-sm font-medium">Edit</button>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 px-4 pb-4">
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3 px-4 pb-4">
                     {novels.map((novel) => (
                         <Link key={novel.id} to={`/novel/${novel.id}`} className="flex flex-col gap-2 group">
                             <div className="relative aspect-[2/3] w-full rounded-lg overflow-hidden shadow-md group-active:scale-95 transition-transform duration-200">

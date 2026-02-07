@@ -4,6 +4,7 @@ import { BookOpen, Headphones, History, Settings, Shield, Edit, Check, Camera } 
 import { Navbar } from '../components/Navbar';
 import { dbService } from '../services/database.service';
 import { useNavigate } from 'react-router-dom';
+import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 
 export const Profile = () => {
     const navigate = useNavigate();
@@ -14,7 +15,20 @@ export const Profile = () => {
 
     useEffect(() => {
         loadStats();
+        loadProfile();
     }, []);
+
+    const loadProfile = () => {
+        const savedName = localStorage.getItem('profileName');
+        const savedImage = localStorage.getItem('profileImage');
+        if (savedName) setProfileName(savedName);
+        if (savedImage) setProfileImage(savedImage);
+    };
+
+    const saveProfile = (name: string, image: string) => {
+        localStorage.setItem('profileName', name);
+        localStorage.setItem('profileImage', image);
+    };
 
     const loadStats = async () => {
         try {
@@ -57,9 +71,27 @@ export const Profile = () => {
                         </div>
                         {isEditing && (
                             <button
-                                onClick={() => {
-                                    const url = prompt("Enter new image URL:", profileImage);
-                                    if (url) setProfileImage(url);
+                                onClick={async () => {
+                                    try {
+                                        const image = await CapCamera.getPhoto({
+                                            quality: 90,
+                                            allowEditing: true,
+                                            resultType: CameraResultType.DataUrl,
+                                            source: CameraSource.Photos
+                                        });
+                                        if (image.dataUrl) {
+                                            setProfileImage(image.dataUrl);
+                                            saveProfile(profileName, image.dataUrl);
+                                        }
+                                    } catch (e) {
+                                        console.error("Camera error", e);
+                                        // Fallback if camera fails
+                                        const url = prompt("Enter new image URL:", profileImage);
+                                        if (url) {
+                                            setProfileImage(url);
+                                            saveProfile(profileName, url);
+                                        }
+                                    }
                                 }}
                                 className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full cursor-pointer hover:bg-black/50 transition-colors"
                             >
@@ -84,7 +116,13 @@ export const Profile = () => {
                                 className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1 text-lg font-bold text-center outline-none focus:border-primary w-40"
                                 autoFocus
                             />
-                            <button onClick={() => setIsEditing(false)} className="size-8 rounded-full bg-green-500/20 text-green-500 flex items-center justify-center hover:bg-green-500/30">
+                            <button
+                                onClick={() => {
+                                    setIsEditing(false);
+                                    saveProfile(profileName, profileImage);
+                                }}
+                                className="size-8 rounded-full bg-green-500/20 text-green-500 flex items-center justify-center hover:bg-green-500/30"
+                            >
                                 <Check size={16} />
                             </button>
                         </div>

@@ -181,7 +181,7 @@ export class ScraperService {
             const listSelectors = [
                 '.chapter-list a', 'ul.chapter-list li a', '.list-chapter li a',
                 '#chapter-list a', '.chapters a', '.list-chapters a',
-                '#list-chapter .row a'
+                '#list-chapter .row a', '.list-item a', '.chapter-item a'
             ];
 
             let found = false;
@@ -189,26 +189,36 @@ export class ScraperService {
                 const els = $(sel);
                 if (els.length > 0) {
                     els.each((_, el) => {
-                        chapters.push({
-                            title: $(el).text().trim(),
-                            url: $(el).attr('href') || ''
-                        });
+                        const title = $(el).text().trim();
+                        const href = $(el).attr('href') || '';
+                        if (href && !href.startsWith('javascript') && !href.startsWith('#')) {
+                            chapters.push({ title, url: href });
+                        }
                     });
-                    found = true;
-                    break;
+                    if (chapters.length > 0) {
+                        found = true;
+                        break;
+                    }
                 }
             }
 
-            if (!found) {
+            // Fallback: search for any links that look like chapters or follow the novel's path pattern
+            if (!found || chapters.length < 5) {
+                const novelPath = baseUrl.split('/chapters')[0].split('/').pop() || '';
+
                 $('a').each((_, el) => {
                     const text = $(el).text().toLowerCase();
                     const href = $(el).attr('href') || '';
-                    if ((text.includes('chapter') || text.includes('episode') || href.includes('chapter')) &&
-                        href.length > 5 && !href.startsWith('javascript') && !href.startsWith('#')) {
-                        chapters.push({
-                            title: $(el).text().trim(),
-                            url: href
-                        });
+                    const isChapterLink = text.includes('chapter') || text.includes('episode') ||
+                        href.includes('/chapter-') || href.includes('/ch-') ||
+                        (novelPath && href.includes(novelPath) && (href.match(/\d+/) || href.includes('chap')));
+
+                    if (isChapterLink && href.length > 5 && !href.startsWith('javascript') && !href.startsWith('#')) {
+                        const title = $(el).text().trim() || href.split('/').pop()?.replace(/-/g, ' ') || 'Chapter';
+                        // Avoid duplicates
+                        if (!chapters.some(c => c.url === href)) {
+                            chapters.push({ title, url: href });
+                        }
                     }
                 });
             }
@@ -333,14 +343,35 @@ export class ScraperService {
         return $('body').html() || html;
     }
 
-    async fetchChapterContent(url: string): Promise<string> {
+    resolveUrl(baseUrl: string, relativeUrl: string): string {
+        try {
+            if (relativeUrl.startsWith('http')) return relativeUrl;
+            const urlObj = new URL(baseUrl);
+            const origin = urlObj.origin;
+            if (relativeUrl.startsWith('//')) return `https:${relativeUrl}`;
+            if (relativeUrl.startsWith('/')) return `${origin}${relativeUrl}`;
+            // Handle cases where baseUrl doesn't end with / and relativeUrl doesn't start with /
+            const baseDir = baseUrl.substring(0, baseUrl.lastIndexOf('/') + 1);
+            return `${baseDir}${relativeUrl}`;
+        } catch (e) {
+            return relativeUrl;
+        }
+    }
+
+    async fetchChapterContent(url: string, visitedUrls: Set<string> = new Set()): Promise<string> {
+        if (visitedUrls.has(url)) {
+            console.warn('[Scraper] Recursive redirect detected for:', url);
+            return '<p>Error: Infinite redirect detected at source.</p>';
+        }
+        visitedUrls.add(url);
+
         let targetUrl = url;
         const isWeb = Capacitor.getPlatform() === 'web';
         if (isWeb && !targetUrl.includes('corsproxy.io')) {
             targetUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
         }
 
-        console.log(`Fetching chapter content from: ${targetUrl}`);
+        console.log(`[Scraper] Fetching chapter content: ${targetUrl}`);
         const response = await CapacitorHttp.get({
             url: targetUrl,
             headers: {
@@ -348,29 +379,84 @@ export class ScraperService {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
             }
         });
+
+        // Follow HTTP level redirects if CapacitorHttp didn't (though it usually does)
+        if (response.status === 301 || response.status === 302) {
+            const loc = response.headers['Location'] || response.headers['location'];
+            if (loc) {
+                const resolved = this.resolveUrl(url, loc);
+                console.log(`[Scraper] Following HTTP ${response.status} to: ${resolved}`);
+                return this.fetchChapterContent(resolved, visitedUrls);
+            }
+        }
+
         const $ = cheerio.load(response.data);
 
-        // Remove known junk
+        // --- Redirect Detection in HTML ---
+        // 1. Meta Refresh
+        const metaRefresh = $('meta[http-equiv="refresh"]').attr('content');
+        if (metaRefresh && metaRefresh.toLowerCase().includes('url=')) {
+            let redirectPart = metaRefresh.split(/url=/i)[1]?.split(';')[0]?.trim();
+            redirectPart = redirectPart?.replace(/['"]/g, '');
+            if (redirectPart) {
+                const resolved = this.resolveUrl(url, redirectPart);
+                console.log(`[Scraper] Following meta refresh to: ${resolved}`);
+                return this.fetchChapterContent(resolved, visitedUrls);
+            }
+        }
+
+        // 2. JS Redirection
+        const scripts = $('script').text();
+        const jsReloadMatch = scripts.match(/window\.location\.(?:replace|href)\s*=\s*['"]([^'"]+)['"]/);
+        if (jsReloadMatch && jsReloadMatch[1]) {
+            const resolved = this.resolveUrl(url, jsReloadMatch[1]);
+            console.log(`[Scraper] Following JS redirect to: ${resolved}`);
+            return this.fetchChapterContent(resolved, visitedUrls);
+        }
+
+        // Remove known junk AFTER redirect checks
         $('script, style, .ads, .ad-container, iframe, .hidden, .announcement').remove();
 
-        // Try generic content selectors in order of likelihood
         const contentSelectors = [
             '#chapter-content', '.chapter-content', '#chr-content',
             '.read-content', '.reading-content', '.text-left',
-            '#content', '.entry-content'
+            '#content', '.entry-content', 'article', '.chapter-readable',
+            '.read-container', '.chapter-text', '.chapter-body'
         ];
 
         let content = '';
         for (const sel of contentSelectors) {
-            if ($(sel).length > 0) {
-                // Get inner HTML
-                content = $(sel).html() || '';
-                break;
+            const el = $(sel);
+            if (el.length > 0) {
+                // Heuristic: Check if the element actually has substantial text
+                if (el.text().trim().length > 200) {
+                    content = el.html() || '';
+                    break;
+                }
             }
         }
 
+        if (!content || content.length < 500) {
+            // Robust Heuristic Scan: Look for any div/section with high text density
+            // This captures content even if the selector is wrong or obfuscated
+            $('div, section, main').each((_, el) => {
+                const $el = $(el);
+                const text = $el.text().trim();
+                const pCount = $el.find('p').length;
+                const brCount = $el.find('br').length;
+
+                // If it has a lot of text and some structure (paragraphs or breaks)
+                if (text.length > 1000 && (pCount > 3 || brCount > 5)) {
+                    // Avoid picking the whole body if possible, look for the smallest container
+                    if (!content || text.length < $(content).text().length) {
+                        content = $el.html() || '';
+                    }
+                }
+            });
+        }
+
         if (!content) {
-            return '<p>Content not found. Please verify the source.</p>';
+            return '<p>Content not found. The source might be protected or requires a specific redirect.</p>';
         }
 
         return this.enhanceContent(content);
@@ -386,9 +472,16 @@ export class ScraperService {
         const isWeb = Capacitor.getPlatform() === 'web';
         const origin = 'https://novelfire.net';
 
-        const parseNovels = ($: any, selector: string) => {
+        const parseNovels = ($: any, selector: any) => {
             const novels: (NovelMetadata & { sourceUrl: string })[] = [];
-            $(selector).each((_: number, el: any) => {
+
+            // Actually, keep the loop but make it work with $(selector) directly if it's a container
+            const $container = $(selector);
+            const items = $container.hasClass('item') || $container.hasClass('book-item')
+                ? $container
+                : $container.find('.item, .book-item, .list-row, .col-6, .box, [class*="item"], a[href*="/book/"], a[href*="/novel/"]');
+
+            items.each((_: number, el: any) => {
                 const $el = $(el);
                 let title = $el.find('h3, h4, h5, .title, .book-name, .novel-title').first().text().trim();
                 let url = $el.find('a[href*="/book/"], a[href*="/novel/"]').first().attr('href') || $el.find('a').first().attr('href') || '';
@@ -467,11 +560,48 @@ export class ScraperService {
 
                     const $ = cheerio.load(html);
 
-                    const recommended = parseNovels($, '.recommended-novels .item, .featured .item, .hot-novels .item, .carousel-item, .trending-item, .item-recommended, .section-recommended .item, .home-recommended .item, .recommended .item, [class*="recommended"] .item');
-                    const ranking = parseNovels($, '.ranking-list .item, .top-rated .item, .ranking .item, .list-ranking .item, .item-ranking, .section-ranking .item, .home-ranking .item, .ranking .list-row, [class*="ranking"] .item, [class*="top-rated"] .item');
-                    const latest = parseNovels($, '.latest-updates .item, .new-novels .item, .list-novel .item, .update-item, .latest-releases .item, .section-latest .item, .home-latest .item, .latest-releases .item, [class*="latest"] .item, [class*="new-novels"] .item');
-                    const recentlyAdded = parseNovels($, '.recent-chapters .item, .recent-updates .item, .newest-item, .item-recent, .section-recent .item, .home-recent .item, [class*="recent"] .item');
-                    const completed = parseNovels($, '.completed-stories .item, .completed .item, .item-completed, .section-completed .item, .home-completed .item, .completed-source .item, [class*="completed"] .item');
+                    // --- New Heading-Based Extraction Strategy ---
+                    const findSectionByHeading = (keywords: string[]) => {
+                        let foundNovels: (NovelMetadata & { sourceUrl: string })[] = [];
+
+                        $('h1, h2, h3, h4, h5, h6, .section-title, .title').each((_, el) => {
+                            const text = $(el).text().toLowerCase();
+                            if (keywords.some(k => text.includes(k))) {
+                                // Found a heading, now look for the nearest container with links
+                                // Check next sibling first
+                                let container = $(el).next();
+                                if (container.length === 0 || container.find('a').length < 2) {
+                                    // Try parent's next sibling or parent itself
+                                    container = $(el).parent().next();
+                                }
+                                if (container.length === 0 || container.find('a').length < 2) {
+                                    container = $(el).parent();
+                                }
+
+                                const novels = parseNovels($, container);
+                                if (novels.length > 2) {
+                                    foundNovels = novels;
+                                    return false; // break loop
+                                }
+                            }
+                        });
+                        return foundNovels;
+                    };
+
+                    const recommended = findSectionByHeading(['recommended', 'featured', 'hot', 'hot-novels', 'trending']) ||
+                        parseNovels($, '.recommended-novels .item, .featured .item, .hot-novels .item, .carousel-item, .trending-item, .item-recommended, .section-recommended .item, .home-recommended .item, .recommended .item, [class*="recommended"] .item');
+
+                    const ranking = findSectionByHeading(['ranking', 'top', 'rating', 'popular']) ||
+                        parseNovels($, '.ranking-list .item, .top-rated .item, .ranking .item, .list-ranking .item, .item-ranking, .section-ranking .item, .home-ranking .item, .ranking .list-row, [class*="ranking"] .item, [class*="top-rated"] .item');
+
+                    const latest = findSectionByHeading(['latest', 'update', 'new']) ||
+                        parseNovels($, '.latest-updates .item, .new-novels .item, .list-novel .item, .update-item, .latest-releases .item, .section-latest .item, .home-latest .item, .latest-releases .item, [class*="latest"] .item, [class*="new-novels"] .item');
+
+                    const recentlyAdded = findSectionByHeading(['recent', 'added']) ||
+                        parseNovels($, '.recent-chapters .item, .recent-updates .item, .newest-item, .item-recent, .section-recent .item, .home-recent .item, [class*="recent"] .item');
+
+                    const completed = findSectionByHeading(['completed', 'full']) ||
+                        parseNovels($, '.completed-stories .item, .completed .item, .item-completed, .section-completed .item, .home-completed .item, .completed-source .item, [class*="completed"] .item');
 
                     // Aggregate
                     if (recommended.length > 0) results.recommended = [...results.recommended, ...recommended.slice(0, 5)];
