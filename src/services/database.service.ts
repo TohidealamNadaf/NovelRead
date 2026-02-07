@@ -25,6 +25,9 @@ class DatabaseService {
             this.db = await this.sqlite.createConnection('novel_db', false, 'no-encryption', 1, false);
             await this.db.open();
 
+            // Enable foreign keys
+            await this.db.execute('PRAGMA foreign_keys = ON;');
+
             const schema = `
                 CREATE TABLE IF NOT EXISTS novels (
                     id TEXT PRIMARY KEY,
@@ -152,12 +155,16 @@ class DatabaseService {
     async deleteNovel(id: string) {
         const db = await this.getDB();
         if (!db) return;
-        // Cascading delete should handle chapters if foreign keys are enforced, 
-        // but let's be safe and delete chapters first or rely on cascade.
-        // SQLite in capacitor might need explicit pragma for foreign keys.
-        // For now, let's just delete the novel.
-        await db.run('DELETE FROM novels WHERE id = ?', [id]);
-        await this.save();
+
+        try {
+            // Manually delete chapters first to ensure cleanup even without cascade
+            await db.run('DELETE FROM chapters WHERE novelId = ?', [id]);
+            await db.run('DELETE FROM novels WHERE id = ?', [id]);
+            await this.save();
+        } catch (e) {
+            console.error("Failed to delete novel", e);
+            throw e;
+        }
     }
 }
 

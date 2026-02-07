@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { dbService } from '../services/database.service';
 import { scraperService } from '../services/scraper.service';
 import { CompletionModal } from '../components/CompletionModal';
-import { ArrowLeft, MoreHorizontal, Search, Filter, Download, CheckCircle, DownloadCloud, PlayCircle } from 'lucide-react';
+import { ArrowLeft, MoreHorizontal, Search, Filter, Download, CheckCircle, DownloadCloud, PlayCircle, Trash2 } from 'lucide-react';
 
 export const ChapterList = () => {
     const { novelId } = useParams<{ novelId: string }>();
@@ -229,6 +229,21 @@ export const ChapterList = () => {
         }
     };
 
+    const handleDelete = async () => {
+        if (!novel) return;
+
+        const confirmed = confirm(`Are you sure you want to delete "${novel.title}"? All chapters and progress will be removed.`);
+        if (!confirmed) return;
+
+        try {
+            await dbService.deleteNovel(novel.id);
+            navigate('/', { replace: true });
+        } catch (error) {
+            console.error("Deletion failed", error);
+            alert("Failed to delete novel. Please try again.");
+        }
+    };
+
     if (loading) {
         return <div className="flex h-screen items-center justify-center dark:bg-background-dark"><p className="dark:text-white">Loading...</p></div>;
     }
@@ -288,12 +303,19 @@ export const ChapterList = () => {
                                         Sort: {sortOrder === 'asc' ? 'Newest First' : 'Oldest First'}
                                     </button>
                                     <button
-                                        className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2 text-slate-700 dark:text-slate-200"
+                                        className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2 border-b border-slate-100 dark:border-white/5 text-slate-700 dark:text-slate-200"
                                         onClick={handleSync}
                                         disabled={isSyncing}
                                     >
                                         <DownloadCloud size={16} className={isSyncing ? "animate-pulse" : ""} />
                                         {isSyncing ? "Syncing..." : "Sync Chapters"}
+                                    </button>
+                                    <button
+                                        className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-950/20 flex items-center gap-2 text-red-600 dark:text-red-400"
+                                        onClick={handleDelete}
+                                    >
+                                        <Trash2 size={16} />
+                                        Delete Novel
                                     </button>
                                 </div>
                             </>
