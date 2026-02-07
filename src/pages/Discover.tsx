@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Play, SkipBack, SkipForward, Bolt, BookOpen, Star, Rocket, Heart, Swords, Download } from 'lucide-react';
+import { Search, Play, SkipBack, SkipForward, Bolt, BookOpen, Rocket, Heart, Swords, Download } from 'lucide-react';
 import { scraperService } from '../services/scraper.service';
 import { dbService } from '../services/database.service';
 import { BottomNav } from '../components/BottomNav';
