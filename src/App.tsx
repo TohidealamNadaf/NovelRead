@@ -10,6 +10,7 @@ import { Settings } from './pages/Settings';
 import { Reader } from './pages/Reader';
 import { ScrapingHistory } from './pages/ScrapingHistory';
 import { PrivacySecurity } from './pages/PrivacySecurity';
+import { Notifications } from './pages/Notifications';
 import { MiniPlayer } from './components/MiniPlayer';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -60,6 +61,7 @@ function App() {
         <Route path="/profile" element={<Profile />} />
         <Route path="/history" element={<ScrapingHistory />} />
         <Route path="/privacy" element={<PrivacySecurity />} />
+        <Route path="/notifications" element={<Notifications />} />
 
         {/* Route alias for development/testing UI */}
         <Route path="/reader" element={<Reader />} />

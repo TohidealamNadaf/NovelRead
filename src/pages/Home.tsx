@@ -1,14 +1,21 @@
+
 import { useState, useEffect } from 'react';
 import { Navbar } from '../components/Navbar';
 import { dbService } from '../services/database.service';
 import { Link } from 'react-router-dom';
-import { Search, Settings, Plus } from 'lucide-react';
+import { Search, Bell, Plus } from 'lucide-react';
+import { notificationService } from '../services/notification.service';
 
 export const Home = () => {
     const [novels, setNovels] = useState<any[]>([]);
+    const [unreadCount, setUnreadCount] = useState(0);
 
     useEffect(() => {
         loadLibrary();
+        const unsubscribe = notificationService.subscribe(() => {
+            setUnreadCount(notificationService.getUnreadCount());
+        });
+        return unsubscribe;
     }, []);
 
     const loadLibrary = async () => {
@@ -38,8 +45,13 @@ export const Home = () => {
                         </Link>
                         <h2 className="text-xl font-bold leading-tight tracking-tight flex-1 text-center mr-[-40px]">Library</h2>
                         <div className="flex w-10 items-center justify-end">
-                            <Link to="/settings" className="flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
-                                <Settings size={20} />
+                            <Link to="/notifications" className="flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors relative">
+                                <Bell size={22} className="text-slate-700 dark:text-white" />
+                                {unreadCount > 0 && (
+                                    <span className="absolute top-1.5 right-1.5 size-4 bg-primary text-white text-[10px] font-bold flex items-center justify-center rounded-full ring-2 ring-white dark:ring-background-dark">
+                                        {unreadCount}
+                                    </span>
+                                )}
                             </Link>
                         </div>
                     </div>

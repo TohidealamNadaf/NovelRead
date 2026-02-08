@@ -1,3 +1,5 @@
+import { settingsService } from './settings.service';
+
 // Define types
 export interface TrackInfo {
     title: string;
@@ -36,6 +38,12 @@ export class AudioService {
 
     constructor() {
         this.synthesis = typeof window !== 'undefined' ? window.speechSynthesis : null;
+
+        // Load persisted settings
+        const settings = settingsService.getSettings();
+        this.pitch = settings.ttsPitch;
+        this.rate = settings.ttsRate;
+        this.ambienceTrack = settings.ambience;
     }
 
     // --- State Management ---
@@ -79,9 +87,18 @@ export class AudioService {
     }
 
     setSettings(settings: { pitch?: number; rate?: number; voice?: SpeechSynthesisVoice }) {
-        if (settings.pitch !== undefined) this.pitch = settings.pitch;
-        if (settings.rate !== undefined) this.rate = settings.rate;
-        if (settings.voice) this.selectedVoice = settings.voice;
+        if (settings.pitch !== undefined) {
+            this.pitch = settings.pitch;
+            settingsService.updateSettings({ ttsPitch: this.pitch });
+        }
+        if (settings.rate !== undefined) {
+            this.rate = settings.rate;
+            settingsService.updateSettings({ ttsRate: this.rate });
+        }
+        if (settings.voice) {
+            this.selectedVoice = settings.voice;
+            settingsService.updateSettings({ ttsVoice: this.selectedVoice.name });
+        }
 
         // If currently speaking, apply changes immediately (restart speech)
         if (this.isSpeaking()) {
@@ -105,6 +122,7 @@ export class AudioService {
 
         this.stopBGM();
         this.ambienceTrack = track;
+        settingsService.updateSettings({ ambience: track });
 
         // In a real app, these would be actual files. 
         // For now, we'll just log or use placeholders if available.
@@ -157,7 +175,12 @@ export class AudioService {
                 isPlaying: true,
                 type: 'bgm'
             });
+            // We could store category in settings if we want to persist BGM too
         }).catch(e => console.log("BGM play failed", e));
+    }
+
+    getAmbienceTrack() {
+        return this.ambienceTrack;
     }
 
     stopBGM() {
@@ -165,6 +188,7 @@ export class AudioService {
             this.bgmAudio.pause();
             this.bgmAudio = null;
             this.ambienceTrack = null;
+            settingsService.updateSettings({ ambience: null });
             if (this.state.currentTrack?.type === 'bgm') {
                 this.updateState(null); // Clear state if BGM stopped and it was the main track
             }

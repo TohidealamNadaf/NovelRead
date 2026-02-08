@@ -15,6 +15,13 @@ export interface AppSettings {
     downloadLocation: 'internal' | 'external';
     scraperProxy: string | null;
     cloudSync: boolean;
+
+    // AI Audio
+    ttsVoice: string | null;
+    ttsRate: number;
+    ttsPitch: number;
+    ambience: 'rainy' | 'fireplace' | 'forest' | null;
+    isMusicEnabled: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -26,7 +33,12 @@ const DEFAULT_SETTINGS: AppSettings = {
     pageFlipAnimation: false,
     downloadLocation: 'internal',
     scraperProxy: null,
-    cloudSync: true
+    cloudSync: true,
+    ttsVoice: null,
+    ttsRate: 1.2,
+    ttsPitch: 0,
+    ambience: null,
+    isMusicEnabled: true
 };
 
 export class SettingsService {

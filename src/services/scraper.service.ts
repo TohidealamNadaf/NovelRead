@@ -1,6 +1,7 @@
 import { CapacitorHttp, Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { dbService } from './database.service';
+import { notificationService } from './notification.service';
 import * as cheerio from 'cheerio';
 
 export interface NovelMetadata {
@@ -74,21 +75,30 @@ export class ScraperService {
     }
 
     private async finishNotification(novelTitle: string, success: boolean, customMessage?: string) {
-        if (Capacitor.getPlatform() === 'web') return;
-
-        try {
-            await LocalNotifications.cancel({ notifications: [{ id: 1001 }] });
-            await LocalNotifications.schedule({
-                notifications: [{
-                    id: 1002,
-                    title: success ? 'Import Success!' : 'Import Failed',
-                    body: customMessage || (success ? `Successfully imported ${novelTitle}` : `Failed to import ${novelTitle}`),
-                    schedule: { at: new Date(Date.now() + 100) }
-                }]
-            });
-        } catch (e) {
-            console.error("Failed to finish notification", e);
+        if (Capacitor.getPlatform() !== 'web') {
+            try {
+                await LocalNotifications.cancel({ notifications: [{ id: 1001 }] });
+                await LocalNotifications.schedule({
+                    notifications: [{
+                        id: 1002,
+                        title: success ? 'Import Success!' : 'Import Failed',
+                        body: customMessage || (success ? `Successfully imported ${novelTitle}` : `Failed to import ${novelTitle}`),
+                        schedule: { at: new Date(Date.now() + 100) }
+                    }]
+                });
+            } catch (e) {
+                console.error("Failed to finish notification", e);
+            }
         }
+
+        // Add to in-app notifications
+        await notificationService.addNotification({
+            title: success ? 'Scrape Complete' : 'Scrape Failed',
+            body: customMessage || (success ? `Successfully imported ${novelTitle}` : `Failed to import ${novelTitle}`),
+            type: 'scrape',
+            imageUrl: this.activeNovel?.coverUrl,
+            payload: { novelId: this.activeNovel?.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) }
+        });
     }
 
     async startImport(url: string, novel: NovelMetadata) {

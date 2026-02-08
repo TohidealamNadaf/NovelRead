@@ -157,8 +157,12 @@ export const Reader = () => {
             audioService.stopBGM();
             setIsMusicPlaying(false);
         } else {
-            // Simple heuristic for category - defaults to fantasy
-            audioService.playBGM('fantasy');
+            const currentAmbience = audioService.getAmbienceTrack();
+            if (currentAmbience) {
+                audioService.playAmbience(currentAmbience);
+            } else {
+                audioService.playBGM('fantasy');
+            }
             setIsMusicPlaying(true);
         }
     };

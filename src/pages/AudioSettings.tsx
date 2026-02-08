@@ -4,31 +4,41 @@ import { audioService } from '../services/audio.service';
 import { Navbar } from '../components/Navbar';
 import clsx from 'clsx';
 import { Link } from 'react-router-dom';
+import { settingsService } from '../services/settings.service';
 
 export const AudioSettings = () => {
     // const navigate = useNavigate(); // Unused now
     const [voice, setVoice] = useState<'female' | 'male'>('female');
-    const [rate, setRate] = useState(1.2);
-    const [pitch, setPitch] = useState(0);
-    const [ambience, setAmbience] = useState<'rainy' | 'fireplace' | 'forest' | null>(null);
-    const [bgmEnabled, setBgmEnabled] = useState(true);
+    const [rate, setRate] = useState(settingsService.getSettings().ttsRate);
+    const [pitch, setPitch] = useState(settingsService.getSettings().ttsPitch);
+    const [ambience, setAmbience] = useState<'rainy' | 'fireplace' | 'forest' | null>(settingsService.getSettings().ambience);
+    const [bgmEnabled, setBgmEnabled] = useState(settingsService.getSettings().isMusicEnabled);
     const [voiceVolume, setVoiceVolume] = useState(80);
     const [bgmVolume, setBgmVolume] = useState(35);
+    const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
     // Load voices and update settings
     useEffect(() => {
         const updateVoices = () => {
             const voices = audioService.getVoices();
+            setAvailableVoices(voices);
+
             if (voices.length > 0) {
-                const selectedVoice = voices.find(v =>
-                    voice === 'female' ? v.name.includes('Female') || v.name.includes('Sira') || v.name.includes('Zira') || v.name.includes('Google')
-                        : v.name.includes('Male') || v.name.includes('David')
-                ) || voices[0];
+                // Try to find the persisted voice if available
+                const savedVoiceName = settingsService.getSettings().ttsVoice;
+                let selected = voices.find(v => v.name === savedVoiceName);
+
+                if (!selected) {
+                    selected = voices.find(v =>
+                        voice === 'female' ? v.name.includes('Female') || v.name.includes('Sira') || v.name.includes('Zira') || v.name.includes('Google')
+                            : v.name.includes('Male') || v.name.includes('David')
+                    ) || voices[0];
+                }
 
                 audioService.setSettings({
                     rate: rate,
                     pitch: 1.0 + (pitch * 0.1),
-                    voice: selectedVoice
+                    voice: selected
                 });
             }
         };
@@ -36,13 +46,14 @@ export const AudioSettings = () => {
         updateVoices();
         if (typeof window !== 'undefined' && window.speechSynthesis) {
             window.speechSynthesis.onvoiceschanged = updateVoices;
-        }
 
-        return () => {
-            if (typeof window !== 'undefined' && window.speechSynthesis) {
+            // Some mobile browsers need a small delay or re-poll
+            const timer = setTimeout(updateVoices, 100);
+            return () => {
                 window.speechSynthesis.onvoiceschanged = null;
-            }
-        };
+                clearTimeout(timer);
+            };
+        }
     }, [rate, pitch, voice]);
 
     const toggleAmbience = (track: 'rainy' | 'fireplace' | 'forest') => {
@@ -124,14 +135,14 @@ export const AudioSettings = () => {
                         <select
                             className="w-full bg-slate-100 dark:bg-[#2b2839] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-lg p-3 outline-none focus:border-primary/50 text-sm"
                             onChange={(e) => {
-                                const voices = audioService.getVoices();
-                                const selected = voices.find(v => v.name === e.target.value);
+                                const selected = availableVoices.find(v => v.name === e.target.value);
                                 if (selected) {
                                     audioService.setSettings({ voice: selected });
                                 }
                             }}
+                            value={settingsService.getSettings().ttsVoice || ''}
                         >
-                            {audioService.getVoices()
+                            {availableVoices
                                 .filter(v => {
                                     // Filter for English voices only
                                     if (!v.lang.startsWith('en')) return false;
@@ -222,7 +233,12 @@ export const AudioSettings = () => {
                         </h3>
                         <div className="flex gap-2">
                             <button
-                                onClick={() => setBgmEnabled(!bgmEnabled)}
+                                onClick={() => {
+                                    const next = !bgmEnabled;
+                                    setBgmEnabled(next);
+                                    settingsService.updateSettings({ isMusicEnabled: next });
+                                    if (!next) audioService.stopBGM();
+                                }}
                                 className={clsx("px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors", bgmEnabled ? 'bg-primary text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-500 dark:text-slate-400')}
                             >
                                 {bgmEnabled ? 'BGM ON' : 'BGM OFF'}
