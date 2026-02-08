@@ -695,6 +695,8 @@ export class ScraperService {
             url += `?page=${page}`;
         }
 
+        console.log(`[Scraper] Fetching Ranking: ${url} (page ${page})`);
+
         for (const getProxyUrl of this.getProxies()) {
             try {
                 const html = await this.fetchHtml(url, getProxyUrl);
@@ -737,6 +739,7 @@ export class ScraperService {
 
     async fetchLatest(page: number = 1): Promise<NovelMetadata[]> {
         const url = `https://novelfire.net/genre-all/sort-new/status-all/all-novel${page > 1 ? `?page=${page}` : ''}`;
+        console.log(`[Scraper] Fetching Latest: ${url} (page ${page})`);
         for (const getProxyUrl of this.getProxies()) {
             try {
                 const html = await this.fetchHtml(url, getProxyUrl);
@@ -771,6 +774,7 @@ export class ScraperService {
 
     async fetchCompleted(page: number = 1): Promise<NovelMetadata[]> {
         const url = `https://novelfire.net/genre-all/sort-popular/status-completed/all-novel${page > 1 ? `?page=${page}` : ''}`;
+        console.log(`[Scraper] Fetching Completed: ${url} (page ${page})`);
         for (const getProxyUrl of this.getProxies()) {
             try {
                 const html = await this.fetchHtml(url, getProxyUrl);

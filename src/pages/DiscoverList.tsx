@@ -40,17 +40,17 @@ export const DiscoverList = () => {
                 pageTitle = 'Top Ranking';
                 const liveRanking = await scraperService.fetchRanking(rankType, pageNum);
                 data = liveRanking;
-                setHasMore(liveRanking.length >= 10);
+                setHasMore(liveRanking.length >= 20);
             } else if (category === 'latest' || category === 'new') {
                 pageTitle = 'Latest Novels';
                 const liveLatest = await scraperService.fetchLatest(pageNum);
                 data = liveLatest;
-                setHasMore(liveLatest.length >= 10);
+                setHasMore(liveLatest.length >= 20);
             } else if (category === 'completed') {
                 pageTitle = 'Completed Stories';
                 const liveCompleted = await scraperService.fetchCompleted(pageNum);
                 data = liveCompleted.length > 0 ? liveCompleted : (pageNum === 1 ? homeData?.completed || [] : []);
-                setHasMore(liveCompleted.length >= 10);
+                setHasMore(liveCompleted.length >= 20);
             } else if (category) {
                 pageTitle = category.charAt(0).toUpperCase() + category.slice(1);
                 data = [];
@@ -157,14 +157,23 @@ export const DiscoverList = () => {
                         <div className="grid grid-cols-4 gap-x-3 gap-y-4">
                             {filteredNovels.map((novel, index) => (
                                 <div key={index} className="flex flex-col gap-1.5 cursor-pointer active:scale-95 transition-transform" onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}>
-                                    <div className="relative aspect-[2/3] w-full rounded-lg overflow-hidden shadow-md border border-slate-100 dark:border-white/5">
+                                    <div className="relative aspect-[2/3] w-full rounded-lg overflow-hidden shadow-md border border-slate-100 dark:border-white/5 bg-slate-200 dark:bg-[#2b2839]">
                                         {novel.coverUrl ? (
-                                            <img src={novel.coverUrl} className="absolute inset-0 w-full h-full object-cover" alt={novel.title} />
-                                        ) : (
-                                            <div className="absolute inset-0 bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center">
-                                                <BookOpen className="text-2xl text-slate-400" />
-                                            </div>
-                                        )}
+                                            <img
+                                                src={novel.coverUrl}
+                                                className="absolute inset-0 w-full h-full object-cover"
+                                                alt={novel.title}
+                                                loading="eager"
+                                                onError={(e) => {
+                                                    const target = e.target as HTMLImageElement;
+                                                    target.style.display = 'none';
+                                                }}
+                                            />
+                                        ) : null}
+                                        {/* Fallback icon shown when no image or while loading */}
+                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                            <BookOpen className="text-2xl text-slate-400 opacity-30" />
+                                        </div>
 
                                         {/* Badges */}
                                         {novel.badge === 'bolt' && (
@@ -180,7 +189,7 @@ export const DiscoverList = () => {
 
                                         {category === 'ranking' && (
                                             <div className="absolute top-1 left-1 bg-black/60 backdrop-blur-sm text-white size-5 flex items-center justify-center rounded font-bold text-[8px]">
-                                                #{(page - 1) * 10 + index + 1}
+                                                #{(page - 1) * 24 + index + 1}
                                             </div>
                                         )}
                                     </div>
