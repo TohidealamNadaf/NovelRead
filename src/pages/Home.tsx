@@ -39,11 +39,11 @@ export const Home = () => {
             <div className="flex-1 overflow-y-auto pb-24">
                 {/* Top App Bar */}
                 <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md pt-[16px]">
-                    <div className="flex items-center p-4 pb-2 justify-between">
+                    <div className="flex items-center p-4 pb-2 justify-between relative">
                         <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
                             <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${profileImage}")` }}></div>
                         </Link>
-                        <h2 className="text-xl font-bold leading-tight tracking-tight flex-1 text-center mr-[-40px]">Library</h2>
+                        <h2 className="text-xl font-bold leading-tight tracking-tight absolute left-1/2 -translate-x-1/2">Library</h2>
                         <div className="flex w-10 items-center justify-end">
                             <Link to="/notifications" className="flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors relative">
                                 <Bell size={22} className="text-slate-700 dark:text-white" />
@@ -107,6 +107,6 @@ export const Home = () => {
             </div>
 
             <Navbar />
-        </div>
+        </div >
     );
 };
