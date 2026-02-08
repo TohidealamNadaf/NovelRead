@@ -1,8 +1,9 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Search, Bolt, TrendingUp, BookOpen } from 'lucide-react';
+import { ArrowLeft, Search, Bolt, TrendingUp, BookOpen, RefreshCw } from 'lucide-react';
 import { Navbar } from '../components/Navbar';
+import { scraperService } from '../services/scraper.service';
 
 export const DiscoverList = () => {
     const { category } = useParams<{ category: string }>();
@@ -10,6 +11,7 @@ export const DiscoverList = () => {
     const [title, setTitle] = useState('');
     const [novels, setNovels] = useState<any[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
         loadCategoryData();
@@ -18,6 +20,7 @@ export const DiscoverList = () => {
     const loadCategoryData = async () => {
         let pageTitle = 'Discover';
         let data: any[] = [];
+        setIsLoading(true);
 
         const storedHomeData = localStorage.getItem('homeData');
         const homeData = storedHomeData ? JSON.parse(storedHomeData) : null;
@@ -27,7 +30,17 @@ export const DiscoverList = () => {
             data = homeData?.recommended || [];
         } else if (category === 'ranking') {
             pageTitle = 'Top Ranking';
-            data = homeData?.ranking || [];
+            try {
+                const liveRanking = await scraperService.fetchRanking();
+                if (liveRanking && liveRanking.length > 0) {
+                    data = liveRanking;
+                } else {
+                    data = homeData?.ranking || [];
+                }
+            } catch (e) {
+                console.error("Live ranking fetch failed", e);
+                data = homeData?.ranking || [];
+            }
         } else if (category === 'latest' || category === 'new') {
             pageTitle = category === 'latest' ? 'Latest Updates' : 'New Scrapes';
             data = homeData?.latest || [];
@@ -36,12 +49,12 @@ export const DiscoverList = () => {
             data = homeData?.completed || [];
         } else if (category) {
             pageTitle = category.charAt(0).toUpperCase() + category.slice(1);
-            // Genre filtering would happen here if we had genre metadata
             data = [];
         }
 
         setTitle(pageTitle);
         setNovels(data);
+        setIsLoading(false);
     };
 
     const filteredNovels = novels.filter(n => n.title.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -88,37 +101,49 @@ export const DiscoverList = () => {
 
             {/* Grid Content - Independent Scroll */}
             <div className="flex-1 overflow-y-auto px-4 pt-2 pb-32">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-6">
-                    {filteredNovels.map((novel, index) => (
-                        <div key={index} className="flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform" onClick={() => navigate(`/novel/${novel.title.replace(/\s+/g, '-').toLowerCase()}`, { state: { novel } })}>
-                            <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg">
-                                {novel.coverUrl ? (
-                                    <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url('${novel.coverUrl}')` }}></div>
-                                ) : (
-                                    <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
-                                        <BookOpen className="text-4xl text-slate-400" />
-                                    </div>
-                                )}
+                {isLoading ? (
+                    <div className="flex flex-col items-center justify-center py-20 opacity-50">
+                        <RefreshCw size={40} className="animate-spin mb-4 text-primary" />
+                        <p className="text-sm font-medium">Scraping live {title.toLowerCase()}...</p>
+                    </div>
+                ) : filteredNovels.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-6">
+                        {filteredNovels.map((novel, index) => (
+                            <div key={index} className="flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform" onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}>
+                                <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg border border-slate-100 dark:border-white/5">
+                                    {novel.coverUrl ? (
+                                        <img src={novel.coverUrl} className="absolute inset-0 w-full h-full object-cover" alt={novel.title} />
+                                    ) : (
+                                        <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
+                                            <BookOpen className="text-4xl text-slate-400" />
+                                        </div>
+                                    )}
 
-                                {/* Badges */}
-                                {novel.badge === 'bolt' && (
-                                    <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white p-1 rounded-md">
-                                        <Bolt size={16} fill="currentColor" />
-                                    </div>
-                                )}
-                                {novel.badge === 'trending_up' && (
-                                    <div className="absolute top-2 right-2 bg-primary/90 backdrop-blur-sm text-white p-1 rounded-md">
-                                        <TrendingUp size={16} />
-                                    </div>
-                                )}
+                                    {/* Badges */}
+                                    {novel.badge === 'bolt' && (
+                                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white p-1 rounded-md">
+                                            <Bolt size={16} fill="currentColor" />
+                                        </div>
+                                    )}
+                                    {novel.badge === 'trending_up' && (
+                                        <div className="absolute top-2 right-2 bg-primary/90 backdrop-blur-sm text-white p-1 rounded-md">
+                                            <TrendingUp size={16} />
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex flex-col px-0.5">
+                                    <p className="font-bold text-[14px] line-clamp-1">{novel.title}</p>
+                                    <p className="text-slate-500 dark:text-[#a19db9] text-[11px] font-medium">{novel.author || 'Unknown Author'}</p>
+                                </div>
                             </div>
-                            <div className="flex flex-col px-0.5">
-                                <p className="font-bold text-[14px] line-clamp-1">{novel.title}</p>
-                                <p className="text-slate-500 dark:text-[#a19db9] text-[11px] font-medium">{novel.author || 'Unknown Author'}</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-center justify-center py-20 opacity-50">
+                        <BookOpen size={48} className="mb-4 text-slate-400" />
+                        <p className="font-medium text-center text-sm px-10">No novels found in this category.</p>
+                    </div>
+                )}
             </div>
 
             {/* Navbar */}

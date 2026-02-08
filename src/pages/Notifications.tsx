@@ -112,7 +112,7 @@ export const Notifications = () => {
 
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen font-display flex flex-col">
-            <div className="sticky top-0 z-30 bg-background-light/90 dark:bg-background-dark/90 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 pt-[18px]">
+            <div className="sticky top-0 z-30 bg-background-light/90 dark:bg-background-dark/90 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 pt-[20px]">
                 <div className="flex items-center justify-between h-14 px-4">
                     <button onClick={() => navigate(-1)} className="flex items-center text-primary active:opacity-60 transition-opacity">
                         <ChevronLeft size={32} />
