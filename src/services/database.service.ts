@@ -157,13 +157,47 @@ class DatabaseService {
         if (!db) return;
 
         try {
-            // Manually delete chapters first to ensure cleanup even without cascade
             await db.run('DELETE FROM chapters WHERE novelId = ?', [id]);
             await db.run('DELETE FROM novels WHERE id = ?', [id]);
             await this.save();
         } catch (e) {
             console.error("Failed to delete novel", e);
             throw e;
+        }
+    }
+
+    async getNextChapter(novelId: string, currentOrderIndex: number) {
+        const db = await this.getDB();
+        if (!db) return null;
+        const result = await db.query(
+            'SELECT * FROM chapters WHERE novelId = ? AND orderIndex > ? ORDER BY orderIndex ASC LIMIT 1',
+            [novelId, currentOrderIndex]
+        );
+        return result.values && result.values.length > 0 ? result.values[0] : null;
+    }
+
+    async getPrevChapter(novelId: string, currentOrderIndex: number) {
+        const db = await this.getDB();
+        if (!db) return null;
+        const result = await db.query(
+            'SELECT * FROM chapters WHERE novelId = ? AND orderIndex < ? ORDER BY orderIndex DESC LIMIT 1',
+            [novelId, currentOrderIndex]
+        );
+        return result.values && result.values.length > 0 ? result.values[0] : null;
+    }
+
+    async updateReadingProgress(novelId: string, chapterId: string) {
+        const db = await this.getDB();
+        if (!db) return;
+
+        try {
+            // Update novel's lastReadChapterId
+            await db.run('UPDATE novels SET lastReadChapterId = ? WHERE id = ?', [chapterId, novelId]);
+            // Mark chapter as read
+            await db.run('UPDATE chapters SET isRead = 1 WHERE id = ?', [chapterId]);
+            await this.save();
+        } catch (e) {
+            console.error("Failed to update reading progress", e);
         }
     }
 }

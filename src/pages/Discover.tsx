@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, Bolt, BookOpen, Rocket, Heart, Swords, Filter, RefreshCcw } from 'lucide-react';
-import { scraperService } from '../services/scraper.service';
+import { Search, Bolt, BookOpen, Rocket, Heart, Swords, Filter, RefreshCcw, Minimize2 } from 'lucide-react';
+import { scraperService, type ScraperProgress } from '../services/scraper.service';
 import { dbService } from '../services/database.service';
 import { Navbar } from '../components/Navbar';
 import { CompletionModal } from '../components/CompletionModal';
@@ -16,11 +16,27 @@ export const Discover = () => {
     const [lastNovelTitle, setLastNovelTitle] = useState('');
     const [homeData, setHomeData] = useState<any>(null);
     const [isSyncingHome, setIsSyncingHome] = useState(false);
+    const [scrapingProgress, setScrapingProgress] = useState<ScraperProgress>(scraperService.progress);
+    const [isGlobalScraping, setIsGlobalScraping] = useState(scraperService.isScraping);
     const [shouldRedirect, setShouldRedirect] = useState(false);
 
     useEffect(() => {
         loadRecentScrapes();
         loadHomeData();
+
+        const unsub = scraperService.subscribe((progress, isScraping) => {
+            setScrapingProgress(progress);
+            setIsGlobalScraping(isScraping);
+
+            // Handle success modal if it was a quick scrape from this page
+            if (!isScraping && progress.current > 0 && progress.current === progress.total && scraperService.activeNovelMetadata) {
+                setLastNovelTitle(scraperService.activeNovelMetadata.title);
+                setShowSuccess(true);
+                loadRecentScrapes();
+            }
+        });
+
+        return unsub;
     }, []);
 
     const loadHomeData = async () => {
@@ -91,44 +107,8 @@ export const Discover = () => {
             setIsScraping(true);
             try {
                 const novel = await scraperService.fetchNovel(url);
-                const novelId = novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 32) + '-' + Date.now().toString(36);
-                await dbService.initialize();
-                await dbService.addNovel({
-                    id: novelId,
-                    title: novel.title,
-                    author: novel.author,
-                    coverUrl: novel.coverUrl,
-                    sourceUrl: url,
-                    category: 'Imported'
-                });
-
-                const chaptersToSave = novel.chapters.slice(0, 50);
-                for (let i = 0; i < chaptersToSave.length; i++) {
-                    const ch = chaptersToSave[i];
-                    let content = '';
-
-                    // Scrape first 5 chapters immediately for better UX
-                    if (i < 5) {
-                        try {
-                            content = await scraperService.fetchChapterContent(ch.url);
-                        } catch (e) {
-                            console.error(`Failed to scrape chapter ${i + 1} during quick import`, e);
-                        }
-                    }
-
-                    await dbService.addChapter({
-                        id: `${novelId}-ch-${i + 1}`,
-                        novelId: novelId,
-                        title: ch.title,
-                        content: content,
-                        orderIndex: i,
-                        audioPath: ch.url
-                    });
-                }
-                setLastNovelTitle(novel.title);
-                setShouldRedirect(true);
-                setShowSuccess(true);
-                loadRecentScrapes(); // Refresh list
+                scraperService.startImport(url, novel);
+                // The subscription will handle the rest
             } catch (e) {
                 console.error(e);
                 alert("Quick scrape failed");
@@ -143,7 +123,7 @@ export const Discover = () => {
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto pb-24">
                 {/* Header */}
-                <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md pt-[14px]">
+                <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md pt-[18px]">
                     <div className="flex items-center p-4 pb-2 justify-between">
                         <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
                             <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDjCOham51YfTM7PcgkgKspU9PvDHuom_3rGeCzHDOnhZnOzp09BhpYTuEnobo9LY8vOsfLsujPy9_QEMQ7WaQQSrFMdLgnji7T5irQ-C7DSmSq-0RKsDtEHLdFk2Jd7O9Qpw1VCPG_71gSZCD9ROyRef4a9hy1bzxv5Kmeyh5eiAx9wKqIXAtSkLrqYxyMQFSb2RIi6syEVabDEHarMZ8ece6wHlOJW3ky5o3LtKvE3JC2EZaJpRlwT5R61uO6G-mUqtqV5qNjIYyE")' }}></div>
@@ -182,6 +162,7 @@ export const Discover = () => {
                             )}
                         </div>
                     </div>
+
                     <div className="px-4 py-3">
                         <label className="flex flex-col min-w-40 h-11 w-full">
                             <div className="flex w-full flex-1 items-stretch rounded-xl h-full bg-slate-200/50 dark:bg-[#2b2839]">
@@ -206,6 +187,37 @@ export const Discover = () => {
                             </div>
                         </label>
                     </div>
+
+                    {/* Global Scraping Progress Bar */}
+                    {(isScraping || isGlobalScraping) && (
+                        <div className="px-4 pb-2 animate-in slide-in-from-top-2 duration-300">
+                            <div className="bg-primary/10 border border-primary/20 rounded-xl p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="size-4 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
+                                        <span className="text-[11px] font-bold text-primary uppercase tracking-wider">
+                                            {isGlobalScraping ? `Scraping: ${scrapingProgress.currentTitle}` : 'Loading Metadata...'}
+                                        </span>
+                                    </div>
+                                    <span className="text-[11px] font-bold text-primary">
+                                        {isGlobalScraping ? `${scrapingProgress.current}/${scrapingProgress.total}` : ''}
+                                    </span>
+                                </div>
+                                {isGlobalScraping && (
+                                    <div className="h-1.5 w-full bg-primary/20 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-primary transition-all duration-300"
+                                            style={{ width: `${(scrapingProgress.current / scrapingProgress.total) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-2 mt-2 opacity-70">
+                                    <Minimize2 size={12} className="text-primary" />
+                                    <span className="text-[10px] text-primary font-medium">Runs in background</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Content */}

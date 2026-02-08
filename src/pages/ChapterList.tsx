@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { dbService } from '../services/database.service';
-import { scraperService } from '../services/scraper.service';
+import { scraperService, type ScraperProgress } from '../services/scraper.service';
 import { CompletionModal } from '../components/CompletionModal';
-import { ArrowLeft, MoreHorizontal, Search, Filter, Download, CheckCircle, DownloadCloud, PlayCircle, Trash2 } from 'lucide-react';
+import { ArrowLeft, MoreHorizontal, Search, Filter, Download, CheckCircle, DownloadCloud, PlayCircle, Trash2, Minimize2 } from 'lucide-react';
 
 export const ChapterList = () => {
     const { novelId } = useParams<{ novelId: string }>();
@@ -24,35 +24,47 @@ export const ChapterList = () => {
     const [downloading, setDownloading] = useState<Set<string>>(new Set());
     const [isScrapingNew, setIsScrapingNew] = useState(false);
     const [isPreviewMode, setIsPreviewMode] = useState(false);
+    const [scrapingProgress, setScrapingProgress] = useState<ScraperProgress>(scraperService.progress);
+    const [isGlobalScraping, setIsGlobalScraping] = useState(scraperService.isScraping);
+
+    const loadData = async () => {
+        if (!novelId) return;
+        try {
+            await dbService.initialize();
+            const n = await dbService.getNovel(novelId);
+            if (n) {
+                setNovel(n);
+                const c = await dbService.getChapters(novelId);
+                setChapters(c);
+                setIsPreviewMode(false);
+            } else if (location.state?.novel) {
+                setNovel({
+                    ...location.state.novel,
+                    id: novelId,
+                    summary: location.state.novel.summary || ''
+                });
+                setIsPreviewMode(true);
+            }
+        } catch (e) {
+            console.error("Failed to load novel data", e);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const loadData = async () => {
-            if (novelId) {
-                try {
-                    await dbService.initialize();
-                    const n = await dbService.getNovel(novelId);
-                    if (n) {
-                        setNovel(n);
-                        const c = await dbService.getChapters(novelId);
-                        setChapters(c);
-                        setIsPreviewMode(false);
-                    } else if (location.state?.novel) {
-                        // Handle preview from Discover
-                        setNovel({
-                            ...location.state.novel,
-                            id: novelId,
-                            summary: location.state.novel.summary || ''
-                        });
-                        setIsPreviewMode(true);
-                    }
-                } catch (e) {
-                    console.error("Failed to load novel data", e);
-                } finally {
-                    setLoading(false);
-                }
+        const unsub = scraperService.subscribe((progress, isScraping) => {
+            setScrapingProgress(progress);
+            setIsGlobalScraping(isScraping);
+
+            // If scraping finished and was for this novel, reload chapters
+            if (!isScraping && progress.current > 0 && progress.current === progress.total) {
+                loadData();
             }
-        };
+        });
+
         loadData();
+        return unsub;
     }, [novelId, location.state]);
 
     const handleInitialScrape = async () => {
@@ -60,51 +72,11 @@ export const ChapterList = () => {
         setIsScrapingNew(true);
         try {
             const scraped = await scraperService.fetchNovel(novel.sourceUrl);
-            const finalId = novel.id || (scraped.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 32) + '-' + Date.now().toString(36));
-
-            await dbService.addNovel({
-                ...scraped,
-                id: finalId,
-                sourceUrl: novel.sourceUrl
-            });
-
-            // Save chapters
-            for (let i = 0; i < scraped.chapters.length; i++) {
-                const ch = scraped.chapters[i];
-                let content = '';
-
-                // Scrape first 10 chapters immediately for better UX
-                if (i < 10) {
-                    try {
-                        content = await scraperService.fetchChapterContent(ch.url);
-                    } catch (e) {
-                        console.error(`Failed to scrape chapter ${i + 1} during initial import`, e);
-                    }
-                }
-
-                await dbService.addChapter({
-                    id: `${finalId}-ch-${i + 1}`,
-                    novelId: finalId,
-                    title: ch.title,
-                    content: content,
-                    orderIndex: i,
-                    audioPath: ch.url
-                });
-            }
-
-            const updatedNovel = await dbService.getNovel(finalId);
-            setNovel(updatedNovel);
-            const updatedChapters = await dbService.getChapters(finalId);
-            setChapters(updatedChapters);
-            setIsPreviewMode(false);
-            setModalInfo({
-                isOpen: true,
-                title: "Import Success!",
-                message: `"${scraped.title}" has been added to your library with ${scraped.chapters.length} chapters.`
-            });
+            scraperService.startImport(novel.sourceUrl, scraped);
+            // The subscription will handle UI updates
         } catch (e) {
             console.error("Scraping failed", e);
-            alert("Failed to scrape chapters. Please try again.");
+            alert("Failed to fetch novel details.");
         } finally {
             setIsScrapingNew(false);
         }
@@ -144,17 +116,9 @@ export const ChapterList = () => {
             return;
         }
 
-        if (!confirm(`Download ${chaptersToDownload.length} chapters? This might take a while.`)) return;
+        if (!confirm(`Download ${chaptersToDownload.length} chapters in background?`)) return;
 
-        for (const chapter of chaptersToDownload) {
-            await handleDownload(chapter);
-            await new Promise(r => setTimeout(r, 500));
-        }
-        setModalInfo({
-            isOpen: true,
-            title: "Download Complete!",
-            message: "All chapters have been successfully saved for offline reading."
-        });
+        scraperService.downloadAll(novel.id, novel.title, chaptersToDownload);
     };
 
     const handleSync = async () => {
@@ -167,63 +131,10 @@ export const ChapterList = () => {
         setShowMenu(false);
 
         try {
-            console.log(`Syncing novel from ${novel.sourceUrl}...`);
-            const updatedNovel = await scraperService.fetchNovel(novel.sourceUrl);
-
-            const existingUrls = new Set(chapters.map(c => c.audioPath));
-            const newChapters = updatedNovel.chapters.filter(ch => !existingUrls.has(ch.url));
-
-            if (newChapters.length === 0) {
-                alert("No new chapters found.");
-            } else {
-                console.log(`Found ${newChapters.length} new chapters.`);
-                const confirmSync = confirm(`Found ${newChapters.length} new chapters. Add them?`);
-
-                if (confirmSync) {
-                    let addedCount = 0;
-
-                    for (const ch of newChapters) {
-                        const index = updatedNovel.chapters.findIndex(c => c.url === ch.url);
-                        const chapterId = `${novel.id}-ch-${index + 1}`;
-                        let content = '';
-
-                        // Scrape first 5 new chapters immediately
-                        if (addedCount < 5) {
-                            try {
-                                content = await scraperService.fetchChapterContent(ch.url);
-                            } catch (e) {
-                                console.error(`Failed to scrape new chapter ${addedCount + 1} during sync`, e);
-                            }
-                        }
-
-                        await dbService.addChapter({
-                            id: chapterId,
-                            novelId: novel.id,
-                            title: ch.title,
-                            content: content,
-                            orderIndex: index,
-                            audioPath: ch.url
-                        });
-                        addedCount++;
-                    }
-
-                    const c = await dbService.getChapters(novel.id);
-                    setChapters(c);
-                    if (addedCount > 0) {
-                        setModalInfo({
-                            isOpen: true,
-                            title: "Sync Success!",
-                            message: `Successfully added ${addedCount} new chapters to your library.`
-                        });
-                    } else {
-                        alert("No new chapters found.");
-                    }
-                }
-            }
-
+            scraperService.syncNovel(novel.id, novel.sourceUrl, chapters.length);
         } catch (error) {
             console.error("Sync failed", error);
-            alert("Failed to sync chapters. Check your internet connection.");
+            alert("Failed to start sync.");
         } finally {
             setIsSyncing(false);
         }
@@ -241,6 +152,12 @@ export const ChapterList = () => {
         } catch (error) {
             console.error("Deletion failed", error);
             alert("Failed to delete novel. Please try again.");
+        }
+    };
+
+    const handleSearch = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            // Logic for search within chapters
         }
     };
 
@@ -275,11 +192,11 @@ export const ChapterList = () => {
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans min-h-screen pb-20">
             {/* Top Navigation Bar */}
-            <div className="sticky top-0 z-50 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 pt-[14px]">
+            <div className="sticky top-0 z-50 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 pt-[16px]">
                 <div className="flex items-center p-4 justify-between max-w-lg mx-auto">
-                    <div className="flex items-center gap-2" onClick={() => navigate(-1)}>
+                    <div className="flex items-center gap-2" onClick={() => navigate('/')}>
                         <ArrowLeft className="text-primary cursor-pointer" />
-                        <span className="text-sm font-medium cursor-pointer">Back</span>
+                        <span className="text-sm font-medium cursor-pointer">Library</span>
                     </div>
                     <h2 className="text-lg font-bold truncate px-4">Chapter Index</h2>
                     <div className="relative flex items-center">
@@ -322,6 +239,59 @@ export const ChapterList = () => {
                         )}
                     </div>
                 </div>
+                <div className="px-4 py-3">
+                    <label className="flex flex-col min-w-40 h-11 w-full">
+                        <div className="flex w-full flex-1 items-stretch rounded-xl h-full bg-slate-200/50 dark:bg-[#2b2839]">
+                            <div className="text-slate-500 dark:text-[#a19db9] flex items-center justify-center pl-4">
+                                <Search size={20} />
+                            </div>
+                            <input
+                                className="flex w-full min-w-0 flex-1 border-none bg-transparent focus:outline-0 focus:ring-0 text-base font-normal placeholder:text-slate-500 dark:placeholder:text-[#a19db9] px-3"
+                                placeholder="Search titles or paste URL..."
+                                value={searchQuery}
+                                id="search-input"
+                                name="search-query"
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={handleSearch}
+                                disabled={isScrapingNew || isGlobalScraping}
+                            />
+                            {(isScrapingNew || isGlobalScraping) && (
+                                <div className="flex items-center pr-3">
+                                    <div className="size-4 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
+                                </div>
+                            )}
+                        </div>
+                    </label>
+                </div>
+
+                {/* Global Scraping Progress Bar */}
+                {(isScrapingNew || isGlobalScraping) && (
+                    <div className="px-4 pb-2 animate-in slide-in-from-top-2 duration-300">
+                        <div className="bg-primary/10 border border-primary/20 rounded-xl p-3">
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                    <div className="size-4 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
+                                    <span className="text-[11px] font-bold text-primary uppercase tracking-wider line-clamp-1">
+                                        {scrapingProgress.currentTitle}
+                                    </span>
+                                </div>
+                                <span className="text-[11px] font-bold text-primary whitespace-nowrap">
+                                    {scrapingProgress.current} / {scrapingProgress.total}
+                                </span>
+                            </div>
+                            <div className="h-1.5 w-full bg-primary/20 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-primary transition-all duration-300"
+                                    style={{ width: `${(scrapingProgress.current / scrapingProgress.total) * 100}%` }}
+                                ></div>
+                            </div>
+                            <div className="flex items-center gap-2 mt-2 opacity-70">
+                                <Minimize2 size={12} className="text-primary" />
+                                <span className="text-[10px] text-primary font-medium">Processing in background</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <main className="max-w-lg mx-auto pb-24">

@@ -58,9 +58,9 @@ export const AudioSettings = () => {
 
 
     return (
-        <div className="bg-background-dark text-white min-h-screen font-sans flex flex-col">
+        <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen font-sans flex flex-col transition-colors duration-300">
             {/* Header */}
-            <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-[14px] shrink-0 border-b border-slate-200 dark:border-white/5">
+            <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-[18px] shrink-0 border-b border-slate-200 dark:border-white/5">
                 <div className="flex items-center justify-between">
                     <Link to="/profile" className="flex items-center justify-center p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
                         <div className="flex size-9 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20">
@@ -80,7 +80,7 @@ export const AudioSettings = () => {
                             onClick={() => setVoice('male')}
                             className={clsx(
                                 "relative flex flex-col items-center gap-3 p-4 rounded-2xl border-2 transition-all",
-                                voice === 'male' ? "bg-white/5 border-primary/40 ring-2 ring-primary/20" : "bg-[#2b2839] border-transparent hover:border-white/10"
+                                voice === 'male' ? "bg-primary/10 border-primary/40 ring-2 ring-primary/20" : "bg-slate-100 dark:bg-[#2b2839] border-transparent hover:border-slate-200 dark:hover:border-white/10"
                             )}
                         >
                             <div className="size-14 rounded-full bg-slate-700 flex items-center justify-center">
@@ -100,7 +100,7 @@ export const AudioSettings = () => {
                             onClick={() => setVoice('female')}
                             className={clsx(
                                 "relative flex flex-col items-center gap-3 p-4 rounded-2xl border-2 transition-all",
-                                voice === 'female' ? "bg-white/5 border-primary/40 ring-2 ring-primary/20" : "bg-[#2b2839] border-transparent hover:border-white/10"
+                                voice === 'female' ? "bg-primary/10 border-primary/40 ring-2 ring-primary/20" : "bg-slate-100 dark:bg-[#2b2839] border-transparent hover:border-slate-200 dark:hover:border-white/10"
                             )}
                         >
                             <div className="size-14 rounded-full bg-slate-700 flex items-center justify-center">
@@ -122,7 +122,7 @@ export const AudioSettings = () => {
                     <div className="w-full">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 block">Specific Voice</label>
                         <select
-                            className="w-full bg-[#2b2839] border border-white/10 text-white rounded-lg p-3 outline-none focus:border-primary/50 text-sm"
+                            className="w-full bg-slate-100 dark:bg-[#2b2839] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-lg p-3 outline-none focus:border-primary/50 text-sm"
                             onChange={(e) => {
                                 const voices = audioService.getVoices();
                                 const selected = voices.find(v => v.name === e.target.value);
@@ -173,13 +173,13 @@ export const AudioSettings = () => {
                     <div>
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
-                                <Zap className="text-purple-400" size={18} />
-                                <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Reading Speed</h3>
+                                <Zap className="text-primary" size={18} />
+                                <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Reading Speed</h3>
                             </div>
-                            <span className="text-purple-400 font-bold">{rate}x</span>
+                            <span className="text-primary font-bold">{rate}x</span>
                         </div>
                         <input
-                            className="w-full accent-purple-500 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                            className="w-full accent-primary h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer"
                             type="range"
                             min="0.5" max="2.0" step="0.1"
                             value={rate}
@@ -194,13 +194,13 @@ export const AudioSettings = () => {
                     <div>
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
-                                <Zap className="text-purple-400" size={18} />
-                                <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Voice Pitch</h3>
+                                <Zap className="text-primary" size={18} />
+                                <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Voice Pitch</h3>
                             </div>
-                            <span className="text-purple-400 font-bold">{pitch > 0 ? `+${pitch}` : pitch}</span>
+                            <span className="text-primary font-bold">{pitch > 0 ? `+${pitch}` : pitch}</span>
                         </div>
                         <input
-                            className="w-full accent-purple-500 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                            className="w-full accent-primary h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer"
                             type="range"
                             min="-5" max="5" step="1"
                             value={pitch}
@@ -215,7 +215,7 @@ export const AudioSettings = () => {
                 </div>
 
                 {/* Audio Mixer */}
-                <div className="bg-[#2b2839] rounded-2xl p-5 border border-white/5 mb-8">
+                <div className="bg-slate-100 dark:bg-[#2b2839] rounded-2xl p-5 border border-slate-200 dark:border-white/5 mb-8">
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="font-bold text-sm flex items-center gap-2">
                             <Music className="text-primary" size={18} /> Audio Mix
@@ -223,7 +223,7 @@ export const AudioSettings = () => {
                         <div className="flex gap-2">
                             <button
                                 onClick={() => setBgmEnabled(!bgmEnabled)}
-                                className={clsx("px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors", bgmEnabled ? 'bg-primary text-white' : 'bg-white/10 text-slate-400')}
+                                className={clsx("px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors", bgmEnabled ? 'bg-primary text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-500 dark:text-slate-400')}
                             >
                                 {bgmEnabled ? 'BGM ON' : 'BGM OFF'}
                             </button>
@@ -261,7 +261,7 @@ export const AudioSettings = () => {
                         </div>
                     </div>
                     <div className="space-y-3">
-                        <div className="flex items-center justify-between p-4 rounded-xl bg-[#2b2839] border border-white/5">
+                        <div className="flex items-center justify-between p-4 rounded-xl bg-primary/10 dark:bg-[#2b2839] border border-slate-200 dark:border-white/5">
                             <div className="flex items-center gap-3">
                                 <div className="size-10 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400">
                                     <CloudRain size={20} />
@@ -278,7 +278,7 @@ export const AudioSettings = () => {
                                 <span className={clsx("pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out", ambience === 'rainy' ? "translate-x-5" : "translate-x-0")}></span>
                             </div>
                         </div>
-                        <div className="flex items-center justify-between p-4 rounded-xl bg-[#2b2839] border border-white/5">
+                        <div className="flex items-center justify-between p-4 rounded-xl bg-primary/10 dark:bg-[#2b2839] border border-slate-200 dark:border-white/5">
                             <div className="flex items-center gap-3">
                                 <div className="size-10 rounded-lg bg-orange-500/20 flex items-center justify-center text-orange-400">
                                     <Flame size={20} />
@@ -295,7 +295,7 @@ export const AudioSettings = () => {
                                 <span className={clsx("pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out", ambience === 'fireplace' ? "translate-x-5" : "translate-x-0")}></span>
                             </div>
                         </div>
-                        <div className="flex items-center justify-between p-4 rounded-xl bg-[#2b2839] border border-white/5">
+                        <div className="flex items-center justify-between p-4 rounded-xl bg-primary/10 dark:bg-[#2b2839] border border-slate-200 dark:border-white/5">
                             <div className="flex items-center gap-3">
                                 <div className="size-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
                                     <Trees size={20} />

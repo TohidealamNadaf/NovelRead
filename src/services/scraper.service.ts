@@ -1,4 +1,6 @@
 import { CapacitorHttp, Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { dbService } from './database.service';
 import * as cheerio from 'cheerio';
 
 export interface NovelMetadata {
@@ -19,7 +21,210 @@ export interface HomeData {
     completed: NovelMetadata[];
 }
 
+export interface ScraperProgress {
+    current: number;
+    total: number;
+    currentTitle: string;
+    logs: string[];
+}
+
 export class ScraperService {
+    private isScrapingInternal = false;
+    private currentProgress: ScraperProgress = { current: 0, total: 0, currentTitle: '', logs: [] };
+    private activeNovel: NovelMetadata | null = null;
+    private listeners: ((progress: ScraperProgress, isScraping: boolean) => void)[] = [];
+
+    get isScraping() { return this.isScrapingInternal; }
+    get progress() { return this.currentProgress; }
+    get activeNovelMetadata() { return this.activeNovel; }
+
+    subscribe(listener: (progress: ScraperProgress, isScraping: boolean) => void) {
+        this.listeners.push(listener);
+        listener(this.currentProgress, this.isScrapingInternal);
+        return () => {
+            this.listeners = this.listeners.filter(l => l !== listener);
+        };
+    }
+
+    private notifyListeners() {
+        this.listeners.forEach(l => l(this.currentProgress, this.isScrapingInternal));
+    }
+
+    private async updateNotification(novelTitle: string) {
+        if (Capacitor.getPlatform() === 'web') return;
+
+        const percentage = Math.round((this.currentProgress.current / this.currentProgress.total) * 100);
+
+        try {
+            await LocalNotifications.schedule({
+                notifications: [{
+                    id: 1001,
+                    title: `Importing: ${novelTitle}`,
+                    body: `Progress: ${this.currentProgress.current}/${this.currentProgress.total} chapters (${percentage}%)`,
+                    largeBody: `Currently scraping: ${this.currentProgress.currentTitle}`,
+                    ongoing: true,
+                    autoCancel: false,
+                    silent: true,
+                    schedule: { at: new Date(Date.now() + 100) }
+                }]
+            });
+        } catch (e) {
+            console.error("Failed to update notification", e);
+        }
+    }
+
+    private async finishNotification(novelTitle: string, success: boolean, customMessage?: string) {
+        if (Capacitor.getPlatform() === 'web') return;
+
+        try {
+            await LocalNotifications.cancel({ notifications: [{ id: 1001 }] });
+            await LocalNotifications.schedule({
+                notifications: [{
+                    id: 1002,
+                    title: success ? 'Import Success!' : 'Import Failed',
+                    body: customMessage || (success ? `Successfully imported ${novelTitle}` : `Failed to import ${novelTitle}`),
+                    schedule: { at: new Date(Date.now() + 100) }
+                }]
+            });
+        } catch (e) {
+            console.error("Failed to finish notification", e);
+        }
+    }
+
+    async startImport(url: string, novel: NovelMetadata) {
+        if (this.isScrapingInternal) return;
+
+        this.isScrapingInternal = true;
+        this.activeNovel = novel;
+        this.currentProgress = { current: 0, total: novel.chapters.length, currentTitle: 'Starting...', logs: [] };
+        this.notifyListeners();
+
+        try {
+            await dbService.initialize();
+
+            // Save Novel Metadata
+            const novelId = novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) + '-' + Math.random().toString(36).slice(2, 7);
+            await dbService.addNovel({
+                id: novelId,
+                title: novel.title,
+                author: novel.author,
+                coverUrl: novel.coverUrl,
+                sourceUrl: url,
+                category: 'Imported'
+            });
+
+            await this.scrapeChapterLoop(novelId, novel.chapters, novel.title);
+
+            await this.finishNotification(novel.title, true, `Successfully imported ${novel.title}`);
+        } catch (error) {
+            console.error("Scraping failed", error);
+            this.currentProgress.logs.unshift(`[ERROR] ${error instanceof Error ? error.message : String(error)}`);
+            await this.finishNotification(novel.title, false, `Failed to import ${novel.title}`);
+        } finally {
+            this.isScrapingInternal = false;
+            this.notifyListeners();
+        }
+    }
+
+    async syncNovel(novelId: string, sourceUrl: string, existingChaptersCount: number) {
+        if (this.isScrapingInternal) return;
+
+        this.isScrapingInternal = true;
+        this.currentProgress = { current: 0, total: 1, currentTitle: 'Checking for updates...', logs: [] };
+        this.notifyListeners();
+
+        try {
+            const updatedNovel = await this.fetchNovel(sourceUrl);
+            this.activeNovel = updatedNovel;
+
+            const newChapters = updatedNovel.chapters.slice(existingChaptersCount);
+
+            if (newChapters.length === 0) {
+                this.currentProgress.logs.unshift("No new chapters found.");
+                this.notifyListeners();
+                await this.finishNotification(updatedNovel.title, true, "No new chapters found.");
+                return;
+            }
+
+            this.currentProgress = {
+                current: 0,
+                total: newChapters.length,
+                currentTitle: `Found ${newChapters.length} new chapters`,
+                logs: [`Syncing ${newChapters.length} new chapters...`]
+            };
+            this.notifyListeners();
+
+            await this.scrapeChapterLoop(novelId, newChapters, updatedNovel.title, existingChaptersCount);
+            await this.finishNotification(updatedNovel.title, true, `Synced ${newChapters.length} new chapters`);
+        } catch (error) {
+            console.error("Sync failed", error);
+            this.currentProgress.logs.unshift(`[SYNC ERROR] ${error instanceof Error ? error.message : String(error)}`);
+            await this.finishNotification("Sync", false, `Failed to sync novel`);
+        } finally {
+            this.isScrapingInternal = false;
+            this.notifyListeners();
+        }
+    }
+
+    async downloadAll(novelId: string, novelTitle: string, chaptersToDownload: any[]) {
+        if (this.isScrapingInternal) return;
+
+        this.isScrapingInternal = true;
+        this.currentProgress = { current: 0, total: chaptersToDownload.length, currentTitle: 'Starting downloads...', logs: [] };
+        this.notifyListeners();
+
+        try {
+            await this.scrapeChapterLoop(novelId, chaptersToDownload, novelTitle);
+            await this.finishNotification(novelTitle, true, `Downloaded ${chaptersToDownload.length} chapters`);
+        } catch (error) {
+            console.error("Bulk download failed", error);
+            this.currentProgress.logs.unshift(`[DOWNLOAD ERROR] ${error instanceof Error ? error.message : String(error)}`);
+            await this.finishNotification(novelTitle, false, `Failed to download chapters for ${novelTitle}`);
+        } finally {
+            this.isScrapingInternal = false;
+            this.notifyListeners();
+        }
+    }
+
+    private async scrapeChapterLoop(novelId: string, chapters: any[], novelTitle: string, offset: number = 0) {
+        for (let i = 0; i < chapters.length; i++) {
+            const chapter = chapters[i];
+            const currentIndex = i + 1;
+
+            this.currentProgress = {
+                ...this.currentProgress,
+                current: currentIndex,
+                total: chapters.length,
+                currentTitle: chapter.title,
+                logs: [`[${new Date().toLocaleTimeString()}] ${chapter.title}: Loading...`, ...this.currentProgress.logs.slice(0, 2)]
+            };
+            this.notifyListeners();
+            await this.updateNotification(novelTitle);
+
+            try {
+                const content = await this.fetchChapterContent(chapter.url || chapter.audioPath);
+                const chapterId = `${novelId}-ch-${offset + currentIndex}`;
+
+                await dbService.addChapter({
+                    id: chapterId,
+                    novelId: novelId,
+                    title: chapter.title,
+                    content: content,
+                    orderIndex: offset + i,
+                    audioPath: chapter.url || chapter.audioPath
+                });
+
+                this.currentProgress.logs[0] = `[${new Date().toLocaleTimeString()}] ${chapter.title}: Success`;
+            } catch (e) {
+                console.error(`Failed to scrape ${chapter.title}`, e);
+                this.currentProgress.logs[0] = `[${new Date().toLocaleTimeString()}] ${chapter.title}: FAILED`;
+            }
+
+            this.notifyListeners();
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+    }
+
     async fetchNovel(url: string): Promise<NovelMetadata> {
         // 1. Determine Info URL (for Metadata) and List URL (for Chapters)
         let infoUrl = url.replace(/\/chapters\/?(\?.*)?$/, '');

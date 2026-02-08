@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, MoreHorizontal, Play, Pause, FastForward, Music } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, MoreHorizontal, Play, Pause, FastForward, Music, ChevronDown, ChevronUp } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useNavigate, useParams } from 'react-router-dom';
 import { dbService } from '../services/database.service';
@@ -10,9 +11,18 @@ import { CompletionModal } from '../components/CompletionModal';
 export const Reader = () => {
     const navigate = useNavigate();
     const { novelId, chapterId } = useParams();
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
     const [chapter, setChapter] = useState<any>(null);
+    const [nextChapter, setNextChapter] = useState<any>(null);
+    const [prevChapter, setPrevChapter] = useState<any>(null);
     const [novel, setNovel] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+
+    // Pull to Previous state
+    const [pullDistance, setPullDistance] = useState(0);
+    const [isPulling, setIsPulling] = useState(false);
+    const touchStartRef = useRef(0);
+    const PULL_THRESHOLD = 120;
 
     // Audio State
     const [isSpeaking, setIsSpeaking] = useState(false);
@@ -57,20 +67,77 @@ export const Reader = () => {
             setChapter(cData);
             const nData = await dbService.getNovel(nid);
             setNovel(nData);
+
+            if (cData) {
+                // Fetch surrounding chapters
+                const [next, prev] = await Promise.all([
+                    dbService.getNextChapter(nid, cData.orderIndex),
+                    dbService.getPrevChapter(nid, cData.orderIndex)
+                ]);
+                setNextChapter(next);
+                setPrevChapter(prev);
+
+                // Update progress
+                await dbService.updateReadingProgress(nid, cid);
+            }
         } catch (error) {
             console.error("Failed to load data", error);
         } finally {
             setLoading(false);
+            // Scroll container to top on new chapter
+            if (scrollContainerRef.current) {
+                scrollContainerRef.current.scrollTop = 0;
+            }
         }
     };
 
-    const handleNextChapter = async () => {
-        setShowComingSoon(true);
+    const handleNextChapter = () => {
+        if (nextChapter) {
+            navigate(`/read/${novelId}/${nextChapter.id}`);
+            setShowSettings(false);
+        } else {
+            setShowComingSoon(true);
+        }
     };
 
     const handlePrevChapter = () => {
-        navigate(-1);
-    }
+        if (prevChapter) {
+            navigate(`/read/${novelId}/${prevChapter.id}`);
+            setShowSettings(false);
+        }
+    };
+
+    const handleBackToIndex = () => {
+        navigate(`/novel/${novelId}`);
+    };
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (scrollContainerRef.current?.scrollTop === 0) {
+            touchStartRef.current = e.touches[0].clientY;
+            setIsPulling(true);
+        }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (!isPulling || !prevChapter) return;
+        const currentY = e.touches[0].clientY;
+        const diff = currentY - touchStartRef.current;
+        if (diff > 0 && scrollContainerRef.current?.scrollTop === 0) {
+            // Logarithmic feel for pulling
+            const resistance = 0.5;
+            setPullDistance(diff * resistance);
+        } else {
+            setPullDistance(0);
+        }
+    };
+
+    const handleTouchEnd = () => {
+        if (pullDistance > PULL_THRESHOLD && prevChapter) {
+            handlePrevChapter();
+        }
+        setPullDistance(0);
+        setIsPulling(false);
+    };
 
     const toggleTTS = () => {
         if (isSpeaking) {
@@ -152,7 +219,7 @@ export const Reader = () => {
             {/* Top App Bar */}
             <div className="sticky top-0 z-10 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 pt-[14px]">
                 <div className="flex items-center p-4 pb-2 justify-between">
-                    <button onClick={handlePrevChapter} className="text-gray-900 dark:text-white flex size-12 shrink-0 items-center justify-center cursor-pointer">
+                    <button onClick={handleBackToIndex} className="text-gray-900 dark:text-white flex size-12 shrink-0 items-center justify-center cursor-pointer">
                         <ArrowLeft />
                     </button>
                     <div className="flex flex-col items-center flex-1 min-w-0 px-2">
@@ -168,18 +235,97 @@ export const Reader = () => {
             </div>
 
             {/* Main Reading Area */}
-            <div className={`flex-1 overflow-y-auto px-6 py-8 ${getThemeClass()}`}>
-                <div
-                    className={clsx("max-w-2xl mx-auto space-y-6 reader-text", font === 'serif' ? 'font-serif' : font === 'sans' ? 'font-sans' : '')}
-                    style={{
-                        fontSize: `${fontSize}rem`,
-                        fontFamily: font === 'comfortable' ? 'Georgia, "Merriweather", "Palatino Linotype", "Book Antiqua", Inter, Roboto, serif' : undefined
-                    }}
+            <div
+                ref={scrollContainerRef}
+                className={`flex-1 overflow-y-auto px-6 py-8 ${getThemeClass()} scroll-smooth relative`}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onScroll={(e) => {
+                    const target = e.currentTarget;
+                    if (nextChapter && target.scrollHeight - target.scrollTop - target.clientHeight < 50) {
+                        // Near bottom - could trigger auto-load or show hint
+                    }
+                }}
+            >
+                {/* Pull to Previous Indicator */}
+                {prevChapter && pullDistance > 10 && (
+                    <motion.div
+                        style={{ height: pullDistance, opacity: Math.min(pullDistance / PULL_THRESHOLD, 1) }}
+                        className="flex flex-col items-center justify-end pb-4 overflow-hidden pointer-events-none"
+                    >
+                        <motion.div
+                            animate={{ y: pullDistance > PULL_THRESHOLD ? [0, -5, 0] : 0 }}
+                            className="flex flex-col items-center gap-2"
+                        >
+                            <ChevronUp className={clsx("transition-transform duration-300", pullDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
+                            <p className={clsx("text-[10px] font-bold uppercase tracking-widest bg-background-light dark:bg-background-dark px-3 py-1 rounded-full border border-gray-100 dark:border-gray-800", pullDistance > PULL_THRESHOLD ? "text-primary border-primary/30" : "text-gray-500")}>
+                                {pullDistance > PULL_THRESHOLD ? "Release for Previous" : "Pull for Previous"}
+                            </p>
+                        </motion.div>
+                    </motion.div>
+                )}
+
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={chapter.id}
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        transition={{ duration: 0.3 }}
+                        className={clsx("max-w-2xl mx-auto space-y-6 reader-text", font === 'serif' ? 'font-serif' : font === 'sans' ? 'font-sans' : '')}
+                        style={{
+                            fontSize: `${fontSize}rem`,
+                            fontFamily: font === 'comfortable' ? 'Georgia, "Merriweather", "Palatino Linotype", "Book Antiqua", Inter, Roboto, serif' : undefined
+                        }}
+                    >
+                        <div dangerouslySetInnerHTML={{ __html: chapter.content }} />
+                    </motion.div>
+                </AnimatePresence>
+
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    whileInView={{ opacity: 1 }}
+                    className="mt-12 mb-12 flex flex-col items-center gap-6 border-t border-gray-200 dark:border-gray-800 pt-12"
                 >
-                    <div dangerouslySetInnerHTML={{ __html: chapter.content }} />
-                </div>
-                {/* Bottom Padding for Scrubber/HUD */}
-                <div className="h-40"></div>
+                    {nextChapter ? (
+                        <>
+                            <motion.div
+                                animate={{ y: [0, 10, 0] }}
+                                transition={{ repeat: Infinity, duration: 2 }}
+                                className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center cursor-pointer group"
+                                onClick={handleNextChapter}
+                            >
+                                <ChevronDown className="text-primary group-hover:scale-125 transition-transform" size={28} />
+                            </motion.div>
+                            <div className="text-center px-6" onClick={handleNextChapter}>
+                                <p className="text-[10px] uppercase tracking-[0.3em] text-gray-500 font-bold mb-2">Next Chapter</p>
+                                <h3 className="text-xl font-bold dark:text-white leading-tight">{nextChapter.title}</h3>
+                                <p className="text-sm text-primary mt-2 font-medium animate-pulse">Swipe up or click to continue</p>
+                            </div>
+                            <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={handleNextChapter}
+                                className="px-10 py-4 bg-primary text-white rounded-full font-bold shadow-xl shadow-primary/30 transition-all hover:bg-primary/90"
+                            >
+                                Continue Reading
+                            </motion.button>
+                        </>
+                    ) : (
+                        <div className="text-center py-10 opacity-50">
+                            <p className="font-medium italic">End of current updates</p>
+                            <button
+                                onClick={() => navigate(-1)}
+                                className="mt-4 text-primary font-bold text-sm"
+                            >
+                                Back to Library
+                            </button>
+                        </div>
+                    )}
+                </motion.div>
+
+                {/* Extra Padding Removed */}
             </div>
 
 
@@ -217,8 +363,13 @@ export const Reader = () => {
                                 <button onClick={toggleTTS} className="size-16 flex items-center justify-center bg-primary rounded-full shadow-lg shadow-primary/40 active:scale-95 transition-transform">
                                     {isSpeaking ? <Pause className="text-white fill-white ml-1" size={32} /> : <Play className="text-white fill-white ml-1" size={32} />}
                                 </button>
-                                <button onClick={handleNextChapter} className="flex-1 flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 h-12 rounded-xl text-gray-900 dark:text-white font-semibold">
+                                <button
+                                    onClick={handleNextChapter}
+                                    disabled={!nextChapter}
+                                    className={clsx("flex-1 flex items-center justify-center gap-2 h-12 rounded-xl text-gray-900 dark:text-white font-semibold transition-opacity px-4 bg-gray-100 dark:bg-gray-800", !nextChapter && "opacity-30")}
+                                >
                                     <FastForward size={20} />
+                                    <span className="text-xs">Next</span>
                                 </button>
                             </div>
 

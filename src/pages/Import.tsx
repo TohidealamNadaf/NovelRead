@@ -1,19 +1,41 @@
-import { useState } from 'react';
-import { ArrowLeft, MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2 } from 'lucide-react';
-import { scraperService, type NovelMetadata } from '../services/scraper.service';
-import { dbService } from '../services/database.service';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2 } from 'lucide-react';
+import { scraperService, type NovelMetadata, type ScraperProgress } from '../services/scraper.service';
 import { useNavigate } from 'react-router-dom';
 import { CompletionModal } from '../components/CompletionModal';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { Capacitor } from '@capacitor/core';
 import clsx from 'clsx';
 
 export const Import = () => {
     const navigate = useNavigate();
     const [url, setUrl] = useState('');
     const [loading, setLoading] = useState(false);
-    const [novel, setNovel] = useState<NovelMetadata | null>(null);
-    const [scraping, setScraping] = useState(false);
-    const [progress, setProgress] = useState({ current: 0, total: 0, currentTitle: '', logs: [] as string[] });
+    const [novel, setNovel] = useState<NovelMetadata | null>(scraperService.activeNovelMetadata);
+    const [scraping, setScraping] = useState(scraperService.isScraping);
+    const [progress, setProgress] = useState<ScraperProgress>(scraperService.progress);
     const [showSuccess, setShowSuccess] = useState(false);
+
+    useEffect(() => {
+        // Request Permissions
+        if (Capacitor.getPlatform() !== 'web') {
+            LocalNotifications.requestPermissions();
+        }
+
+        // Subscribe to scraper progress
+        const unsub = scraperService.subscribe((newProgress, isScraping) => {
+            setProgress(newProgress);
+            setScraping(isScraping);
+
+            // Auto-open success if it just finished and we are on this page
+            if (!isScraping && newProgress.current > 0 && newProgress.current === newProgress.total) {
+                // Only show if we haven't already
+                setShowSuccess(true);
+            }
+        });
+
+        return unsub;
+    }, []);
 
     const handlePreview = async () => {
         if (!url) return;
@@ -51,65 +73,13 @@ export const Import = () => {
 
         if (!targetNovel) return;
 
-        setScraping(true);
-        setProgress({ current: 0, total: targetNovel.chapters.length, currentTitle: 'Starting...', logs: [] });
-
-        try {
-            // Save Novel Metadata first
-            const novelId = targetNovel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) + '-' + Math.random().toString(36).slice(2, 7);
-            await dbService.addNovel({
-                id: novelId,
-                title: targetNovel.title,
-                author: targetNovel.author,
-                coverUrl: targetNovel.coverUrl,
-                sourceUrl: url,
-                category: 'Imported'
-            });
-
-            // Scrape Chapters
-            for (let i = 0; i < targetNovel.chapters.length; i++) {
-                const chapter = targetNovel.chapters[i];
-                setProgress(prev => ({
-                    ...prev,
-                    current: i + 1,
-                    currentTitle: chapter.title,
-                    logs: [`[${new Date().toLocaleTimeString()}] ${chapter.title}: Loading...`, ...prev.logs.slice(0, 2)]
-                }));
-
-                const content = await scraperService.fetchChapterContent(chapter.url);
-                const chapterId = `${novelId}-ch-${i + 1}`;
-
-                await dbService.addChapter({
-                    id: chapterId,
-                    novelId: novelId,
-                    title: chapter.title,
-                    content: content,
-                    orderIndex: i
-                });
-
-                setProgress(prev => {
-                    const newLogs = prev.logs;
-                    newLogs[0] = `[${new Date().toLocaleTimeString()}] ${chapter.title}: Success`;
-                    return { ...prev, logs: newLogs };
-                });
-
-                // Rate limiting to be polite
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-
-            setShowSuccess(true);
-        } catch (error) {
-            console.error(error);
-            alert('Scraping failed');
-        } finally {
-            setScraping(false);
-        }
+        scraperService.startImport(url, targetNovel);
     };
 
     return (
         <div className="relative w-full h-screen bg-background-light dark:bg-background-dark flex flex-col overflow-hidden">
             {/* Top App Bar */}
-            <div className="flex flex-col pt-[14px] px-4 pb-2 bg-background-light dark:bg-background-dark/80 backdrop-blur-md sticky top-0 z-50 ">
+            <div className="flex flex-col pt-[16px] px-4 pb-2 bg-background-light dark:bg-background-dark/80 backdrop-blur-md sticky top-0 z-50 ">
                 <div className="flex items-center justify-between py-2">
                     <button onClick={() => navigate(-1)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                         <ArrowLeft className="text-2xl" />
@@ -193,6 +163,15 @@ export const Import = () => {
                                     </div>
                                 ))}
                             </div>
+                        </div>
+
+                        {/* Background Hint */}
+                        <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 p-4 rounded-xl">
+                            <Minimize2 className="text-primary shrink-0" size={20} />
+                            <p className="text-xs text-primary font-medium leading-relaxed">
+                                You can safely leave this page or minimize the app.
+                                <span className="block opacity-70 mt-0.5">Scraping will continue in the background.</span>
+                            </p>
                         </div>
                     </div>
                 )}
