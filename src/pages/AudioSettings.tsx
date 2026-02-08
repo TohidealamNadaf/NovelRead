@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Zap, Flame, Trees, CloudRain, Music, Mic } from 'lucide-react';
-import { audioService } from '../services/audio.service';
+import { audioService, type VoiceInfo } from '../services/audio.service';
 import { Navbar } from '../components/Navbar';
 import clsx from 'clsx';
 import { Link } from 'react-router-dom';
@@ -10,12 +10,17 @@ export const AudioSettings = () => {
     // const navigate = useNavigate(); // Unused now
     const [voice, setVoice] = useState<'female' | 'male'>('female');
     const [rate, setRate] = useState(settingsService.getSettings().ttsRate);
-    const [pitch, setPitch] = useState(settingsService.getSettings().ttsPitch);
     const [ambience, setAmbience] = useState<'rainy' | 'fireplace' | 'forest' | null>(settingsService.getSettings().ambience);
     const [bgmEnabled, setBgmEnabled] = useState(settingsService.getSettings().isMusicEnabled);
     const [voiceVolume, setVoiceVolume] = useState(80);
     const [bgmVolume, setBgmVolume] = useState(35);
-    const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+    const [availableVoices, setAvailableVoices] = useState<VoiceInfo[]>([]);
+
+    // Convert stored pitch (0.5-1.5 or 0 default) to slider value (-5 to 5)
+    // Default 0 in settings means unset, which maps to 0 slider (1.0 pitch)
+    // Stored 1.0 maps to 0 slider.
+    const initialPitchVal = settingsService.getSettings().ttsPitch;
+    const [pitch, setPitch] = useState(initialPitchVal === 0 ? 0 : Math.round((initialPitchVal - 1.0) * 10));
 
     // Load voices and update settings
     useEffect(() => {
@@ -38,7 +43,7 @@ export const AudioSettings = () => {
                 audioService.setSettings({
                     rate: rate,
                     pitch: 1.0 + (pitch * 0.1),
-                    voice: selected
+                    voiceName: selected.name
                 });
             }
         };
@@ -129,6 +134,30 @@ export const AudioSettings = () => {
                         </button>
                     </div>
 
+                    {/* Natural Tone Preset */}
+                    <button
+                        onClick={() => {
+                            const result = audioService.applyNaturalPreset();
+                            setRate(result.rate);
+                            setPitch(result.pitch);
+                            if (result.voice) {
+                                setVoice(result.voice.name.toLowerCase().includes('male') && !result.voice.name.toLowerCase().includes('female') ? 'male' : 'female');
+                            }
+                            // Show feedback
+                            const btn = document.getElementById('natural-btn');
+                            if (btn) {
+                                const originalText = btn.innerText;
+                                btn.innerText = "Applied! ✅";
+                                setTimeout(() => btn.innerText = originalText, 1500);
+                            }
+                        }}
+                        id="natural-btn"
+                        className="w-full mb-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                    >
+                        <Zap size={18} className="fill-white" />
+                        Apply Natural Tone Preset
+                    </button>
+
                     {/* Specific Voice Dropdown */}
                     <div className="w-full">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 block">Specific Voice</label>
@@ -137,7 +166,7 @@ export const AudioSettings = () => {
                             onChange={(e) => {
                                 const selected = availableVoices.find(v => v.name === e.target.value);
                                 if (selected) {
-                                    audioService.setSettings({ voice: selected });
+                                    audioService.setSettings({ voiceName: selected.name });
                                 }
                             }}
                             value={settingsService.getSettings().ttsVoice || ''}

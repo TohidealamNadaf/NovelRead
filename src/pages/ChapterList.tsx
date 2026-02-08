@@ -193,12 +193,11 @@ export const ChapterList = () => {
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans min-h-screen pb-20">
             {/* Top Navigation Bar */}
             <div className="sticky top-0 z-50 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 pt-[16px]">
-                <div className="flex items-center p-4 justify-between max-w-lg mx-auto">
-                    <div className="flex items-center gap-2" onClick={() => navigate('/')}>
+                <div className="flex items-center p-4 justify-between max-w-lg mx-auto relative">
+                    <button className="flex items-center justify-center size-10 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => navigate('/')}>
                         <ArrowLeft className="text-primary cursor-pointer" />
-                        <span className="text-sm font-medium cursor-pointer">Library</span>
-                    </div>
-                    <h2 className="text-lg font-bold truncate px-4">Chapter Index</h2>
+                    </button>
+                    <h2 className="text-lg font-bold truncate absolute left-1/2 -translate-x-1/2">Chapter Index</h2>
                     <div className="relative flex items-center">
                         <button className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => setShowMenu(!showMenu)}>
                             <MoreHorizontal className="text-primary" />
@@ -353,19 +352,29 @@ export const ChapterList = () => {
                             </div>
                         </div>
 
-                        {/* Progress Tracking (Mock Data for now) */}
-                        <div className="mx-4 mb-6 p-4 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
-                            <div className="flex justify-between items-end mb-2">
-                                <div>
-                                    <p className="text-xs uppercase tracking-widest text-slate-500 dark:text-slate-400 font-sans font-bold">Reading Progress</p>
-                                    <p className="text-xl font-bold">Chapter {chapters.length > 0 ? 1 : 0} <span className="text-sm font-normal text-slate-500">of {chapters.length}</span></p>
+                        {/* Progress Tracking (Dynamic) */}
+                        {(() => {
+                            // Find current reading position based on lastReadChapterId
+                            const lastReadIndex = chapters.findIndex((ch: any) => ch.id === novel.lastReadChapterId);
+                            const currentChapterNum = lastReadIndex >= 0 ? lastReadIndex + 1 : (chapters.length > 0 ? 1 : 0);
+                            const progressPercent = chapters.length > 0 ? Math.round((currentChapterNum / chapters.length) * 100) : 0;
+                            const readChaptersCount = chapters.filter((ch: any) => ch.isRead).length;
+
+                            return (
+                                <div className="mx-4 mb-6 p-4 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
+                                    <div className="flex justify-between items-end mb-2">
+                                        <div>
+                                            <p className="text-xs uppercase tracking-widest text-slate-500 dark:text-slate-400 font-sans font-bold">Reading Progress</p>
+                                            <p className="text-xl font-bold">Chapter {currentChapterNum} <span className="text-sm font-normal text-slate-500">of {chapters.length}</span></p>
+                                        </div>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 font-sans">{readChaptersCount} read</p>
+                                    </div>
+                                    <div className="w-full bg-slate-300 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                                        <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }}></div>
+                                    </div>
                                 </div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 font-sans italic">--</p>
-                            </div>
-                            <div className="w-full bg-slate-300 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                                <div className="bg-primary h-full w-[1%] rounded-full"></div>
-                            </div>
-                        </div>
+                            );
+                        })()}
 
                         {/* Utilities & Search */}
                         <div className="px-4 sticky top-[65px] z-40 bg-background-light dark:bg-background-dark py-2 flex flex-col gap-3">

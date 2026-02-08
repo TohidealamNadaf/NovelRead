@@ -200,6 +200,20 @@ class DatabaseService {
             console.error("Failed to update reading progress", e);
         }
     }
+
+    async updateChapterContent(novelId: string, chapterId: string, content: string) {
+        const db = await this.getDB();
+        if (!db) return;
+
+        try {
+            await db.run('UPDATE chapters SET content = ? WHERE id = ? AND novelId = ?', [content, chapterId, novelId]);
+            await this.save();
+            console.log(`Chapter ${chapterId} content updated successfully`);
+        } catch (e) {
+            console.error("Failed to update chapter content", e);
+            throw e;
+        }
+    }
 }
 
 export const dbService = new DatabaseService();

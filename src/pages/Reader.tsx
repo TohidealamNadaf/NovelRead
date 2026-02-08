@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, MoreHorizontal, Play, Pause, FastForward, Music, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, MoreHorizontal, Play, Pause, FastForward, Music, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useNavigate, useParams } from 'react-router-dom';
 import { dbService } from '../services/database.service';
 import { audioService } from '../services/audio.service';
 import { settingsService } from '../services/settings.service';
+import { scraperService } from '../services/scraper.service';
 import { CompletionModal } from '../components/CompletionModal';
 
 export const Reader = () => {
@@ -32,6 +33,12 @@ export const Reader = () => {
     const [settings, setSettings] = useState(settingsService.getSettings());
     const [showSettings, setShowSettings] = useState(false);
     const [showComingSoon, setShowComingSoon] = useState(false);
+    const [isResyncing, setIsResyncing] = useState(false);
+
+    // Swipe-up-to-next at bottom state
+    const [pushDistance, setPushDistance] = useState(0);
+    const [isPushingUp, setIsPushingUp] = useState(false);
+    const [isAtBottom, setIsAtBottom] = useState(false);
 
     const theme = settings.theme;
     const font = settings.fontFamily;
@@ -111,32 +118,81 @@ export const Reader = () => {
         navigate(`/novel/${novelId}`);
     };
 
+    // Resync chapter content handler
+    const handleResyncChapter = async () => {
+        // audioPath stores the original chapter URL
+        if (!chapter?.audioPath || isResyncing) return;
+        setIsResyncing(true);
+        try {
+            const newContent = await scraperService.fetchChapterContent(chapter.audioPath);
+            if (newContent && newContent.length > 100) {
+                await dbService.updateChapterContent(novelId!, chapter.id, newContent);
+                // Reload the chapter
+                const updatedChapter = await dbService.getChapter(novelId!, chapter.id);
+                setChapter(updatedChapter);
+            }
+        } catch (error) {
+            console.error('Failed to resync chapter:', error);
+        } finally {
+            setIsResyncing(false);
+        }
+    };
+
     const handleTouchStart = (e: React.TouchEvent) => {
+        touchStartRef.current = e.touches[0].clientY;
+
+        // Check if at top - for pull-to-previous
         if (scrollContainerRef.current?.scrollTop === 0) {
-            touchStartRef.current = e.touches[0].clientY;
             setIsPulling(true);
+        }
+
+        // Check if at bottom - for swipe-up-to-next
+        const container = scrollContainerRef.current;
+        if (container) {
+            const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+            setIsAtBottom(atBottom);
+            if (atBottom && nextChapter) {
+                setIsPushingUp(true);
+            }
         }
     };
 
     const handleTouchMove = (e: React.TouchEvent) => {
-        if (!isPulling || !prevChapter) return;
         const currentY = e.touches[0].clientY;
         const diff = currentY - touchStartRef.current;
-        if (diff > 0 && scrollContainerRef.current?.scrollTop === 0) {
-            // Logarithmic feel for pulling
+
+        // Pull-to-previous (at top, pulling down)
+        if (isPulling && prevChapter && diff > 0 && scrollContainerRef.current?.scrollTop === 0) {
             const resistance = 0.5;
             setPullDistance(diff * resistance);
         } else {
             setPullDistance(0);
         }
+
+        // Swipe-up-to-next (at bottom, swiping up)
+        if (isPushingUp && nextChapter && diff < 0 && isAtBottom) {
+            const resistance = 0.5;
+            setPushDistance(Math.abs(diff) * resistance);
+        } else if (!isPulling) {
+            setPushDistance(0);
+        }
     };
 
     const handleTouchEnd = () => {
+        // Handle pull-to-previous
         if (pullDistance > PULL_THRESHOLD && prevChapter) {
             handlePrevChapter();
         }
         setPullDistance(0);
         setIsPulling(false);
+
+        // Handle swipe-up-to-next
+        if (pushDistance > PULL_THRESHOLD && nextChapter) {
+            handleNextChapter();
+        }
+        setPushDistance(0);
+        setIsPushingUp(false);
+        setIsAtBottom(false);
     };
 
     const toggleTTS = () => {
@@ -376,6 +432,22 @@ export const Reader = () => {
                                     <span className="text-xs">Next</span>
                                 </button>
                             </div>
+
+                            {/* Resync Chapter Button */}
+                            <button
+                                onClick={handleResyncChapter}
+                                disabled={isResyncing || !chapter?.audioPath}
+                                className={clsx(
+                                    "w-full flex items-center justify-center gap-2 h-12 rounded-xl font-semibold transition-colors",
+                                    isResyncing
+                                        ? "bg-primary/20 text-primary border border-primary/50"
+                                        : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white",
+                                    !chapter?.audioPath && "opacity-30"
+                                )}
+                            >
+                                <RefreshCw size={20} className={isResyncing ? "animate-spin" : ""} />
+                                <span className="text-sm">{isResyncing ? 'Resyncing Chapter...' : 'Resync Chapter'}</span>
+                            </button>
 
                             {/* Font Customization */}
                             <div className="grid grid-cols-2 gap-4">
