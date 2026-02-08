@@ -772,6 +772,41 @@ export class ScraperService {
         return [];
     }
 
+    async fetchRecentlyAdded(page: number = 1): Promise<NovelMetadata[]> {
+        const url = `https://novelfire.net/latest-release-novels${page > 1 ? `?page=${page}` : ''}`;
+        console.log(`[Scraper] Fetching Recently Added: ${url} (page ${page})`);
+        for (const getProxyUrl of this.getProxies()) {
+            try {
+                const html = await this.fetchHtml(url, getProxyUrl);
+                if (!html || html.length < 500) continue;
+
+                // Detect blocked/captcha pages
+                if (html.includes('you have been blocked') ||
+                    html.includes('Checking your browser') ||
+                    html.includes('Just a moment') ||
+                    html.includes('cf-browser-verification')) {
+                    console.warn(`[Scraper] Recently Added page blocked via ${getProxyUrl}`);
+                    continue;
+                }
+
+                const $ = cheerio.load(html);
+                let novels = this.parseNovelsList($, '.novel-list .novel-item, .novel-list .item, .novel-item');
+
+                if (novels.length === 0) {
+                    novels = this.parseNovelsList($, '.novel-list');
+                }
+
+                if (novels.length > 0) {
+                    console.log(`[Scraper] Recently Added fetched ${novels.length} novels via ${getProxyUrl}`);
+                    return novels;
+                }
+            } catch (e) {
+                console.error(`[Scraper] Recently Added fetch failed for page ${page}`, e);
+            }
+        }
+        return [];
+    }
+
     async fetchCompleted(page: number = 1): Promise<NovelMetadata[]> {
         const url = `https://novelfire.net/genre-all/sort-popular/status-completed/all-novel${page > 1 ? `?page=${page}` : ''}`;
         console.log(`[Scraper] Fetching Completed: ${url} (page ${page})`);
@@ -823,15 +858,14 @@ export class ScraperService {
             onProgress?.('Syncing Completed Stories...', 3, 5);
             results.completed = await this.fetchCompleted(1);
 
-            // 4. Try to fetch deep home data (including AJAX Recently Added)
-            onProgress?.('Syncing Home Page...', 4, 5);
+            // 4. Fetch Recently Added (from /latest-release-novels)
+            onProgress?.('Syncing Recently Added...', 4, 5);
+            results.recentlyAdded = await this.fetchRecentlyAdded(1);
+
+            // 5. Try to fetch deep home data for recommendations
+            onProgress?.('Syncing Home Page...', 5, 5);
             try {
                 const homeDeepData = await this.fetchHomeData();
-
-                // Backfill recentlyAdded (primary source)
-                if (homeDeepData.recentlyAdded.length > 0) {
-                    results.recentlyAdded = homeDeepData.recentlyAdded;
-                }
 
                 // Backfill other categories if primary fetch failed (Fallback source)
                 if (results.ranking.length === 0 && homeDeepData.ranking.length > 0) {
@@ -846,12 +880,17 @@ export class ScraperService {
                     console.log('[Scraper] Backfilling Completed from Home Data');
                     results.completed = homeDeepData.completed;
                 }
+                // Use AJAX recently added as fallback if main fetch failed
+                if (results.recentlyAdded.length === 0 && homeDeepData.recentlyAdded.length > 0) {
+                    console.log('[Scraper] Backfilling Recently Added from AJAX');
+                    results.recentlyAdded = homeDeepData.recentlyAdded;
+                }
 
             } catch (e) {
                 console.warn('[Scraper] Deep home fetch failed, using fallbacks', e);
             }
 
-            // 5. Fallback for Recently Added: Use Latest if still empty
+            // Fallback for Recently Added: Use Latest if still empty
             if (results.recentlyAdded.length === 0 && results.latest.length > 0) {
                 console.log('[Scraper] Using Latest as fallback for Recently Added');
                 // Take the first 10 from latest as 'recently added'

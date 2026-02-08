@@ -51,6 +51,11 @@ export const DiscoverList = () => {
                 const liveCompleted = await scraperService.fetchCompleted(pageNum);
                 data = liveCompleted.length > 0 ? liveCompleted : (pageNum === 1 ? homeData?.completed || [] : []);
                 setHasMore(liveCompleted.length >= 20);
+            } else if (category === 'recentlyAdded' || category === 'recently-added') {
+                pageTitle = 'Recently Added';
+                const liveRecentlyAdded = await scraperService.fetchRecentlyAdded(pageNum);
+                data = liveRecentlyAdded.length > 0 ? liveRecentlyAdded : (pageNum === 1 ? homeData?.recentlyAdded || [] : []);
+                setHasMore(liveRecentlyAdded.length >= 20);
             } else if (category) {
                 pageTitle = category.charAt(0).toUpperCase() + category.slice(1);
                 data = [];
@@ -202,7 +207,7 @@ export const DiscoverList = () => {
                         </div>
 
                         {/* Pagination Controls */}
-                        {(category === 'ranking' || category === 'latest' || category === 'completed' || category === 'new') && (
+                        {(category === 'ranking' || category === 'latest' || category === 'completed' || category === 'new' || category === 'recentlyAdded' || category === 'recently-added') && (
                             <div className="flex items-center justify-between pt-4 pb-8">
                                 <button
                                     onClick={() => handlePageChange('prev')}

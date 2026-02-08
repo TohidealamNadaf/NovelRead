@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, Bolt, BookOpen, Rocket, Heart, Swords, Filter, RefreshCcw, Minimize2 } from 'lucide-react';
+import { Search, Bolt, BookOpen, Filter, RefreshCcw, Minimize2 } from 'lucide-react';
 import { scraperService, type ScraperProgress } from '../services/scraper.service';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Navbar } from '../components/Navbar';
@@ -319,7 +319,7 @@ export const Discover = () => {
                         <div className="flex flex-col gap-3">
                             <div className="flex items-center justify-between px-4">
                                 <h3 className="text-lg font-bold tracking-tight">Recently Added</h3>
-                                <button onClick={() => navigate('/discover/latest')} className="text-primary text-sm font-medium">See all</button>
+                                <button onClick={() => navigate('/discover/recentlyAdded')} className="text-primary text-sm font-medium">See all</button>
                             </div>
                             <div className="flex overflow-x-auto gap-4 px-4 hide-scrollbar">
                                 {homeData.recentlyAdded.slice(0, 10).map((novel: any, idx: number) => (
@@ -380,30 +380,7 @@ export const Discover = () => {
                         </div>
                     )}
 
-                    {/* Genres */}
-                    <div className="flex flex-col gap-3 mb-4">
-                        <div className="flex items-center justify-between px-4">
-                            <h3 className="text-lg font-bold tracking-tight">Top Genres</h3>
-                        </div>
-                        <div className="flex overflow-x-auto gap-3 px-4 hide-scrollbar">
-                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform cursor-pointer" onClick={() => navigate('/discover/fantasy')}>
-                                <BookOpen className="text-white mb-1" />
-                                <span className="text-white text-xs font-bold">Fantasy</span>
-                            </div>
-                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform cursor-pointer" onClick={() => navigate('/discover/sci-fi')}>
-                                <Rocket className="text-white mb-1" />
-                                <span className="text-white text-xs font-bold">Sci-Fi</span>
-                            </div>
-                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-rose-600 to-pink-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform cursor-pointer" onClick={() => navigate('/discover/romance')}>
-                                <Heart className="text-white mb-1" />
-                                <span className="text-white text-xs font-bold">Romance</span>
-                            </div>
-                            <div className="flex-none w-32 h-20 rounded-xl bg-gradient-to-br from-amber-600 to-orange-800 flex flex-col items-center justify-center shadow-lg active:scale-95 transition-transform cursor-pointer" onClick={() => navigate('/discover/action')}>
-                                <Swords className="text-white mb-1" />
-                                <span className="text-white text-xs font-bold">Action</span>
-                            </div>
-                        </div>
-                    </div>
+
 
 
 
