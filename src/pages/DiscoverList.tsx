@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Search, Bolt, TrendingUp, BookOpen, RefreshCw } from 'lucide-react';
 import { Navbar } from '../components/Navbar';
@@ -12,12 +11,19 @@ export const DiscoverList = () => {
     const [novels, setNovels] = useState<any[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [rankingType, setRankingType] = useState<'overall' | 'ratings' | 'most-read' | 'most-review'>('overall');
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const isLoadingRef = useRef(false);
 
     useEffect(() => {
-        loadCategoryData();
-    }, [category]);
+        if (isLoadingRef.current) return;
+        setPage(1);
+        setNovels([]); // Clear previous novels to show loading state cleanly
+        loadCategoryData(1, rankingType);
+    }, [category, rankingType]);
 
-    const loadCategoryData = async () => {
+    const loadCategoryData = async (pageNum: number, rankType: any = 'overall') => {
         let pageTitle = 'Discover';
         let data: any[] = [];
         setIsLoading(true);
@@ -25,36 +31,53 @@ export const DiscoverList = () => {
         const storedHomeData = localStorage.getItem('homeData');
         const homeData = storedHomeData ? JSON.parse(storedHomeData) : null;
 
-        if (category === 'trending' || category === 'recommended') {
-            pageTitle = category === 'trending' ? 'Trending Now' : 'Recommended';
-            data = homeData?.recommended || [];
-        } else if (category === 'ranking') {
-            pageTitle = 'Top Ranking';
-            try {
-                const liveRanking = await scraperService.fetchRanking();
-                if (liveRanking && liveRanking.length > 0) {
-                    data = liveRanking;
-                } else {
-                    data = homeData?.ranking || [];
-                }
-            } catch (e) {
-                console.error("Live ranking fetch failed", e);
-                data = homeData?.ranking || [];
+        try {
+            if (category === 'trending' || category === 'recommended') {
+                pageTitle = category === 'trending' ? 'Trending Now' : 'Recommended';
+                data = homeData?.recommended || [];
+                setHasMore(false);
+            } else if (category === 'ranking') {
+                pageTitle = 'Top Ranking';
+                const liveRanking = await scraperService.fetchRanking(rankType, pageNum);
+                data = liveRanking;
+                setHasMore(liveRanking.length >= 10);
+            } else if (category === 'latest' || category === 'new') {
+                pageTitle = 'Latest Novels';
+                const liveLatest = await scraperService.fetchLatest(pageNum);
+                data = liveLatest;
+                setHasMore(liveLatest.length >= 10);
+            } else if (category === 'completed') {
+                pageTitle = 'Completed Stories';
+                const liveCompleted = await scraperService.fetchCompleted(pageNum);
+                data = liveCompleted.length > 0 ? liveCompleted : (pageNum === 1 ? homeData?.completed || [] : []);
+                setHasMore(liveCompleted.length >= 10);
+            } else if (category) {
+                pageTitle = category.charAt(0).toUpperCase() + category.slice(1);
+                data = [];
+                setHasMore(false);
             }
-        } else if (category === 'latest' || category === 'new') {
-            pageTitle = category === 'latest' ? 'Latest Updates' : 'New Scrapes';
-            data = homeData?.latest || [];
-        } else if (category === 'completed') {
-            pageTitle = 'Completed Stories';
-            data = homeData?.completed || [];
-        } else if (category) {
-            pageTitle = category.charAt(0).toUpperCase() + category.slice(1);
+        } catch (e) {
+            console.error("Fetch failed", e);
             data = [];
+        } finally {
+            setTitle(pageTitle);
+            if (pageNum === 1) {
+                setNovels(data);
+            } else {
+                // Standard pagination: Replace list to avoid memory issues and match strict page handling
+                setNovels(data);
+            }
+            setIsLoading(false);
+            isLoadingRef.current = false;
         }
+    };
 
-        setTitle(pageTitle);
-        setNovels(data);
-        setIsLoading(false);
+    const handlePageChange = (direction: 'next' | 'prev') => {
+        const nextPage = direction === 'next' ? page + 1 : Math.max(1, page - 1);
+        setPage(nextPage);
+        loadCategoryData(nextPage, rankingType);
+        // Scroll to top
+        document.querySelector('.flex-1.overflow-y-auto')?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const filteredNovels = novels.filter(n => n.title.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -97,6 +120,29 @@ export const DiscoverList = () => {
                         </div>
                     </label>
                 </div>
+
+                {/* Ranking Type Filters */}
+                {category === 'ranking' && (
+                    <div className="flex overflow-x-auto gap-2 px-4 pb-3 hide-scrollbar">
+                        {[
+                            { id: 'overall', label: 'Ranks' },
+                            { id: 'ratings', label: 'Ratings' },
+                            { id: 'most-read', label: 'Most Read' },
+                            { id: 'most-review', label: 'Most Review' }
+                        ].map(type => (
+                            <button
+                                key={type.id}
+                                onClick={() => setRankingType(type.id as any)}
+                                className={`flex-none px-4 py-1.5 rounded-full text-xs font-bold transition-all border ${rankingType === type.id
+                                    ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20'
+                                    : 'bg-white dark:bg-[#1c1c1e] text-slate-500 border-slate-200 dark:border-white/5 active:bg-slate-50 dark:active:bg-white/5'
+                                    }`}
+                            >
+                                {type.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {/* Grid Content - Independent Scroll */}
@@ -107,36 +153,65 @@ export const DiscoverList = () => {
                         <p className="text-sm font-medium">Scraping live {title.toLowerCase()}...</p>
                     </div>
                 ) : filteredNovels.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-6">
-                        {filteredNovels.map((novel, index) => (
-                            <div key={index} className="flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform" onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}>
-                                <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg border border-slate-100 dark:border-white/5">
-                                    {novel.coverUrl ? (
-                                        <img src={novel.coverUrl} className="absolute inset-0 w-full h-full object-cover" alt={novel.title} />
-                                    ) : (
-                                        <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
-                                            <BookOpen className="text-4xl text-slate-400" />
-                                        </div>
-                                    )}
+                    <div className="flex flex-col gap-6">
+                        <div className="grid grid-cols-4 gap-x-3 gap-y-4">
+                            {filteredNovels.map((novel, index) => (
+                                <div key={index} className="flex flex-col gap-1.5 cursor-pointer active:scale-95 transition-transform" onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}>
+                                    <div className="relative aspect-[2/3] w-full rounded-lg overflow-hidden shadow-md border border-slate-100 dark:border-white/5">
+                                        {novel.coverUrl ? (
+                                            <img src={novel.coverUrl} className="absolute inset-0 w-full h-full object-cover" alt={novel.title} />
+                                        ) : (
+                                            <div className="absolute inset-0 bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center">
+                                                <BookOpen className="text-2xl text-slate-400" />
+                                            </div>
+                                        )}
 
-                                    {/* Badges */}
-                                    {novel.badge === 'bolt' && (
-                                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white p-1 rounded-md">
-                                            <Bolt size={16} fill="currentColor" />
-                                        </div>
-                                    )}
-                                    {novel.badge === 'trending_up' && (
-                                        <div className="absolute top-2 right-2 bg-primary/90 backdrop-blur-sm text-white p-1 rounded-md">
-                                            <TrendingUp size={16} />
-                                        </div>
-                                    )}
+                                        {/* Badges */}
+                                        {novel.badge === 'bolt' && (
+                                            <div className="absolute top-1 right-1 bg-black/60 backdrop-blur-sm text-white p-0.5 rounded">
+                                                <Bolt size={12} fill="currentColor" />
+                                            </div>
+                                        )}
+                                        {novel.badge === 'trending_up' && (
+                                            <div className="absolute top-1 right-1 bg-primary/90 backdrop-blur-sm text-white p-0.5 rounded">
+                                                <TrendingUp size={12} />
+                                            </div>
+                                        )}
+
+                                        {category === 'ranking' && (
+                                            <div className="absolute top-1 left-1 bg-black/60 backdrop-blur-sm text-white size-5 flex items-center justify-center rounded font-bold text-[8px]">
+                                                #{(page - 1) * 10 + index + 1}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <p className="font-bold text-[11px] line-clamp-2 leading-tight">{novel.title}</p>
+                                        <p className="text-slate-500 dark:text-[#a19db9] text-[9px] font-medium truncate">{novel.author || 'Unknown'}</p>
+                                    </div>
                                 </div>
-                                <div className="flex flex-col px-0.5">
-                                    <p className="font-bold text-[14px] line-clamp-1">{novel.title}</p>
-                                    <p className="text-slate-500 dark:text-[#a19db9] text-[11px] font-medium">{novel.author || 'Unknown Author'}</p>
-                                </div>
+                            ))}
+                        </div>
+
+                        {/* Pagination Controls */}
+                        {(category === 'ranking' || category === 'latest' || category === 'completed' || category === 'new') && (
+                            <div className="flex items-center justify-between pt-4 pb-8">
+                                <button
+                                    onClick={() => handlePageChange('prev')}
+                                    disabled={page === 1 || isLoading}
+                                    className="px-6 py-2.5 rounded-xl bg-white dark:bg-[#1c1c1e] text-sm font-bold border border-slate-200 dark:border-white/5 disabled:opacity-50 active:scale-95 transition-all"
+                                >
+                                    Previous
+                                </button>
+                                <span className="text-xs font-black uppercase tracking-widest text-primary">Page {page}</span>
+                                <button
+                                    onClick={() => handlePageChange('next')}
+                                    disabled={!hasMore || isLoading}
+                                    className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold shadow-lg shadow-primary/20 disabled:opacity-50 active:scale-95 transition-all"
+                                >
+                                    Next Page
+                                </button>
                             </div>
-                        ))}
+                        )}
                     </div>
                 ) : (
                     <div className="flex flex-col items-center justify-center py-20 opacity-50">

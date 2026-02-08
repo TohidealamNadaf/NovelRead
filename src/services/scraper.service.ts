@@ -239,22 +239,14 @@ export class ScraperService {
         // 1. Determine Info URL (for Metadata) and List URL (for Chapters)
         let infoUrl = url.replace(/\/chapters\/?(\?.*)?$/, '');
         let listUrl = url;
-
         const userProvidedChapters = /\/chapters\/?(\?.*)?$/.test(url);
-
-        // Helper to get proxy URL
-        const getProxyUrl = (target: string) => {
-            const isWeb = Capacitor.getPlatform() === 'web';
-            if (isWeb && !target.includes('corsproxy.io')) {
-                return `https://corsproxy.io/?${encodeURIComponent(target)}`;
-            }
-            return target;
-        };
 
         // 2. Fetch Metadata from Info URL
         let title = '';
         let author = '';
         let coverUrl = '';
+        let summary = '';
+        let status = 'Ongoing';
 
         const extractMetadata = ($: any) => {
             const getMeta = (selectors: string[]) => {
@@ -282,7 +274,7 @@ export class ScraperService {
             const extractedAuthor = getMeta([
                 '.author', '.info-author', '.book-author',
                 'span[itemprop="author"]', '.txt-author'
-            ]).replace('Author:', '').trim();
+            ]).replace('Author:', '').trim() || 'Unknown';
 
             const extractedSummary = getMeta([
                 '.summary__content', '.description', '#editdescription',
@@ -292,7 +284,7 @@ export class ScraperService {
             const extractedStatus = getMeta([
                 '.status', '.info-status', '.book-status',
                 '.post-content_item:contains("Status") .summary-content'
-            ]).trim();
+            ]).trim() || 'Ongoing';
 
             let extractedCover = getAttr([
                 '.novel-cover img', '.book img', '.book-cover img',
@@ -319,67 +311,44 @@ export class ScraperService {
             };
         };
 
-        try {
-            // First attempt: Scrape the derived infoUrl
-            // Helper for common headers
-            const getHeaders = () => ({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9'
-            });
+        // Attempt metadata fetch
+        for (const getProxyUrl of this.getProxies()) {
+            try {
+                const html = await this.fetchHtml(infoUrl, getProxyUrl);
+                if (!html || html.length < 500) continue;
 
-            let response = await CapacitorHttp.get({
-                url: getProxyUrl(infoUrl),
-                headers: getHeaders()
-            });
-            let $ = cheerio.load(response.data);
-            let metadata = extractMetadata($);
-
-            title = metadata.title;
-            author = metadata.author;
-            coverUrl = metadata.coverUrl;
-
-            // Fallback: If cover is missing, we might be on a chapter page. Find the link to the Novel Info.
-            if (!coverUrl || !title) {
-                console.log("Metadata missing, attempting to find Novel Info link...");
-                const novelLink = $('a[title]').filter((_, el) => {
-                    const href = $(el).attr('href') || '';
-                    return href.includes('/novel/') || href.includes('/book/');
-                }).first().attr('href');
-
-                if (novelLink) {
-                    const origin = new URL(infoUrl).origin;
-                    let nextTarget = novelLink.startsWith('http') ? novelLink : `${origin}${novelLink.startsWith('/') ? '' : '/'}${novelLink}`;
-
-                    console.log(`Fetching fallback info URL: ${nextTarget}`);
-                    response = await CapacitorHttp.get({ url: getProxyUrl(nextTarget) });
-                    $ = cheerio.load(response.data);
-                    metadata = extractMetadata($);
-
-                    if (metadata.title) title = metadata.title;
-                    if (metadata.author) author = metadata.author;
-                    if (metadata.coverUrl) coverUrl = metadata.coverUrl;
-
-                    // Update listUrl since we found the real root
-                    if (!userProvidedChapters) listUrl = nextTarget;
+                // Detect blocked/captcha pages
+                if (html.includes('you have been blocked') ||
+                    html.includes('Checking your browser') ||
+                    html.includes('Just a moment') ||
+                    html.includes('cf-browser-verification') ||
+                    html.includes('challenge-form')) {
+                    console.warn(`[Scraper] Blocked by Cloudflare/site protection via ${getProxyUrl}`);
+                    continue;
                 }
-            }
 
-            if (!userProvidedChapters) {
-                const chaptersLink = $('a[href*="/chapters"]').first().attr('href');
-                if (chaptersLink) {
-                    const origin = new URL(infoUrl).origin;
-                    if (chaptersLink.startsWith('/')) {
-                        listUrl = origin + chaptersLink;
-                    } else if (chaptersLink.startsWith('http')) {
-                        listUrl = chaptersLink;
-                    } else {
-                        listUrl = `${origin}/${chaptersLink}`;
+                const $ = cheerio.load(html);
+                const metadata = extractMetadata($);
+
+                if (metadata.title) {
+                    title = metadata.title;
+                    author = metadata.author;
+                    coverUrl = metadata.coverUrl;
+                    summary = metadata.summary;
+                    status = metadata.status;
+
+                    if (!userProvidedChapters) {
+                        const chaptersLink = $('a[href*="/chapters"]').first().attr('href');
+                        if (chaptersLink) {
+                            const origin = new URL(infoUrl).origin;
+                            listUrl = chaptersLink.startsWith('http') ? chaptersLink : `${origin}${chaptersLink.startsWith('/') ? '' : '/'}${chaptersLink}`;
+                        }
                     }
+                    break;
                 }
+            } catch (e) {
+                console.warn(`[Scraper] Metadata fetch failed with proxy`, e);
             }
-        } catch (e) {
-            console.error('Failed to fetch metadata', e);
         }
 
         // 3. Scrape Chapters (Start Loop)
@@ -387,11 +356,9 @@ export class ScraperService {
         const visitedUrls = new Set<string>();
         let pageCount = 0;
         const MAX_PAGES = 50;
-
         let currentUrl = listUrl;
 
-        // Helper to extract chapters
-        const extractChapters = ($: cheerio.CheerioAPI, baseUrl: string) => {
+        const extractChaptersFromPage = ($: cheerio.CheerioAPI, baseUrl: string) => {
             const chapters: { title: string; url: string }[] = [];
             const listSelectors = [
                 '.chapter-list a', 'ul.chapter-list li a', '.list-chapter li a',
@@ -399,162 +366,107 @@ export class ScraperService {
                 '#list-chapter .row a', '.list-item a', '.chapter-item a'
             ];
 
-            let found = false;
             for (const sel of listSelectors) {
                 const els = $(sel);
                 if (els.length > 0) {
                     els.each((_, el) => {
-                        const title = $(el).text().trim();
-                        const href = $(el).attr('href') || '';
-                        if (href && !href.startsWith('javascript') && !href.startsWith('#')) {
-                            chapters.push({ title, url: href });
+                        const t = $(el).text().trim();
+                        const h = $(el).attr('href') || '';
+                        if (h && !h.startsWith('javascript') && !h.startsWith('#')) {
+                            chapters.push({ title: t, url: h });
                         }
                     });
-                    if (chapters.length > 0) {
-                        found = true;
-                        break;
-                    }
+                    if (chapters.length > 0) break;
                 }
-            }
-
-            // Fallback: search for any links that look like chapters or follow the novel's path pattern
-            if (!found || chapters.length < 5) {
-                const novelPath = baseUrl.split('/chapters')[0].split('/').pop() || '';
-
-                $('a').each((_, el) => {
-                    const text = $(el).text().toLowerCase();
-                    const href = $(el).attr('href') || '';
-                    const isChapterLink = text.includes('chapter') || text.includes('episode') ||
-                        href.includes('/chapter-') || href.includes('/ch-') ||
-                        (novelPath && href.includes(novelPath) && (href.match(/\d+/) || href.includes('chap')));
-
-                    if (isChapterLink && href.length > 5 && !href.startsWith('javascript') && !href.startsWith('#')) {
-                        const title = $(el).text().trim() || href.split('/').pop()?.replace(/-/g, ' ') || 'Chapter';
-                        // Avoid duplicates
-                        if (!chapters.some(c => c.url === href)) {
-                            chapters.push({ title, url: href });
-                        }
-                    }
-                });
             }
 
             const origin = new URL(baseUrl).origin;
             return chapters.map(ch => {
                 let chUrl = ch.url;
                 if (chUrl && !chUrl.startsWith('http')) {
-                    if (chUrl.startsWith('/')) {
-                        chUrl = `${origin}${chUrl}`;
-                    } else {
-                        chUrl = `${origin}/${chUrl}`;
-                    }
+                    chUrl = chUrl.startsWith('/') ? `${origin}${chUrl}` : `${origin}/${chUrl}`;
                 }
                 return { ...ch, url: chUrl };
             }).filter(ch => ch.url);
         };
 
-        // Helper to find next page
         const findNextPage = ($: cheerio.CheerioAPI, baseUrl: string): string | null => {
-            let nextUrl = '';
-            const nextSelectors = [
-                'a[rel="next"]', '.pagination .next a', '.pager .next a',
-                '.pagination a:contains("Next")', '.pagination a:contains("»")',
-                '.pager a:contains("Next")', 'li.next a', '.nav-next a'
-            ];
-
+            const nextSelectors = ['a[rel="next"]', '.pagination .next a', '.pager .next a', '.pagination a:contains("Next")', 'li.next a'];
             for (const sel of nextSelectors) {
                 const el = $(sel);
-                if (el.length > 0) {
-                    nextUrl = el.attr('href') || '';
-                    if (nextUrl) break;
+                const nextPath = el.attr('href');
+                if (nextPath) {
+                    const origin = new URL(baseUrl).origin;
+                    return nextPath.startsWith('http') ? nextPath : `${origin}${nextPath.startsWith('/') ? '' : '/'}${nextPath}`;
                 }
             }
-
-            if (!nextUrl) return null;
-
-            if (nextUrl && !nextUrl.startsWith('http')) {
-                const origin = new URL(baseUrl).origin;
-                if (nextUrl.startsWith('/')) {
-                    nextUrl = `${origin}${nextUrl}`;
-                } else {
-                    nextUrl = `${origin}/${nextUrl}`;
-                }
-            }
-            return nextUrl;
+            return null;
         };
 
-        // --- Main Loop ---
+        // --- Chapter Paging Loop ---
         while (currentUrl && !visitedUrls.has(currentUrl) && pageCount < MAX_PAGES) {
             visitedUrls.add(currentUrl);
             pageCount++;
-            console.log(`Scraping page ${pageCount}: ${currentUrl}`);
+            let pageFound = false;
 
-            try {
-                const response = await CapacitorHttp.get({ url: getProxyUrl(currentUrl) });
-                const $ = cheerio.load(response.data);
+            for (const getProxyUrl of this.getProxies()) {
+                try {
+                    const html = await this.fetchHtml(currentUrl, getProxyUrl);
+                    if (!html || html.length < 500) continue;
 
-                const newChapters = extractChapters($, currentUrl);
-
-                for (const ch of newChapters) {
-                    if (!allChapters.some(c => c.url === ch.url)) {
-                        allChapters.push(ch);
+                    // Detect blocked/captcha pages
+                    if (html.includes('you have been blocked') ||
+                        html.includes('Checking your browser') ||
+                        html.includes('Just a moment') ||
+                        html.includes('cf-browser-verification')) {
+                        console.warn(`[Scraper] Chapter page blocked via ${getProxyUrl}`);
+                        continue;
                     }
+
+                    const $ = cheerio.load(html);
+                    const newChapters = extractChaptersFromPage($, currentUrl);
+
+                    for (const ch of newChapters) {
+                        if (!allChapters.some(c => c.url === ch.url)) {
+                            allChapters.push(ch);
+                        }
+                    }
+
+                    const nextPage = findNextPage($, currentUrl);
+                    currentUrl = nextPage && !visitedUrls.has(nextPage) ? nextPage : '';
+                    pageFound = true;
+                    break;
+                } catch (e) {
+                    console.warn(`[Scraper] Chapter page ${pageCount} failed with proxy`, e);
                 }
-
-                if (newChapters.length === 0) break;
-
-                const nextPage = findNextPage($, currentUrl);
-                if (nextPage && !visitedUrls.has(nextPage)) {
-                    currentUrl = nextPage;
-                    await new Promise(r => setTimeout(r, 500));
-                } else {
-                    currentUrl = '';
-                }
-
-            } catch (error) {
-                console.error(`Failed to scrape page ${currentUrl}`, error);
-                break;
             }
+
+            if (!pageFound) break;
+            if (currentUrl) await new Promise(r => setTimeout(r, 300));
         }
 
         return {
             title: title || 'Unknown Title',
             author: author || 'Unknown Author',
             coverUrl,
+            summary,
+            status,
             chapters: allChapters
         };
     }
 
     private enhanceContent(html: string): string {
-        const $ = cheerio.load(html, { xmlMode: false }); // Use HTML mode
-
-        // Iterate over all text nodes to safely replace content without breaking HTML tags
+        const $ = cheerio.load(html, { xmlMode: false });
         $('*').contents().each((_, elem) => {
             if (elem.type === 'text') {
                 let text = $(elem).text();
-
-                // 1. Format System Messages: [ System Notification ]
-                // Matches content inside square brackets
                 text = text.replace(/(\[[^\]]+\])/g, '<span class="smart-system">$1</span>');
-
-                // 2. Format Parenthetical Asides: ( Note )
-                // Matches content inside parentheses, but avoid likely math/code usage if possible
                 text = text.replace(/(\([^\)]+\))/g, '<span class="smart-note">$1</span>');
-
-                // 3. Format Thoughts: ' I should go ' 
-                // Heuristic: Single quotes surrounded by spaces or punctuation, avoiding contractions like "don't"
-                // This is tricky. We look for ' followed by text followed by '
-                // We use a negative lookbehind for alphanumeric to avoid "don't" (n't) matches at the start
-                // and negative lookahead to avoid contractions.
-                // Simplified: Space/Start + ' + text + ' + Space/End/Punctuation
                 text = text.replace(/(^|\s|>)(')([^']{2,}?)(')(?=$|\s|<|[.,;:?!])/g, '$1<span class="smart-thought">$2$3$4</span>');
-
-                // 4. Format Sound Effects: *Boom*
                 text = text.replace(/(^|\s|>)(\*)([^*]+)(\*)(?=$|\s|<|[.,;:?!])/g, '$1<span class="smart-sfx">$2$3$4</span>');
-
                 $(elem).replaceWith(text);
             }
         });
-
         return $('body').html() || html;
     }
 
@@ -565,7 +477,6 @@ export class ScraperService {
             const origin = urlObj.origin;
             if (relativeUrl.startsWith('//')) return `https:${relativeUrl}`;
             if (relativeUrl.startsWith('/')) return `${origin}${relativeUrl}`;
-            // Handle cases where baseUrl doesn't end with / and relativeUrl doesn't start with /
             const baseDir = baseUrl.substring(0, baseUrl.lastIndexOf('/') + 1);
             return `${baseDir}${relativeUrl}`;
         } catch (e) {
@@ -580,121 +491,132 @@ export class ScraperService {
         }
         visitedUrls.add(url);
 
-        let targetUrl = url;
-        const isWeb = Capacitor.getPlatform() === 'web';
-        if (isWeb && !targetUrl.includes('corsproxy.io')) {
-            targetUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-        }
-
-        console.log(`[Scraper] Fetching chapter content: ${targetUrl}`);
-        const response = await CapacitorHttp.get({
-            url: targetUrl,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
-            }
-        });
-
-        // Follow HTTP level redirects if CapacitorHttp didn't (though it usually does)
-        if (response.status === 301 || response.status === 302) {
-            const loc = response.headers['Location'] || response.headers['location'];
-            if (loc) {
-                const resolved = this.resolveUrl(url, loc);
-                console.log(`[Scraper] Following HTTP ${response.status} to: ${resolved}`);
-                return this.fetchChapterContent(resolved, visitedUrls);
-            }
-        }
-
-        const $ = cheerio.load(response.data);
-
-        // --- Redirect Detection in HTML ---
-        // 1. Meta Refresh
-        const metaRefresh = $('meta[http-equiv="refresh"]').attr('content');
-        if (metaRefresh && metaRefresh.toLowerCase().includes('url=')) {
-            let redirectPart = metaRefresh.split(/url=/i)[1]?.split(';')[0]?.trim();
-            redirectPart = redirectPart?.replace(/['"]/g, '');
-            if (redirectPart) {
-                const resolved = this.resolveUrl(url, redirectPart);
-                console.log(`[Scraper] Following meta refresh to: ${resolved}`);
-                return this.fetchChapterContent(resolved, visitedUrls);
-            }
-        }
-
-        // 2. JS Redirection
-        const scripts = $('script').text();
-        const jsReloadMatch = scripts.match(/window\.location\.(?:replace|href)\s*=\s*['"]([^'"]+)['"]/);
-        if (jsReloadMatch && jsReloadMatch[1]) {
-            const resolved = this.resolveUrl(url, jsReloadMatch[1]);
-            console.log(`[Scraper] Following JS redirect to: ${resolved}`);
-            return this.fetchChapterContent(resolved, visitedUrls);
-        }
-
-        // Remove known junk AFTER redirect checks
-        $('script, style, .ads, .ad-container, iframe, .hidden, .announcement').remove();
-
-        const contentSelectors = [
-            '#chapter-content', '.chapter-content', '#chr-content',
-            '.read-content', '.reading-content', '.text-left',
-            '#content', '.entry-content', 'article', '.chapter-readable',
-            '.read-container', '.chapter-text', '.chapter-body'
-        ];
-
         let content = '';
-        for (const sel of contentSelectors) {
-            const el = $(sel);
-            if (el.length > 0) {
-                // Heuristic: Check if the element actually has substantial text
-                if (el.text().trim().length > 200) {
-                    content = el.html() || '';
-                    break;
-                }
-            }
-        }
 
-        if (!content || content.length < 500) {
-            // Robust Heuristic Scan: Look for any div/section with high text density
-            // This captures content even if the selector is wrong or obfuscated
-            $('div, section, main').each((_, el) => {
-                const $el = $(el);
-                const text = $el.text().trim();
-                const pCount = $el.find('p').length;
-                const brCount = $el.find('br').length;
+        for (const getProxyUrl of this.getProxies()) {
+            try {
+                const html = await this.fetchHtml(url, getProxyUrl);
+                if (!html || html.length < 500) continue;
 
-                // If it has a lot of text and some structure (paragraphs or breaks)
-                if (text.length > 1000 && (pCount > 3 || brCount > 5)) {
-                    // Avoid picking the whole body if possible, look for the smallest container
-                    if (!content || text.length < $(content).text().length) {
-                        content = $el.html() || '';
+                const $ = cheerio.load(html);
+
+                const metaRefresh = $('meta[http-equiv="refresh"]').attr('content');
+                if (metaRefresh && metaRefresh.toLowerCase().includes('url=')) {
+                    let redirectPart = metaRefresh.split(/url=/i)[1]?.split(';')[0]?.trim();
+                    redirectPart = redirectPart?.replace(/['"]/g, '');
+                    if (redirectPart) {
+                        const resolved = this.resolveUrl(url, redirectPart);
+                        return this.fetchChapterContent(resolved, visitedUrls);
                     }
                 }
-            });
-        }
 
-        if (!content) {
-            return '<p>Content not found. The source might be protected or requires a specific redirect.</p>';
-        }
+                const scripts = $('script').text();
+                const jsReloadMatch = scripts.match(/window\.location\.(?:replace|href)\s*=\s*['"]([^'"]+)['"]/);
+                if (jsReloadMatch && jsReloadMatch[1]) {
+                    const resolved = this.resolveUrl(url, jsReloadMatch[1]);
+                    return this.fetchChapterContent(resolved, visitedUrls);
+                }
 
-        return this.enhanceContent(content);
+                $('script, style, .ads, .ad-container, iframe, .hidden, .announcement').remove();
+
+                const contentSelectors = [
+                    '#chapter-content', '.chapter-content', '#chr-content',
+                    '.read-content', '.reading-content', '.text-left',
+                    '#content', '.entry-content', 'article', '.chapter-readable',
+                    '.read-container', '.chapter-text', '.chapter-body'
+                ];
+
+                for (const sel of contentSelectors) {
+                    const el = $(sel);
+                    if (el.length > 0 && el.text().trim().length > 200) {
+                        content = el.html() || '';
+                        break;
+                    }
+                }
+
+                if (!content || content.length < 500) {
+                    $('div, section, main').each((_, el) => {
+                        const $el = $(el);
+                        const text = $el.text().trim();
+                        if (text.length > 1000 && ($el.find('p').length > 3 || $el.find('br').length > 5)) {
+                            if (!content || text.length < $(content).text().length) {
+                                content = $el.html() || '';
+                            }
+                        }
+                    });
+                }
+
+                if (content && content.length > 300) {
+                    return this.enhanceContent(content);
+                }
+            } catch (e) {
+                console.warn(`[Scraper] Chapter fetch failed with proxy`, e);
+            }
+        }
+        return '<p>Content not found. The source might be protected or requires a specific redirect.</p>';
     }
 
-    private async fetchHtml(url: string, getProxyUrl: (target: string) => string): Promise<string> {
-        const isWeb = Capacitor.getPlatform() === 'web';
-        const targetUrl = isWeb ? getProxyUrl(url) : url;
-
-        const response = await CapacitorHttp.get({
-            url: targetUrl,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+    async fetchHtml(url: string, proxyUrl?: string): Promise<string> {
+        let finalUrl = url;
+        if (proxyUrl) {
+            if (proxyUrl.includes('corsproxy.io')) {
+                finalUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+            } else if (proxyUrl.includes('allorigins.win')) {
+                finalUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+            } else if (proxyUrl.includes('codetabs.com')) {
+                finalUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`;
+            } else if (proxyUrl.includes('thingproxy')) {
+                finalUrl = `https://thingproxy.freeboard.io/fetch/${url}`;
+            } else {
+                finalUrl = `${proxyUrl}${encodeURIComponent(url)}`;
             }
-        });
-
-        if (typeof response.data === 'string') {
-            return response.data;
-        } else if (response.data && typeof response.data === 'object') {
-            return response.data.contents || JSON.stringify(response.data);
         }
+
+        const options: any = {
+            url: finalUrl,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+            connectTimeout: 25000,
+            readTimeout: 25000
+        };
+
+        try {
+            console.log(`[Scraper] [web] Fetching: ${finalUrl.substring(0, 100)}...`);
+            const response = await CapacitorHttp.get(options);
+
+            if (response.status === 200 && response.data) {
+                console.log(`[Scraper] Response Status: 200 for ${url}`);
+                if (proxyUrl && proxyUrl.includes('allorigins.win')) {
+                    try {
+                        const json = JSON.parse(response.data);
+                        return json.contents || '';
+                    } catch (e) {
+                        // Fall out to string check
+                    }
+                }
+
+                if (typeof response.data === 'object') {
+                    return JSON.stringify(response.data);
+                }
+                return String(response.data || '');
+            }
+            console.warn(`[Scraper] HTTP ${response.status} for ${url}`);
+        } catch (error) {
+            console.warn(`[Scraper] Fetch error for ${url}:`, error);
+        }
+
         return '';
+    }
+
+    getProxies(): string[] {
+        // corsproxy.io works best for NovelFire, try it first
+        return [
+            'https://corsproxy.io/?url=',
+            'https://api.codetabs.com/v1/proxy?quest=',
+            'https://api.allorigins.win/get?url=',
+            'https://thingproxy.freeboard.io/fetch/'
+        ];
     }
 
     private parseNovelsList($: any, selector: any): (NovelMetadata & { sourceUrl: string })[] {
@@ -702,13 +624,13 @@ export class ScraperService {
         const origin = 'https://novelfire.net';
 
         const $container = $(selector);
-        const items = $container.hasClass('item') || $container.hasClass('book-item')
+        const items = $container.hasClass('item') || $container.hasClass('novel-item') || $container.hasClass('book-item')
             ? $container
-            : $container.find('.item, .book-item, .list-row, .col-6, .box, [class*="item"], a[href*="/book/"], a[href*="/novel/"]');
+            : $container.find('.novel-item, .item, .book-item, .list-row, .col-6, .box, [class*="item"], a[href*="/book/"], a[href*="/novel/"]');
 
         items.each((_: number, el: any) => {
             const $el = $(el);
-            let title = $el.find('h3, h4, h5, .title, .book-name, .novel-title').first().text().trim();
+            let title = $el.find('h1, h2, h3, h4, h5, .title, .novel-title, .book-name').first().text().trim();
             let url = $el.find('a[href*="/book/"], a[href*="/novel/"]').first().attr('href') || $el.find('a').first().attr('href') || '';
 
             if (!title) {
@@ -725,16 +647,17 @@ export class ScraperService {
                 $el.find('img').attr('data-original') ||
                 $el.find('img').attr('src') || '';
 
-            if (coverUrl && !coverUrl.startsWith('http')) {
+            if (coverUrl) {
                 if (coverUrl.startsWith('//')) {
                     coverUrl = `https:${coverUrl}`;
-                } else {
+                } else if (!coverUrl.startsWith('http')) {
                     if (!coverUrl.startsWith('/')) coverUrl = '/' + coverUrl;
-                    coverUrl = `${origin}${coverUrl}`;
+                    coverUrl = `https://novelfire.net${coverUrl}`;
                 }
             }
 
             const author = $el.find('.author, .book-author').first().text().trim() || 'Unknown';
+            const status = $el.find('.status').first().text().trim() || 'Ongoing';
 
             if (title && url && (url.includes('/book/') || url.includes('/novel/'))) {
                 novels.push({
@@ -742,51 +665,219 @@ export class ScraperService {
                     author,
                     coverUrl,
                     summary: $el.find('.description, .excerpt').first().text().trim() || '',
-                    status: 'Ongoing',
+                    status,
                     sourceUrl: url,
                     chapters: []
                 });
             }
         });
-        return novels;
+
+        // Deduplicate by sourceUrl
+        const seen = new Set<string>();
+        return novels.filter(novel => {
+            if (seen.has(novel.sourceUrl)) {
+                return false;
+            }
+            seen.add(novel.sourceUrl);
+            return true;
+        });
     }
 
-    async fetchRanking(): Promise<NovelMetadata[]> {
-        const url = 'https://novelfire.net/ranking';
-        const proxies = [
-            (target: string) => `https://corsproxy.io/?${encodeURIComponent(target)}`,
-            (target: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`
-        ];
+    async fetchRanking(type: 'overall' | 'ratings' | 'most-read' | 'most-review' = 'overall', page: number = 1): Promise<NovelMetadata[]> {
+        const baseUrl = 'https://novelfire.net/ranking';
+        let url = baseUrl;
 
-        for (const getProxyUrl of proxies) {
+        if (type === 'ratings') url += '/ratings';
+        else if (type === 'most-read') url += '/most-read';
+        else if (type === 'most-review') url += '/most-review';
+
+        if (page > 1) {
+            url += `?page=${page}`;
+        }
+
+        for (const getProxyUrl of this.getProxies()) {
             try {
                 const html = await this.fetchHtml(url, getProxyUrl);
                 if (!html || html.length < 500) continue;
 
-                const $ = cheerio.load(html);
-                const novels = this.parseNovelsList($, '.ranking-list .item, .top-rated .item, .ranking .item, .list-ranking .item, .list-row, .col-6, .box');
+                // Detect blocked/captcha pages
+                if (html.includes('you have been blocked') ||
+                    html.includes('Checking your browser') ||
+                    html.includes('Just a moment') ||
+                    html.includes('cf-browser-verification')) {
+                    console.warn(`[Scraper] Ranking page blocked via ${getProxyUrl}`);
+                    continue;
+                }
 
-                if (novels.length > 5) {
+                const $ = cheerio.load(html);
+
+                // Try multiple selectors for the ranking page
+                let novels = this.parseNovelsList($, '.rank-novels');
+                if (novels.length === 0) {
+                    novels = this.parseNovelsList($, '.novel-list');
+                }
+                if (novels.length === 0) {
+                    novels = this.parseNovelsList($, '.list-novel');
+                }
+                if (novels.length === 0) {
+                    // Try direct item selection
+                    novels = this.parseNovelsList($, '.novel-item');
+                }
+
+                if (novels.length > 0) {
+                    console.log(`[Scraper] Ranking fetched ${novels.length} novels via ${getProxyUrl}`);
                     return novels;
                 }
             } catch (e) {
-                console.error("[Scraper] Ranking fetch failed", e);
+                console.error(`[Scraper] Ranking fetch failed for type ${type}, page ${page}`, e);
             }
         }
         return [];
     }
 
+    async fetchLatest(page: number = 1): Promise<NovelMetadata[]> {
+        const url = `https://novelfire.net/genre-all/sort-new/status-all/all-novel${page > 1 ? `?page=${page}` : ''}`;
+        for (const getProxyUrl of this.getProxies()) {
+            try {
+                const html = await this.fetchHtml(url, getProxyUrl);
+                if (!html || html.length < 500) continue;
+
+                // Detect blocked/captcha pages
+                if (html.includes('you have been blocked') ||
+                    html.includes('Checking your browser') ||
+                    html.includes('Just a moment') ||
+                    html.includes('cf-browser-verification')) {
+                    console.warn(`[Scraper] Latest page blocked via ${getProxyUrl}`);
+                    continue;
+                }
+
+                const $ = cheerio.load(html);
+                let novels = this.parseNovelsList($, '.novel-list .novel-item, .novel-list .item, .novel-item');
+
+                if (novels.length === 0) {
+                    novels = this.parseNovelsList($, '.novel-list');
+                }
+
+                if (novels.length > 0) {
+                    console.log(`[Scraper] Latest fetched ${novels.length} novels via ${getProxyUrl}`);
+                    return novels;
+                }
+            } catch (e) {
+                console.error(`[Scraper] Latest fetch failed for page ${page}`, e);
+            }
+        }
+        return [];
+    }
+
+    async fetchCompleted(page: number = 1): Promise<NovelMetadata[]> {
+        const url = `https://novelfire.net/genre-all/sort-popular/status-completed/all-novel${page > 1 ? `?page=${page}` : ''}`;
+        for (const getProxyUrl of this.getProxies()) {
+            try {
+                const html = await this.fetchHtml(url, getProxyUrl);
+                if (!html || html.length < 500) continue;
+
+                // Detect blocked/captcha pages
+                if (html.includes('you have been blocked') ||
+                    html.includes('Checking your browser') ||
+                    html.includes('Just a moment') ||
+                    html.includes('cf-browser-verification')) {
+                    console.warn(`[Scraper] Completed page blocked via ${getProxyUrl}`);
+                    continue;
+                }
+
+                const $ = cheerio.load(html);
+                let novels = this.parseNovelsList($, '.novel-list .novel-item, .novel-list .item, .novel-item');
+
+                if (novels.length === 0) {
+                    novels = this.parseNovelsList($, '.novel-list');
+                }
+
+                if (novels.length > 0) {
+                    console.log(`[Scraper] Completed fetched ${novels.length} novels via ${getProxyUrl}`);
+                    return novels;
+                }
+            } catch (e) {
+                console.error(`[Scraper] Completed fetch failed for page ${page}`, e);
+            }
+        }
+        return [];
+    }
+
+    async syncAllDiscoverData(onProgress?: (task: string, current: number, total: number) => void): Promise<HomeData> {
+        const results: HomeData = { recommended: [], ranking: [], latest: [], recentlyAdded: [], completed: [] };
+
+        try {
+            // 1. Fetch Ranking (Page 1)
+            onProgress?.('Syncing Top Rankings...', 1, 5);
+            results.ranking = await this.fetchRanking('overall', 1);
+
+            // 2. Fetch Latest (Page 1)
+            onProgress?.('Syncing Latest Updates...', 2, 5);
+            results.latest = await this.fetchLatest(1);
+
+            // 3. Fetch Completed (Page 1)
+            onProgress?.('Syncing Completed Stories...', 3, 5);
+            results.completed = await this.fetchCompleted(1);
+
+            // 4. Try to fetch deep home data (including AJAX Recently Added)
+            onProgress?.('Syncing Home Page...', 4, 5);
+            try {
+                const homeDeepData = await this.fetchHomeData();
+
+                // Backfill recentlyAdded (primary source)
+                if (homeDeepData.recentlyAdded.length > 0) {
+                    results.recentlyAdded = homeDeepData.recentlyAdded;
+                }
+
+                // Backfill other categories if primary fetch failed (Fallback source)
+                if (results.ranking.length === 0 && homeDeepData.ranking.length > 0) {
+                    console.log('[Scraper] Backfilling Ranking from Home Data');
+                    results.ranking = homeDeepData.ranking;
+                }
+                if (results.latest.length === 0 && homeDeepData.latest.length > 0) {
+                    console.log('[Scraper] Backfilling Latest from Home Data');
+                    results.latest = homeDeepData.latest;
+                }
+                if (results.completed.length === 0 && homeDeepData.completed.length > 0) {
+                    console.log('[Scraper] Backfilling Completed from Home Data');
+                    results.completed = homeDeepData.completed;
+                }
+
+            } catch (e) {
+                console.warn('[Scraper] Deep home fetch failed, using fallbacks', e);
+            }
+
+            // 5. Fallback for Recently Added: Use Latest if still empty
+            if (results.recentlyAdded.length === 0 && results.latest.length > 0) {
+                console.log('[Scraper] Using Latest as fallback for Recently Added');
+                // Take the first 10 from latest as 'recently added'
+                results.recentlyAdded = [...results.latest].slice(0, 10);
+            }
+
+            // 6. Handle Recommendations (Shuffle or pick from results)
+            onProgress?.('Generating Recommendations...', 5, 5);
+            const allPool = [...results.ranking, ...results.latest, ...results.completed];
+            // Deduplicate by title
+            const uniquePool = Array.from(new Map(allPool.map(item => [item.title, item])).values());
+            // Randomly pick 10 for recommendations
+            results.recommended = uniquePool.sort(() => 0.5 - Math.random()).slice(0, 10);
+
+            // Save to localStorage
+            localStorage.setItem('homeData', JSON.stringify(results));
+        } catch (e) {
+            console.error('[Scraper] syncAllDiscoverData failed', e);
+        }
+
+        return results;
+    }
+
     async fetchHomeData(): Promise<HomeData> {
         const urls = ['https://novelfire.net/home', 'https://novelfire.net/'];
-        const proxies = [
-            (target: string) => `https://corsproxy.io/?${encodeURIComponent(target)}`,
-            (target: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`
-        ];
 
         const results: HomeData = { recommended: [], ranking: [], latest: [], recentlyAdded: [], completed: [] };
 
         for (const url of urls) {
-            for (const getProxyUrl of proxies) {
+            for (const getProxyUrl of this.getProxies()) {
                 try {
                     const html = await this.fetchHtml(url, getProxyUrl);
 
@@ -821,26 +912,26 @@ export class ScraperService {
                         return foundNovels;
                     };
 
-                    const recommended = findSectionByHeading(['recommended', 'featured', 'hot', 'hot-novels', 'trending']) ||
-                        this.parseNovelsList($, '.recommended-novels .item, .featured .item, .hot-novels .item, .carousel-item, .trending-item, .item-recommended, .section-recommended .item, .home-recommended .item, .recommended .item, [class*="recommended"] .item');
+                    const recommended = findSectionByHeading(['recommended', 'recommends', 'featured', 'hot', 'trending']) ||
+                        this.parseNovelsList($, '.novel-list, .recommended-novels .item, .featured .item, .hot-novels .item, .carousel-item, [class*="recommended"] .item');
 
                     const ranking = findSectionByHeading(['ranking', 'top', 'rating', 'popular']) ||
-                        this.parseNovelsList($, '.ranking-list .item, .top-rated .item, .ranking .item, .list-ranking .item, .item-ranking, .section-ranking .item, .home-ranking .item, .ranking .list-row, [class*="ranking"] .item, [class*="top-rated"] .item');
+                        this.parseNovelsList($, '.rank-container, .ranking-list .item, .top-rated .item, .ranking .item, [class*="ranking"] .item, [class*="top-rated"] .item');
 
                     const latest = findSectionByHeading(['latest', 'update', 'new']) ||
-                        this.parseNovelsList($, '.latest-updates .item, .new-novels .item, .list-novel .item, .update-item, .latest-releases .item, .section-latest .item, .home-latest .item, .latest-releases .item, [class*="latest"] .item, [class*="new-novels"] .item');
+                        this.parseNovelsList($, '.novel-list, .latest-updates .item, .new-novels .item, .list-novel .item, [class*="latest"] .item, [class*="new-novels"] .item');
 
                     const recentlyAdded = findSectionByHeading(['recent', 'added']) ||
-                        this.parseNovelsList($, '.recent-chapters .item, .recent-updates .item, .newest-item, .item-recent, .section-recent .item, .home-recent .item, [class*="recent"] .item');
+                        this.parseNovelsList($, '.recent-chapters .item, .recent-updates .item, [class*="recent"] .item');
 
-                    const completed = findSectionByHeading(['completed', 'full']) ||
-                        this.parseNovelsList($, '.completed-stories .item, .completed .item, .item-completed, .section-completed .item, .home-completed .item, .completed-source .item, [class*="completed"] .item');
+                    const completed = findSectionByHeading(['completed', 'full', 'stories']) ||
+                        this.parseNovelsList($, '.novel-list, .completed-stories .item, .completed .item, [class*="completed"] .item');
 
-                    if (recommended.length > 0) results.recommended = [...results.recommended, ...recommended.slice(0, 5)];
-                    if (ranking.length > 0) results.ranking = [...results.ranking, ...ranking.slice(0, 10)];
-                    if (latest.length > 0) results.latest = [...results.latest, ...latest.slice(0, 10)];
-                    if (recentlyAdded.length > 0) results.recentlyAdded = [...results.recentlyAdded, ...recentlyAdded.slice(0, 10)];
-                    if (completed.length > 0) results.completed = [...results.completed, ...completed.slice(0, 10)];
+                    if (recommended.length > 0 && results.recommended.length === 0) results.recommended = recommended.slice(0, 10);
+                    if (ranking.length > 0 && results.ranking.length === 0) results.ranking = ranking.slice(0, 15);
+                    if (latest.length > 0 && results.latest.length === 0) results.latest = latest.slice(0, 15);
+                    if (recentlyAdded.length > 0 && results.recentlyAdded.length === 0) results.recentlyAdded = recentlyAdded.slice(0, 15);
+                    if (completed.length > 0 && results.completed.length === 0) results.completed = completed.slice(0, 15);
 
                     if (results.recommended.length === 0 && results.latest.length === 0) {
                         const broadNovels = this.parseNovelsList($, '.item, .col-6, .box, .list-row, .novel-item, .book-item, [class*="novel"], [class*="book"]');
@@ -867,7 +958,61 @@ export class ScraperService {
                     console.error(`[Scraper] Failed to fetch home data from ${url} with proxy`, error);
                 }
             }
-            if (results.recommended.length > 2 || results.latest.length > 2) break;
+            if (results.recommended.length > 2 || results.latest.length > 2) {
+                console.log(`[Scraper] Found sufficient data, breaking loop. Recommended: ${results.recommended.length}, Latest: ${results.latest.length}`);
+                break;
+            }
+        }
+
+        console.log(`[Scraper] Finished home page loop. Now fetching recently added...`);
+
+        // 5. Fetch Recently Added via AJAX (since it's loaded dynamically on the site)
+        try {
+            const ajaxUrl = 'https://novelfire.net/ajax/latestReleaseNovel';
+            console.log(`[Scraper] Fetching AJAX content from ${ajaxUrl}`);
+
+            for (const getProxyUrl of this.getProxies()) {
+                try {
+                    // AJAX often requires this header (handled in fetchHtml via url check)
+                    const jsonStr = await this.fetchHtml(ajaxUrl, getProxyUrl);
+                    console.log(`[Scraper] AJAX Raw Response (first 100 chars): ${jsonStr.substring(0, 100)}`);
+                    // The proxy might return the JSON directly or wrapped. 
+                    // If it's pure JSON:
+                    let htmlContent = '';
+
+                    try {
+                        const data = JSON.parse(jsonStr);
+                        if (data && data.html) {
+                            htmlContent = data.html;
+                        }
+                    } catch (e) {
+                        // Maybe it returned raw HTML if the proxy unwrapped it weirdly, or it failed
+                        if (jsonStr.includes('<li') || jsonStr.includes('class="novel-item"')) {
+                            htmlContent = jsonStr;
+                        }
+                    }
+
+                    if (htmlContent) {
+                        const $ajax = cheerio.load(htmlContent);
+                        const recentNovels = this.parseNovelsList($ajax, '.novel-item, .item');
+                        if (recentNovels.length > 0) {
+                            results.recentlyAdded = recentNovels;
+                            console.log(`[Scraper] Successfully fetched ${recentNovels.length} recently added novels via AJAX`);
+                            break;
+                        }
+                    }
+                } catch (ajaxErr) {
+                    console.warn(`[Scraper] AJAX fetch failed with proxy`, ajaxErr);
+                }
+            }
+        } catch (e) {
+            console.error('[Scraper] Failed to fetch recently added AJAX', e);
+        }
+
+        // Fallback: If AJAX failed, use Latest novels for Recently Added
+        if (results.recentlyAdded.length === 0 && results.latest.length > 0) {
+            console.log('[Scraper] AJAX failed, using Latest novels as fallback for Recently Added');
+            results.recentlyAdded = [...results.latest];
         }
 
         const dedupe = (arr: any[]) => {
@@ -893,3 +1038,4 @@ export class ScraperService {
 }
 
 export const scraperService = new ScraperService();
+

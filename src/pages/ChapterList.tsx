@@ -53,7 +53,7 @@ export const ChapterList = () => {
     };
 
     useEffect(() => {
-        const unsub = scraperService.subscribe((progress, isScraping) => {
+        const unsub = scraperService.subscribe((progress: ScraperProgress, isScraping: boolean) => {
             setScrapingProgress(progress);
             setIsGlobalScraping(isScraping);
 
