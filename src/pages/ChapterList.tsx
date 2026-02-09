@@ -498,12 +498,18 @@ export const ChapterList = () => {
                     className="flex items-center gap-2 bg-primary text-white px-6 py-4 rounded-full shadow-2xl hover:scale-105 transition-transform active:scale-95 font-sans font-bold"
                     onClick={() => {
                         if (chapters.length > 0) {
-                            navigate(`/read/${novel.id}/${chapters[0].id}`);
+                            const lastReadId = novel?.lastReadChapterId;
+                            const targetId = lastReadId && chapters.some(c => c.id === lastReadId)
+                                ? lastReadId
+                                : chapters[0].id;
+                            navigate(`/read/${novel.id}/${targetId}`);
                         }
                     }}
                 >
                     <PlayCircle size={24} />
-                    START READING
+                    {novel?.lastReadChapterId && chapters.some(c => c.id === novel.lastReadChapterId)
+                        ? 'CONTINUE READING'
+                        : 'START READING'}
                 </button>
             </div>
 
