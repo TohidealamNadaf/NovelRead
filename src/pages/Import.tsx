@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2 } from 'lucide-react';
 import { scraperService, type NovelMetadata, type ScraperProgress } from '../services/scraper.service';
 import { useNavigate } from 'react-router-dom';
-import { CompletionModal } from '../components/CompletionModal';
 import { Header } from '../components/Header';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
@@ -15,7 +14,6 @@ export const Import = () => {
     const [novel, setNovel] = useState<NovelMetadata | null>(scraperService.activeNovelMetadata);
     const [scraping, setScraping] = useState(scraperService.isScraping);
     const [progress, setProgress] = useState<ScraperProgress>(scraperService.progress);
-    const [showSuccess, setShowSuccess] = useState(false);
 
     useEffect(() => {
         // Request Permissions
@@ -31,12 +29,6 @@ export const Import = () => {
             // Update local novel state if needed (e.g. if we navigated back to this page)
             if (isScraping && scraperService.activeNovelMetadata) {
                 setNovel(scraperService.activeNovelMetadata);
-            }
-
-            // Auto-open success if it just finished and we are on this page
-            if (!isScraping && newProgress.current > 0 && newProgress.current === newProgress.total) {
-                // Only show if we haven't already
-                setShowSuccess(true);
             }
         });
 
@@ -218,16 +210,6 @@ export const Import = () => {
                 <div className="h-4"></div>
             </div>
 
-            <CompletionModal
-                isOpen={showSuccess}
-                onClose={() => {
-                    setShowSuccess(false);
-                    scraperService.resetProgress();
-                    navigate('/');
-                }}
-                title="Success!"
-                message={`Successfully imported ${novel?.title || 'the novel'} with ${progress.total} chapters.`}
-            />
         </div>
     );
 };

@@ -285,7 +285,7 @@ export const ChapterList = () => {
                         <div className="p-4 bg-background-light dark:bg-background-dark">
                             <div className="flex gap-5">
                                 <div className="relative shrink-0">
-                                    <div className="bg-center bg-no-repeat aspect-[2/3] bg-cover rounded-lg shadow-xl w-32 bg-slate-800 border border-white/10"
+                                    <div className="bg-center bg-no-repeat aspect-[2/3] bg-cover rounded-lg shadow-xl w-28 bg-slate-800 border border-white/10"
                                         style={{ backgroundImage: `url("${novel.coverUrl}")` }}>
                                     </div>
                                     <div className="absolute bottom-1 right-1 bg-primary text-[10px] text-white px-1.5 py-0.5 rounded font-sans uppercase tracking-wider font-bold">
@@ -293,7 +293,7 @@ export const ChapterList = () => {
                                     </div>
                                 </div>
                                 <div className="flex flex-col justify-center flex-1 min-w-0">
-                                    <h1 className="text-2xl font-bold leading-tight mb-1 line-clamp-2">{novel.title}</h1>
+                                    <h1 className="text-xl font-bold leading-tight mb-1 line-clamp-2">{novel.title}</h1>
                                     <p className="text-slate-500 dark:text-slate-400 text-base mb-2 italic truncate">by {novel.author}</p>
                                     <div className="flex flex-wrap gap-2">
                                         <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-xs rounded-full border border-green-500/20 font-sans">
@@ -358,8 +358,7 @@ export const ChapterList = () => {
 
                         {/* Utilities & Search */}
                         <div
-                            className="px-4 sticky z-40 bg-background-light dark:bg-background-dark py-2 flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800 transition-[top] duration-300"
-                            style={{ top: (isScrapingNew || isGlobalScraping) ? '150px' : '60px' }}
+                            className="px-4 sticky top-0 z-40 bg-background-light dark:bg-background-dark py-2 flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800"
                         >
                             <div className="flex gap-2">
                                 <div className="relative flex-1">
