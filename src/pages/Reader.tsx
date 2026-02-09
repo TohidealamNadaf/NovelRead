@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useRef, useCallback } from 'react';
-import { MoreHorizontal, Play, Pause, FastForward, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles } from 'lucide-react';
+import { MoreHorizontal, Play, Pause, FastForward, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -12,6 +12,7 @@ import { SummaryModal } from '../components/SummaryModal';
 import { summarizerService } from '../services/summarizer.service';
 import { Header } from '../components/Header';
 import { useChapterPullNavigation } from '../hooks/useChapterPullNavigation';
+import { ChapterSidebar } from '../components/ChapterSidebar';
 
 export const Reader = () => {
     const navigate = useNavigate();
@@ -27,7 +28,7 @@ export const Reader = () => {
     const [pullDistance, setPullDistance] = useState(0);
     const [pushDistance, setPushDistance] = useState(0);
     const [navigationDirection, setNavigationDirection] = useState<'next' | 'prev' | null>(null);
-    const PULL_THRESHOLD = 80;
+    const PULL_THRESHOLD = 120;
 
     // Audio State
     const [isSpeaking, setIsSpeaking] = useState(false);
@@ -43,6 +44,11 @@ export const Reader = () => {
     const [showSummary, setShowSummary] = useState(false);
     const [summaryData, setSummaryData] = useState<{ extractive: string; events: string[] } | null>(null);
     const [isSummarizing, setIsSummarizing] = useState(false);
+
+    // Chapter Sidebar State
+    const [showChapterSidebar, setShowChapterSidebar] = useState(false);
+    const [allChapters, setAllChapters] = useState<Chapter[]>([]);
+    const swipeStartXRef = useRef(0);
 
     const theme = settings.theme;
     const font = settings.fontFamily;
@@ -87,6 +93,10 @@ export const Reader = () => {
                 ]);
                 setNextChapter(next);
                 setPrevChapter(prev);
+
+                // Fetch all chapters for the sidebar
+                const chapters = await dbService.getChapters(nid);
+                setAllChapters(chapters);
 
                 // Update progress
                 await dbService.updateReadingProgress(nid, cid);
@@ -316,9 +326,21 @@ export const Reader = () => {
             <div
                 ref={scrollContainerRef}
                 className={`flex-1 overflow-y-auto px-6 py-8 ${getThemeClass()} relative`}
-                onTouchStart={onTouchStart}
+                onTouchStart={(e) => {
+                    swipeStartXRef.current = e.touches[0].clientX;
+                    onTouchStart(e);
+                }}
                 onTouchMove={onTouchMove}
                 onTouchEnd={(e) => {
+                    // Detect left swipe from left edge
+                    const endX = e.changedTouches[0].clientX;
+                    const diffX = endX - swipeStartXRef.current;
+                    const startedFromLeftEdge = swipeStartXRef.current < 50;
+
+                    if (startedFromLeftEdge && diffX > 80) {
+                        setShowChapterSidebar(true);
+                    }
+
                     handleDoubleTap(e);
                     onTouchEnd(e);
                 }}
@@ -331,7 +353,7 @@ export const Reader = () => {
                 }}
             >
                 {/* Pull to Previous Indicator */}
-                {prevChapter && pullDistance > 10 && (
+                {pullDistance > 10 && (
                     <motion.div
                         style={{ height: pullDistance, opacity: Math.min(pullDistance / PULL_THRESHOLD, 1) }}
                         className="flex flex-col items-center justify-end pb-4 overflow-hidden pointer-events-none"
@@ -342,7 +364,9 @@ export const Reader = () => {
                         >
                             <ChevronDown className={clsx("transition-all duration-300", pullDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
                             <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pullDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
-                                {pullDistance > PULL_THRESHOLD ? "Release" : "Pull for Prev"}
+                                {pullDistance > PULL_THRESHOLD
+                                    ? (prevChapter ? "Release" : "At Start")
+                                    : (prevChapter ? "Pull for Prev" : "First Chapter")}
                             </p>
                         </motion.div>
                     </motion.div>
@@ -355,20 +379,18 @@ export const Reader = () => {
                         variants={{
                             initial: (direction: string) => ({
                                 opacity: 0,
-                                y: direction === 'next' ? 50 : direction === 'prev' ? -50 : 0,
-                                scale: 0.98
+                                y: direction === 'next' ? 100 : direction === 'prev' ? -100 : 0,
                             }),
-                            animate: { opacity: 1, y: 0, scale: 1 },
+                            animate: { opacity: 1, y: 0 },
                             exit: (direction: string) => ({
                                 opacity: 0,
-                                y: direction === 'next' ? -50 : direction === 'prev' ? 50 : 0,
-                                scale: 0.98
+                                y: direction === 'next' ? -100 : direction === 'prev' ? 100 : 0,
                             })
                         }}
                         initial="initial"
                         animate="animate"
                         exit="exit"
-                        transition={{ duration: 0.3, ease: "easeOut" }}
+                        transition={{ type: "spring", damping: 25, stiffness: 180 }}
                         className={clsx("max-w-2xl mx-auto space-y-6 reader-text", font === 'serif' ? 'font-serif' : font === 'sans' ? 'font-sans' : '')}
                         style={{
                             fontSize: `${fontSize}rem`,
@@ -382,7 +404,7 @@ export const Reader = () => {
 
 
                 {/* Pull Up to Next Indicator */}
-                {nextChapter && (
+                {pushDistance > 10 && (
                     <motion.div
                         style={{ height: pushDistance, opacity: Math.min(pushDistance / PULL_THRESHOLD, 1) }}
                         className="flex flex-col items-center justify-start pt-4 overflow-hidden pointer-events-none"
@@ -392,7 +414,9 @@ export const Reader = () => {
                             className="flex flex-col items-center gap-1.5"
                         >
                             <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pushDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
-                                {pushDistance > PULL_THRESHOLD ? "Release" : "Pull for Next"}
+                                {pushDistance > PULL_THRESHOLD
+                                    ? (nextChapter ? "Release" : "At End")
+                                    : (nextChapter ? "Pull for Next" : "End of Story")}
                             </p>
                             <ChevronUp className={clsx("transition-all duration-300", pushDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
                         </motion.div>
@@ -461,6 +485,18 @@ export const Reader = () => {
                                         <span className="text-xs">Next</span>
                                     </button>
                                 </div>
+
+                                {/* Contents Button */}
+                                <button
+                                    onClick={() => {
+                                        setShowSettings(false);
+                                        setShowChapterSidebar(true);
+                                    }}
+                                    className="w-full flex items-center justify-center gap-2 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold transition-colors"
+                                >
+                                    <List size={18} />
+                                    <span className="text-sm">Chapter Contents</span>
+                                </button>
 
                                 {/* Summary Button */}
                                 <button
@@ -576,6 +612,18 @@ export const Reader = () => {
                 onClose={() => setShowSummary(false)}
                 summary={summaryData}
                 isLoading={isSummarizing}
+            />
+
+            {/* Chapter Sidebar */}
+            <ChapterSidebar
+                isOpen={showChapterSidebar}
+                onClose={() => setShowChapterSidebar(false)}
+                chapters={allChapters}
+                currentChapterId={chapterId || ''}
+                novelTitle={novel?.title || ''}
+                onSelectChapter={(ch) => {
+                    navigate(`/read/${novelId}/${ch.id}`);
+                }}
             />
         </div >
     );

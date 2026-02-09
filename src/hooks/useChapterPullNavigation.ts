@@ -45,7 +45,7 @@ export const useChapterPullNavigation = ({
     const stateRef = useRef<NavigationState>('idle');
     const startYRef = useRef(0);
     const isLockedRef = useRef(false);
-    const PULL_THRESHOLD = 80;
+    const PULL_THRESHOLD = 120;
     const lastChapterIdRef = useRef(activeChapterId);
 
     // Watch for Chapter Changes (Sync state back and restore scroll)
@@ -89,15 +89,16 @@ export const useChapterPullNavigation = ({
         const scrollHeight = container.scrollHeight;
         const clientHeight = container.clientHeight;
 
-        // Direction detection: Only activate if at exact scroll boundaries
-        if (scrollTop <= 2 && hasPrev) {
+        // Direction detection: Activate if at exact scroll boundaries
+        // Even if there's no chapter, we still want to show the boundary indicator
+        if (scrollTop <= 2) {
             stateRef.current = 'pulling-prev';
-        } else if (scrollHeight - scrollTop - clientHeight <= 5 && hasNext) {
+        } else if (scrollHeight - scrollTop - clientHeight <= 5) {
             stateRef.current = 'pulling-next';
         } else {
             stateRef.current = 'idle';
         }
-    }, [containerRef, hasPrev, hasNext]);
+    }, [containerRef]);
 
     const onTouchMove = useCallback((e: React.TouchEvent) => {
         if (isLockedRef.current || stateRef.current === 'idle') return;
@@ -134,20 +135,30 @@ export const useChapterPullNavigation = ({
 
         // THRESHOLD CHECK: Trigger navigation only if pull distance is sufficient
         if (absDiffY >= PULL_THRESHOLD) {
-            // ACTIVATE LOCK: Prevent secondary triggers during async transition
             const prevState = stateRef.current;
-            isLockedRef.current = true;
-            stateRef.current = 'loading';
 
-            if (prevState === 'pulling-prev') {
-                onLoadPrev();
-            } else if (prevState === 'pulling-next') {
-                onLoadNext();
+            // Boundary Condition Check: Only trigger if there actually is a chapter to load
+            const canNavigate = (prevState === 'pulling-prev' && hasPrev) ||
+                (prevState === 'pulling-next' && hasNext);
+
+            if (canNavigate) {
+                // ACTIVATE LOCK: Prevent secondary triggers during async transition
+                isLockedRef.current = true;
+                stateRef.current = 'loading';
+
+                if (prevState === 'pulling-prev') {
+                    onLoadPrev();
+                } else if (prevState === 'pulling-next') {
+                    onLoadNext();
+                }
+            } else {
+                // At boundaries - just reset
+                stateRef.current = 'idle';
             }
         } else {
             stateRef.current = 'idle';
         }
-    }, [onLoadPrev, onLoadNext, onPulling]);
+    }, [onLoadPrev, onLoadNext, onPulling, hasPrev, hasNext]);
 
     return {
         onTouchStart,

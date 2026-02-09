@@ -223,8 +223,8 @@ export class ScraperService {
         }
     }
 
-    private async finishNotification(novelTitle: string, success: boolean, customMessage?: string) {
-        if (Capacitor.getPlatform() !== 'web') {
+    private async finishNotification(novelTitle: string, success: boolean, customMessage?: string, novelId?: string) {
+        if (Capacitor.isNativePlatform()) {
             try {
                 await LocalNotifications.cancel({ notifications: [{ id: 1001 }] });
                 await LocalNotifications.schedule({
@@ -246,7 +246,7 @@ export class ScraperService {
             body: customMessage || (success ? `Successfully imported ${novelTitle}` : `Failed to import ${novelTitle}`),
             type: 'scrape',
             imageUrl: this.activeNovel?.coverUrl,
-            payload: { novelId: this.activeNovel?.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) }
+            payload: { novelId: novelId || this.activeNovel?.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) }
         });
     }
 
@@ -258,11 +258,12 @@ export class ScraperService {
         this.currentProgress = { current: 0, total: novel.chapters.length, currentTitle: 'Starting...', logs: [] };
         this.notifyListeners();
 
+        const novelId = novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) + '-' + Math.random().toString(36).slice(2, 7);
+
         try {
             await dbService.initialize();
 
             // Save Novel Metadata
-            const novelId = novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) + '-' + Math.random().toString(36).slice(2, 7);
             await dbService.addNovel({
                 id: novelId,
                 title: novel.title,
@@ -274,11 +275,11 @@ export class ScraperService {
 
             await this.scrapeChapterLoop(novelId, novel.chapters, novel.title);
 
-            await this.finishNotification(novel.title, true, `Successfully imported ${novel.title}`);
+            await this.finishNotification(novel.title, true, `Successfully imported ${novel.title}`, novelId);
         } catch (error) {
             console.error("Scraping failed", error);
             this.currentProgress.logs.unshift(`[ERROR] ${error instanceof Error ? error.message : String(error)}`);
-            await this.finishNotification(novel.title, false, `Failed to import ${novel.title}`);
+            await this.finishNotification(novel.title, false, `Failed to import ${novel.title}`, novelId);
         } finally {
             this.isScrapingInternal = false;
             this.notifyListeners();
@@ -301,7 +302,7 @@ export class ScraperService {
             if (newChapters.length === 0) {
                 this.currentProgress.logs.unshift("No new chapters found.");
                 this.notifyListeners();
-                await this.finishNotification(updatedNovel.title, true, "No new chapters found.");
+                await this.finishNotification(updatedNovel.title, true, "No new chapters found.", novelId);
                 return;
             }
 
@@ -314,11 +315,11 @@ export class ScraperService {
             this.notifyListeners();
 
             await this.scrapeChapterLoop(novelId, newChapters, updatedNovel.title, existingChaptersCount);
-            await this.finishNotification(updatedNovel.title, true, `Synced ${newChapters.length} new chapters`);
+            await this.finishNotification(updatedNovel.title, true, `Synced ${newChapters.length} new chapters`, novelId);
         } catch (error) {
             console.error("Sync failed", error);
             this.currentProgress.logs.unshift(`[SYNC ERROR] ${error instanceof Error ? error.message : String(error)}`);
-            await this.finishNotification("Sync", false, `Failed to sync novel`);
+            await this.finishNotification("Sync", false, `Failed to sync novel`, novelId);
         } finally {
             this.isScrapingInternal = false;
             this.notifyListeners();
@@ -334,11 +335,11 @@ export class ScraperService {
 
         try {
             await this.scrapeChapterLoop(novelId, chaptersToDownload, novelTitle);
-            await this.finishNotification(novelTitle, true, `Downloaded ${chaptersToDownload.length} chapters`);
+            await this.finishNotification(novelTitle, true, `Downloaded ${chaptersToDownload.length} chapters`, novelId);
         } catch (error) {
             console.error("Bulk download failed", error);
             this.currentProgress.logs.unshift(`[DOWNLOAD ERROR] ${error instanceof Error ? error.message : String(error)}`);
-            await this.finishNotification(novelTitle, false, `Failed to download chapters for ${novelTitle}`);
+            await this.finishNotification(novelTitle, false, `Failed to download chapters for ${novelTitle}`, novelId);
         } finally {
             this.isScrapingInternal = false;
             this.notifyListeners();
@@ -386,7 +387,7 @@ export class ScraperService {
                         novelId,
                         title: ch.title,
                         content,
-                        orderIndex: currentIndex,
+                        orderIndex: offset + i, // 0-based storage
                         audioPath: ch.url
                     };
                     await dbService.addChapter(chapterData);
