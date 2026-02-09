@@ -209,8 +209,8 @@ export const ChapterList = () => {
                         {/* Dropdown Menu */}
                         {showMenu && (
                             <>
-                                <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)}></div>
-                                <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 z-20 py-1 animate-in fade-in zoom-in-95 duration-200">
+                                <div className="fixed inset-0 z-50" onClick={() => setShowMenu(false)}></div>
+                                <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 z-50 py-1 animate-in fade-in zoom-in-95 duration-200">
                                     <button
                                         className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2 border-b border-slate-100 dark:border-white/5 text-slate-700 dark:text-slate-200"
                                         onClick={() => {
@@ -336,16 +336,23 @@ export const ChapterList = () => {
                         {(() => {
                             // Find current reading position based on lastReadChapterId
                             const lastReadIndex = chapters.findIndex((ch: any) => ch.id === novel.lastReadChapterId);
-                            const currentChapterNum = lastReadIndex >= 0 ? lastReadIndex + 1 : (chapters.length > 0 ? 1 : 0);
-                            const progressPercent = chapters.length > 0 ? Math.round((currentChapterNum / chapters.length) * 100) : 0;
+                            const hasStarted = lastReadIndex >= 0;
+                            const currentChapterNum = hasStarted ? lastReadIndex + 1 : 0;
+                            const progressPercent = chapters.length > 0 && hasStarted ? Math.round((currentChapterNum / chapters.length) * 100) : 0;
                             const readChaptersCount = chapters.filter((ch: any) => ch.isRead).length;
 
                             return (
-                                <div className="mx-4 mb-4 p-3 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
+                                <div className="mx-4 mt-3 mb-4 p-3 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
                                     <div className="flex justify-between items-center mb-2">
                                         <div>
                                             <p className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400 font-sans font-bold">Reading Progress</p>
-                                            <p className="text-sm font-bold">Chapter {currentChapterNum} <span className="text-xs font-normal text-slate-500">of {chapters.length}</span></p>
+                                            <p className="text-sm font-bold">
+                                                {hasStarted ? (
+                                                    <>Chapter {currentChapterNum} <span className="text-xs font-normal text-slate-500">of {chapters.length}</span></>
+                                                ) : (
+                                                    <span className="text-slate-400">Not Started</span>
+                                                )}
+                                            </p>
                                         </div>
                                         <p className="text-[11px] text-slate-500 dark:text-slate-400 font-sans">{readChaptersCount} read</p>
                                     </div>

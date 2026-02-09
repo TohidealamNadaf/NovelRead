@@ -1,6 +1,8 @@
 import { settingsService } from './settings.service';
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import { Capacitor } from '@capacitor/core';
+import { ttsEngine } from './ttsEngine';
+import type { TTSSegment } from './ttsEngine';
 
 // Define types
 export interface TrackInfo {
@@ -17,6 +19,8 @@ interface AudioState {
     currentTrack: TrackInfo | null;
     isBgmPlaying: boolean;
     isTtsPlaying: boolean;
+    isTtsPaused: boolean;
+    currentSegment: TTSSegment | null;
 }
 
 // Voice interface for compatibility
@@ -33,8 +37,7 @@ export class AudioService {
     private utterance: SpeechSynthesisUtterance | null = null;
     private isNative: boolean = false;
     private nativeVoices: VoiceInfo[] = [];
-    private isTtsSpeaking: boolean = false;
-    private selectedVoice: SpeechSynthesisVoice | null = null;
+    private selectedVoice: any = null;
 
     // State for persistence/settings
     private pitch: number = 1.0;
@@ -47,7 +50,9 @@ export class AudioService {
     private state: AudioState = {
         currentTrack: null,
         isBgmPlaying: false,
-        isTtsPlaying: false
+        isTtsPlaying: false,
+        isTtsPaused: false,
+        currentSegment: null
     };
 
     constructor() {
@@ -139,7 +144,7 @@ export class AudioService {
         return this.state;
     }
 
-    setSettings(settings: { pitch?: number; rate?: number; voice?: SpeechSynthesisVoice; voiceName?: string }) {
+    setSettings(settings: { pitch?: number; rate?: number; voice?: any; voiceName?: string }) {
         if (settings.pitch !== undefined) {
             this.pitch = settings.pitch;
             settingsService.updateSettings({ ttsPitch: this.pitch });
@@ -251,8 +256,6 @@ export class AudioService {
     }
 
     async speak(text: string, title?: string, subtitle?: string, coverUrl?: string) {
-        const cleanText = text.replace(/<[^>]*>/g, '');
-
         // Update state first
         this.state.currentTrack = {
             title: title || 'TTS Reading',
@@ -261,102 +264,94 @@ export class AudioService {
             isPlaying: true,
             type: 'tts'
         };
-        this.isTtsSpeaking = true;
+        this.state.isTtsPlaying = true;
+        this.state.isTtsPaused = false;
         this.notify();
 
-        if (this.isNative) {
-            // Use native Capacitor TTS
-            try {
-                const voiceIndex = this.selectedVoiceName
-                    ? this.nativeVoices.findIndex(v => v.name === this.selectedVoiceName)
-                    : -1;
+        // Configure ttsEngine with current settings
+        const voiceIndex = this.selectedVoiceName
+            ? this.nativeVoices.findIndex(v => v.name === this.selectedVoiceName)
+            : -1;
 
-                await TextToSpeech.speak({
-                    text: cleanText,
-                    lang: 'en-US',
-                    rate: this.rate,
-                    pitch: this.pitch,
-                    volume: 1.0,
-                    category: 'playback',
-                    voice: voiceIndex >= 0 ? voiceIndex : undefined
-                });
-                // On completion
-                this.isTtsSpeaking = false;
-                this.updateState({ isPlaying: false });
-            } catch (e) {
-                console.error('[TTS] Native speak failed:', e);
-                this.isTtsSpeaking = false;
-                this.updateState({ isPlaying: false });
+        ttsEngine.setSettings({
+            rate: this.rate,
+            pitch: this.pitch,
+            voiceIndex: voiceIndex,
+            voice: this.selectedVoice
+        });
+
+        // Set callbacks for UI updates
+        ttsEngine.setCallbacks({
+            onSegmentChange: (segment, _index) => {
+                this.state.currentSegment = segment;
+                this.notify();
+            },
+            onStateChange: (isPlaying, isPaused) => {
+                this.state.isTtsPlaying = isPlaying;
+                this.state.isTtsPaused = isPaused;
+                if (this.state.currentTrack) {
+                    this.state.currentTrack.isPlaying = isPlaying && !isPaused;
+                }
+                this.notify();
+            },
+            onComplete: () => {
+                this.state.isTtsPlaying = false;
+                this.state.isTtsPaused = false;
+                this.state.currentSegment = null;
+                if (this.state.currentTrack) {
+                    this.state.currentTrack.isPlaying = false;
+                }
+                this.notify();
             }
-        } else {
-            // Web Speech API fallback
-            if (!this.synthesis) {
-                console.warn('Speech synthesis not supported on this device');
-                return;
-            }
-            this.stopSpeaking(false);
+        });
 
-            this.utterance = new SpeechSynthesisUtterance(cleanText);
-            this.utterance.rate = this.rate;
-            this.utterance.pitch = this.pitch;
-            if (this.selectedVoice) this.utterance.voice = this.selectedVoice;
-
-            this.utterance.onend = () => {
-                this.isTtsSpeaking = false;
-                this.updateState({ isPlaying: false });
-            };
-
-            this.utterance.onpause = () => {
-                this.updateState({ isPlaying: false });
-            };
-
-            this.utterance.onresume = () => {
-                this.updateState({ isPlaying: true });
-            };
-
-            this.synthesis.speak(this.utterance);
-        }
+        // Start speaking using segment-based engine
+        await ttsEngine.speak(text);
     }
 
     pauseSpeaking() {
-        if (this.synthesis && this.synthesis.speaking && !this.synthesis.paused) {
-            this.synthesis.pause();
-            this.updateState({ isPlaying: false });
+        ttsEngine.pause();
+        this.state.isTtsPaused = true;
+        if (this.state.currentTrack) {
+            this.state.currentTrack.isPlaying = false;
         }
+        this.notify();
     }
 
-    resumeSpeaking() {
-        if (this.synthesis && this.synthesis.paused) {
-            this.synthesis.resume();
-            this.updateState({ isPlaying: true });
+    async resumeSpeaking() {
+        await ttsEngine.resume();
+        this.state.isTtsPaused = false;
+        if (this.state.currentTrack) {
+            this.state.currentTrack.isPlaying = true;
         }
+        this.notify();
     }
 
     isSpeaking(): boolean {
-        if (this.isNative) {
-            return this.isTtsSpeaking;
-        }
-        return this.synthesis ? this.synthesis.speaking : false;
+        const state = ttsEngine.getState();
+        return state.isPlaying;
     }
 
-
+    isPaused(): boolean {
+        const state = ttsEngine.getState();
+        return state.isPaused;
+    }
 
     async stopSpeaking(clearState = true) {
-        if (this.isNative) {
-            try {
-                await TextToSpeech.stop();
-            } catch (e) {
-                console.error('[TTS] Stop failed:', e);
-            }
-        } else if (this.synthesis) {
-            this.synthesis.cancel();
-        }
+        await ttsEngine.stop();
 
-        this.isTtsSpeaking = false;
+        this.state.isTtsPlaying = false;
+        this.state.isTtsPaused = false;
+        this.state.currentSegment = null;
+
         if (clearState) {
-            this.updateState(null);
+            this.state.currentTrack = null;
+            this.notify();
         } else {
-            this.updateState({ isPlaying: false });
+            if (this.state.currentTrack) {
+                this.state.currentTrack.isPlaying = false;
+            }
+            this.notify();
         }
     }
 

@@ -16,11 +16,14 @@ export const MiniPlayer = () => {
 
     if (!track) return null;
 
-    const togglePlayback = (e: React.MouseEvent) => {
+    const togglePlayback = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (track.type === 'tts') {
-            if (track.isPlaying) audioService.pauseSpeaking();
-            else audioService.resumeSpeaking();
+            if (track.isPlaying) {
+                audioService.pauseSpeaking();
+            } else {
+                await audioService.resumeSpeaking();
+            }
         } else {
             if (track.isPlaying) audioService.stopBGM();
         }

@@ -52,10 +52,14 @@ export const Settings = () => {
     };
 
     const cycleTheme = () => {
-        const themes: AppSettings['theme'][] = ['light', 'dark', 'sepia', 'oled'];
-        const currentIdx = themes.indexOf(settings.theme);
-        const nextTheme = themes[(currentIdx + 1) % themes.length];
+        const nextTheme = settings.theme === 'light' ? 'dark' : 'light';
         settingsService.updateSettings({ theme: nextTheme });
+        // Apply dark class to document
+        if (nextTheme === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
     };
 
     const handleClearCache = async () => {

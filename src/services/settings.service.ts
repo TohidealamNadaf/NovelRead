@@ -77,14 +77,11 @@ export class SettingsService {
 
     private applyTheme(theme: string) {
         const root = document.documentElement;
-        root.classList.remove('dark', 'light', 'sepia', 'oled');
-
-        if (theme === 'light') {
-            // Default light
-        } else {
+        if (theme === 'dark') {
             root.classList.add('dark');
+        } else {
+            root.classList.remove('dark');
         }
-        // Additional classes can be handled by components observing the state
     }
 }
 

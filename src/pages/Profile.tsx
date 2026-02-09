@@ -76,7 +76,10 @@ export const Profile = () => {
                                             quality: 90,
                                             allowEditing: true,
                                             resultType: CameraResultType.DataUrl,
-                                            source: CameraSource.Photos
+                                            source: CameraSource.Prompt,
+                                            promptLabelHeader: 'Choose Source',
+                                            promptLabelPhoto: 'Gallery',
+                                            promptLabelPicture: 'Camera'
                                         });
                                         if (image.dataUrl) {
                                             setProfileImage(image.dataUrl);

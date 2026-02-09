@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { useNavigate, useParams } from 'react-router-dom';
 import { dbService, type Novel, type Chapter } from '../services/db.service';
 import { audioService } from '../services/audio.service';
+import type { TTSSegment } from '../services/ttsEngine';
 import { settingsService } from '../services/settings.service';
 import { scraperService } from '../services/scraper.service';
 import { CompletionModal } from '../components/CompletionModal';
@@ -33,6 +34,7 @@ export const Reader = () => {
     // Audio State
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+    const [currentSegment, setCurrentSegment] = useState<TTSSegment | null>(null);
 
     // User Settings State (Global)
     const [settings, setSettings] = useState(settingsService.getSettings());
@@ -61,8 +63,9 @@ export const Reader = () => {
 
         // Sync with global audio state
         const audioUnsub = audioService.subscribe((state) => {
-            setIsSpeaking(state.isTtsPlaying);
+            setIsSpeaking(state.isTtsPlaying && !state.isTtsPaused);
             setIsMusicPlaying(state.isBgmPlaying);
+            setCurrentSegment(state.currentSegment);
         });
 
         // Sync with global app settings
@@ -75,6 +78,72 @@ export const Reader = () => {
             settingsUnsub();
         };
     }, [novelId, chapterId]);
+
+    // TTS text highlighting effect - highlights current segment by wrapping it
+    useEffect(() => {
+        const contentEl = document.getElementById('reader-content-container');
+        if (!contentEl || !currentSegment || !isSpeaking) {
+            // Remove any existing highlights
+            const existing = document.querySelectorAll('.tts-highlight');
+            existing.forEach(el => {
+                const parent = el.parentNode;
+                if (parent) {
+                    parent.replaceChild(document.createTextNode(el.textContent || ''), el);
+                    parent.normalize();
+                }
+            });
+            return;
+        }
+
+        // Find and highlight the segment text
+        const segmentText = currentSegment.text;
+        const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null);
+
+        let node;
+        let found = false;
+
+        // Remove old highlights first
+        const oldHighlights = contentEl.querySelectorAll('.tts-highlight');
+        oldHighlights.forEach(el => {
+            const parent = el.parentNode;
+            if (parent) {
+                parent.replaceChild(document.createTextNode(el.textContent || ''), el);
+                parent.normalize();
+            }
+        });
+
+        // Walk text nodes to find segment
+        while ((node = walker.nextNode()) && !found) {
+            const text = node.textContent || '';
+            const index = text.indexOf(segmentText);
+
+            if (index !== -1) {
+                // Found! Split and wrap
+                const before = text.slice(0, index);
+                const match = text.slice(index, index + segmentText.length);
+                const after = text.slice(index + segmentText.length);
+
+                const parent = node.parentNode;
+                if (parent) {
+                    const fragment = document.createDocumentFragment();
+                    if (before) fragment.appendChild(document.createTextNode(before));
+
+                    const highlight = document.createElement('span');
+                    highlight.className = 'tts-highlight';
+                    highlight.textContent = match;
+                    fragment.appendChild(highlight);
+
+                    if (after) fragment.appendChild(document.createTextNode(after));
+
+                    parent.replaceChild(fragment, node);
+
+                    // Scroll highlight into view
+                    highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    found = true;
+                }
+            }
+        }
+    }, [currentSegment, isSpeaking]);
 
     const loadData = async (nid: string, cid: string) => {
         setLoading(true);
@@ -278,7 +347,6 @@ export const Reader = () => {
     }, []);
 
     const fontSizes = [
-        { label: '12', value: 0.75 },
         { label: '14', value: 0.875 },
         { label: '16', value: 1 },
         { label: '18', value: 1.125 },
@@ -332,10 +400,10 @@ export const Reader = () => {
                 }}
                 onTouchMove={onTouchMove}
                 onTouchEnd={(e) => {
-                    // Detect left swipe from left edge
+                    // Detect left swipe from left edge (60px zone for better touch detection)
                     const endX = e.changedTouches[0].clientX;
                     const diffX = endX - swipeStartXRef.current;
-                    const startedFromLeftEdge = swipeStartXRef.current < 50;
+                    const startedFromLeftEdge = swipeStartXRef.current < 60;
 
                     if (startedFromLeftEdge && diffX > 80) {
                         setShowChapterSidebar(true);
@@ -397,12 +465,18 @@ export const Reader = () => {
                             fontFamily: font === 'comfortable' ? 'Georgia, "Merriweather", "Palatino Linotype", "Book Antiqua", Inter, Roboto, serif' : undefined
                         }}
                     >
-                        <div dangerouslySetInnerHTML={{ __html: chapter.content || '' }} />
+                        <div id="reader-content-container" dangerouslySetInnerHTML={{ __html: chapter.content || '' }} />
 
                         {/* End of Chapter - Next Chapter Hint */}
                         {nextChapter && (
-                            <div className="mt-12 mb-8 flex flex-col items-center gap-3 pt-8 border-t border-dashed border-slate-300 dark:border-slate-700">
-                                <p className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-widest font-semibold">Swipe up for next chapter</p>
+                            <div
+                                className="mt-12 mb-8 flex flex-col items-center gap-3 pt-8 border-t border-dashed border-slate-300 dark:border-slate-700 cursor-pointer active:opacity-70 transition-opacity"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleNextChapter();
+                                }}
+                            >
+                                <p className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-widest font-semibold">Tap or swipe up for next chapter</p>
                                 <div className="flex flex-col items-center animate-bounce">
                                     <ChevronDown size={24} className="text-primary" />
                                 </div>
@@ -507,42 +581,40 @@ export const Reader = () => {
                                     </button>
                                 </div>
 
-                                {/* Contents Button */}
-                                <button
-                                    onClick={() => {
-                                        setShowSettings(false);
-                                        setShowChapterSidebar(true);
-                                    }}
-                                    className="w-full flex items-center justify-center gap-2 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold transition-colors"
-                                >
-                                    <List size={18} />
-                                    <span className="text-sm">Chapter Contents</span>
-                                </button>
-
-                                {/* Summary Button */}
-                                <button
-                                    onClick={handleShowSummary}
-                                    className="w-full flex items-center justify-center gap-2 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800 transition-colors"
-                                >
-                                    <Sparkles size={18} />
-                                    <span className="text-sm">Quick Chapter Overview</span>
-                                </button>
-
-                                {/* Resync Chapter Button */}
-                                <button
-                                    onClick={handleResyncChapter}
-                                    disabled={isResyncing || !chapter?.audioPath}
-                                    className={clsx(
-                                        "w-full flex items-center justify-center gap-2 h-12 rounded-xl font-semibold transition-colors",
-                                        isResyncing
-                                            ? "bg-primary/20 text-primary border border-primary/50"
-                                            : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white",
-                                        !chapter?.audioPath && "opacity-30"
-                                    )}
-                                >
-                                    <RefreshCw size={20} className={isResyncing ? "animate-spin" : ""} />
-                                    <span className="text-sm">{isResyncing ? 'Resyncing Chapter...' : 'Resync Chapter'}</span>
-                                </button>
+                                {/* Quick Actions Grid */}
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button
+                                        onClick={() => {
+                                            setShowSettings(false);
+                                            setShowChapterSidebar(true);
+                                        }}
+                                        className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold transition-colors active:scale-95"
+                                    >
+                                        <List size={20} />
+                                        <span className="text-[10px]">Contents</span>
+                                    </button>
+                                    <button
+                                        onClick={handleShowSummary}
+                                        className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800 transition-colors active:scale-95"
+                                    >
+                                        <Sparkles size={20} />
+                                        <span className="text-[10px]">Summary</span>
+                                    </button>
+                                    <button
+                                        onClick={handleResyncChapter}
+                                        disabled={isResyncing || !chapter?.audioPath}
+                                        className={clsx(
+                                            "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-bold transition-colors active:scale-95",
+                                            isResyncing
+                                                ? "bg-primary/20 text-primary border border-primary/50"
+                                                : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200",
+                                            !chapter?.audioPath && "opacity-30"
+                                        )}
+                                    >
+                                        <RefreshCw size={20} className={isResyncing ? "animate-spin" : ""} />
+                                        <span className="text-[10px]">{isResyncing ? 'Syncing...' : 'Resync'}</span>
+                                    </button>
+                                </div>
 
                                 {/* Font Customization */}
                                 <div className="grid grid-cols-2 gap-4">

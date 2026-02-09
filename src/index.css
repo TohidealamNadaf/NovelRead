@@ -139,3 +139,18 @@ body::-webkit-scrollbar {
 .ios-toggle-circle-off {
   @apply translate-x-0.5;
 }
+
+/* TTS Text Highlighting */
+.tts-highlight {
+  background: linear-gradient(120deg, rgba(93, 88, 240, 0.25) 0%, rgba(93, 88, 240, 0.15) 100%);
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 4px;
+  box-shadow: 0 0 12px rgba(93, 88, 240, 0.3);
+  transition: all 0.3s ease;
+}
+
+.dark .tts-highlight {
+  background: linear-gradient(120deg, rgba(93, 88, 240, 0.35) 0%, rgba(93, 88, 240, 0.2) 100%);
+  box-shadow: 0 0 16px rgba(93, 88, 240, 0.4);
+}
