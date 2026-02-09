@@ -1,15 +1,16 @@
 package com.novel.reading.app;
 
 import android.os.Bundle;
+import android.os.Build;
+import android.graphics.Color;
+import android.content.res.Configuration;
+import android.view.View;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.core.graphics.Insets;
 import com.getcapacitor.BridgeActivity;
-import android.content.res.Configuration;
-import android.graphics.Color;
-import android.os.Build;
 
 public class MainActivity extends BridgeActivity {
     @Override
@@ -20,20 +21,23 @@ public class MainActivity extends BridgeActivity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
         // 2. Make system bars transparent
-        getWindow().setStatusBarColor(android.graphics.Color.TRANSPARENT);
-        getWindow().setNavigationBarColor(android.graphics.Color.TRANSPARENT);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
         
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             getWindow().setNavigationBarContrastEnforced(false);
         }
 
         // 3. Fix content cramping: Apply padding ONLY to the content container
         // This ensures the background still extends under the bars, but UI is safe
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content), (v, insets) -> {
-            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-            return insets;
-        });
+        View contentView = findViewById(android.R.id.content);
+        if (contentView != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(contentView, (v, insets) -> {
+                Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+                v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
+                return insets;
+            });
+        }
 
         // 4. Dynamically control icon coloring
         updateSystemBarIcons();
@@ -49,8 +53,7 @@ public class MainActivity extends BridgeActivity {
         boolean isDarkMode = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) 
             == Configuration.UI_MODE_NIGHT_YES;
             
-        WindowInsetsControllerCompat controller = 
-            new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
         
         // Light icons in Dark Mode, Dark icons in Light Mode
         controller.setAppearanceLightStatusBars(!isDarkMode);
