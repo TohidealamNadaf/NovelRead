@@ -62,75 +62,103 @@ export class ScraperService {
     }
 
     /**
-     * Clean chapter title by removing noise like indices and timestamps.
-     * Rule: DO NOT use .text() on container elements.
+     * Step 3: Mandatory Cleaning Layer
+     * Path: scraper.service.ts
+     * Removes: Leading numbers, trailing timestamps, UI labels, excess whitespace.
      */
-    private cleanChapterTitle(raw: string): string {
+    public cleanChapterTitle(raw: string): string {
         if (!raw) return '';
 
         let cleaned = raw.trim();
 
         // 1. Remove leading numeric indices (e.g., "1 Chapter 1" -> "Chapter 1")
-        cleaned = cleaned.replace(/^\d+\s+/g, '');
+        // Rule: Internal indexing is the only source of truth (index + 1)
+        cleaned = cleaned.replace(/^\d+[\s\.\-]+/g, '');
 
         // 2. Remove timestamps (e.g., "1 day ago", "2 hours ago")
         const timestampRegex = /\b\d+\s*(minute|hour|day|week|month)s?\s*ago\b/gi;
         cleaned = cleaned.replace(timestampRegex, '');
 
-        // 3. Normalize whitespace
+        // 3. Remove common UI labels/artifacts
+        cleaned = cleaned.replace(/(NEW|HOT|FREE|UPDATED)$/gi, '');
+
+        // 4. Normalize whitespace
         cleaned = cleaned.replace(/\s+/g, ' ').trim();
 
         return cleaned;
     }
 
     /**
-     * Validate if a title is a legitimate chapter title.
+     * Step 4: Mandatory Validation Gate
+     * Validation MUST reject: low quality, timestamps, non-alphabetic, or tiny titles.
      */
-    private isValidChapterTitle(title: string): boolean {
+    public isValidChapterTitle(title: string): boolean {
         if (!title) return false;
 
-        // Minimum length check
-        if (title.length <= 5) return false;
+        // Reject if less than 5 characters
+        if (title.length < 5) return false;
 
-        // Must contain alphabetic characters
+        // Reject if it contains "ago" (leaked timestamp)
+        if (/\b\d+\s*(minute|hour|day|week|month)s?\s*ago\b/gi.test(title)) return false;
+
+        // Reject if it has no alphabetic characters (e.g., "123", "...")
         if (!/[a-zA-Z]/.test(title)) return false;
 
-        // Must NOT contain timestamps
-        const timestampRegex = /\b\d+\s*(minute|hour|day|week|month)s?\s*ago\b/gi;
-        if (timestampRegex.test(title)) return false;
-
-        // Must NOT be only numbers
-        if (/^\d+$/.test(title)) return false;
+        // Reject if numeric-only structure
+        if (/^\d+$/.test(title.replace(/\s/g, ''))) return false;
 
         return true;
     }
 
+    /**
+     * Step 1 & 2: Semantic Anchor Extraction ONLY & Strict Field Isolation
+     * Step 5: Indexing RULE (Internal index + 1)
+     * Deliverable: scrapeChapterList(url: string): Promise<ScrapedChapter[]>
+     */
+    public async scrapeChapterList(url: string): Promise<{ chapterNumber: number; title: string; link: string }[]> {
+        const html = await this.fetchHtml(url);
+        if (!html) return [];
+
+        const $ = cheerio.load(html);
+        return this.extractChaptersFromPage($, url).map((ch, i) => ({
+            chapterNumber: i + 1,
+            title: ch.title,
+            link: ch.url
+        }));
+    }
+
     private extractChaptersFromPage($: cheerio.CheerioAPI, baseUrl: string) {
         const chapters: { title: string; url: string }[] = [];
+        const seenLinks = new Set<string>();
+        const seenTitles = new Set<string>();
+
         const listSelectors = [
             '.chapter-list li', 'ul.chapter-list li', '.list-chapter li',
             '#chapter-list li', '.chapters li', '.list-chapters li',
             '#list-chapter .row', '.list-item', '.chapter-item'
         ];
 
-        const origin = new URL(baseUrl).origin;
-
         for (const sel of listSelectors) {
             const items = $(sel);
             if (items.length > 0) {
                 items.each((_, el) => {
+                    // CRITICAL: NEVER call .text() on the container (el).
+                    // This violates the Semantic Anchor Extraction rule.
                     const anchor = $(el).find('a').first();
-                    const rawTitle = anchor.text().trim();
+                    if (anchor.length === 0) return;
+
+                    const rawTitle = anchor.text();
                     const link = anchor.attr('href');
 
-                    if (rawTitle && link && !link.startsWith('javascript') && !link.startsWith('#')) {
+                    if (rawTitle && link) {
                         const cleanTitle = this.cleanChapterTitle(rawTitle);
-                        if (this.isValidChapterTitle(cleanTitle)) {
-                            let chUrl = link;
-                            if (!chUrl.startsWith('http')) {
-                                chUrl = chUrl.startsWith('/') ? `${origin}${chUrl}` : `${origin}/${chUrl}`;
-                            }
-                            chapters.push({ title: cleanTitle, url: chUrl });
+                        const fullUrl = this.resolveUrl(baseUrl, link);
+                        const normalizedTitle = cleanTitle.toLowerCase().replace(/\s+/g, '');
+
+                        if (this.isValidChapterTitle(cleanTitle) && !seenLinks.has(fullUrl) && !seenTitles.has(normalizedTitle)) {
+                            chapters.push({ title: cleanTitle, url: fullUrl });
+                            seenLinks.add(fullUrl);
+                            seenTitles.add(normalizedTitle);
                         }
                     }
                 });
@@ -138,19 +166,20 @@ export class ScraperService {
             }
         }
 
+        // Fallback: If no list detected, scan all specific chapter-like anchors
         if (chapters.length === 0) {
             $('a').each((_, el) => {
                 const anchor = $(el);
-                const rawTitle = anchor.text().trim();
+                const rawTitle = anchor.text();
                 const link = anchor.attr('href');
+
                 if (rawTitle && link && (link.includes('chapter') || link.includes('ch-'))) {
                     const cleanTitle = this.cleanChapterTitle(rawTitle);
-                    if (this.isValidChapterTitle(cleanTitle)) {
-                        let chUrl = link;
-                        if (!chUrl.startsWith('http')) {
-                            chUrl = chUrl.startsWith('/') ? `${origin}${chUrl}` : `${origin}/${chUrl}`;
-                        }
-                        chapters.push({ title: cleanTitle, url: chUrl });
+                    const fullUrl = this.resolveUrl(baseUrl, link);
+
+                    if (this.isValidChapterTitle(cleanTitle) && !seenLinks.has(fullUrl)) {
+                        chapters.push({ title: cleanTitle, url: fullUrl });
+                        seenLinks.add(fullUrl);
                     }
                 }
             });
@@ -326,13 +355,26 @@ export class ScraperService {
             const exists = await dbService.isChapterExists(novelId, ch.url);
             if (exists) {
                 console.log(`[Scraper] Skipping existing chapter: ${ch.title}`);
+                // Still update progress to reflect we've processed this chapter
+                this.currentProgress = {
+                    ...this.currentProgress,
+                    current: currentIndex,
+                    currentTitle: `Skipping: ${ch.title}`
+                };
+                this.notifyListeners();
                 continue;
             }
 
-            this.currentProgress.current = currentIndex;
-            this.currentProgress.currentTitle = ch.title;
-            this.currentProgress.logs.unshift(`[${new Date().toLocaleTimeString()}] Fetching: ${ch.title}`);
-            if (this.currentProgress.logs.length > 50) this.currentProgress.logs.pop();
+            // Update progress immutably to trigger React re-renders
+            const newLogs = [`[${new Date().toLocaleTimeString()}] Fetching: ${ch.title}`, ...this.currentProgress.logs];
+            if (newLogs.length > 50) newLogs.pop();
+
+            this.currentProgress = {
+                ...this.currentProgress,
+                current: currentIndex,
+                currentTitle: ch.title,
+                logs: newLogs
+            };
             this.notifyListeners();
             await this.updateNotification(novelTitle);
 
@@ -348,13 +390,33 @@ export class ScraperService {
                         audioPath: ch.url
                     };
                     await dbService.addChapter(chapterData);
-                    this.currentProgress.logs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: DONE`;
+
+                    // Update log for success
+                    const updatedLogs = [...this.currentProgress.logs];
+                    updatedLogs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: DONE`;
+
+                    this.currentProgress = {
+                        ...this.currentProgress,
+                        logs: updatedLogs
+                    };
                 } else {
-                    this.currentProgress.logs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: FAILED (Empty Content)`;
+                    const updatedLogs = [...this.currentProgress.logs];
+                    updatedLogs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: FAILED (Empty Content)`;
+
+                    this.currentProgress = {
+                        ...this.currentProgress,
+                        logs: updatedLogs
+                    };
                 }
             } catch (e) {
                 console.error(`Failed to scrape ${ch.title}`, e);
-                this.currentProgress.logs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: ERROR`;
+                const updatedLogs = [...this.currentProgress.logs];
+                updatedLogs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: ERROR`;
+
+                this.currentProgress = {
+                    ...this.currentProgress,
+                    logs: updatedLogs
+                };
             }
 
             this.notifyListeners();

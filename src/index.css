@@ -14,11 +14,13 @@
 
 @layer base {
   body {
-    @apply font-display text-slate-900 dark:text-white bg-background-light dark:bg-background-dark;
+    @apply font-display text-slate-900 dark:text-white bg-background-light dark:bg-background-dark min-h-[100dvh];
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
     user-select: none;
     -webkit-user-select: none;
+    padding: 0;
+    margin: 0;
   }
 
   input,

@@ -15,7 +15,7 @@ export const FooterNavigation = () => {
     ];
 
     return (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-[#121118]/95 backdrop-blur-md border-t border-slate-200 dark:border-white/5 pb-6 pt-2">
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-[#121118]/95 backdrop-blur-md border-t border-slate-200 dark:border-white/5 pb-[env(safe-area-inset-bottom,24px)] pt-2">
             <div className="flex justify-around items-center px-2">
                 {navItems.map((item) => {
                     // Highlight active state if path matches or starts with path (for sub-routes like /discover/fantasy)

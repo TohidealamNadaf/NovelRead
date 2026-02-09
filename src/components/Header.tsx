@@ -39,7 +39,7 @@ export const Header = ({
     return (
         <div
             className={clsx(
-                "sticky top-0 z-40 w-full flex items-center justify-between px-4 py-3 transition-colors duration-200",
+                "sticky top-0 z-40 w-full flex items-center justify-between px-4 py-3 transition-colors duration-200 pt-[env(safe-area-inset-top)]",
                 !transparent && "bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md supports-[backdrop-filter]:bg-background-light/80 dark:supports-[backdrop-filter]:bg-background-dark/80",
                 withBorder && "border-b border-slate-200 dark:border-white/5",
                 className

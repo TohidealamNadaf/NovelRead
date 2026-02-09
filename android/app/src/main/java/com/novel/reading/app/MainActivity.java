@@ -28,16 +28,10 @@ public class MainActivity extends BridgeActivity {
             getWindow().setNavigationBarContrastEnforced(false);
         }
 
-        // 3. Fix content cramping: Apply padding ONLY to the content container
-        // This ensures the background still extends under the bars, but UI is safe
-        View contentView = findViewById(android.R.id.content);
-        if (contentView != null) {
-            ViewCompat.setOnApplyWindowInsetsListener(contentView, (v, insets) -> {
-                Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-                v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-                return insets;
-            });
-        }
+        // 3. Fix content cramping: Responsibility shifted to Web layer (CSS/React)
+        // We no longer apply padding here so the background can bleed into the bars.
+        // View contentView = findViewById(android.R.id.content);
+        // ... removed padding logic ...
 
         // 4. Dynamically control icon coloring
         updateSystemBarIcons();
