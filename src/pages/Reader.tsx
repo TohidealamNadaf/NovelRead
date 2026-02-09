@@ -569,7 +569,7 @@ export const Reader = () => {
                                         <span className="text-xs">{isMusicPlaying ? 'On' : 'Off'}</span>
                                     </button>
                                     <button onClick={toggleTTS} className="size-16 flex items-center justify-center bg-primary rounded-full shadow-lg shadow-primary/40 active:scale-95 transition-transform">
-                                        {isSpeaking ? <Pause className="text-white fill-white ml-1" size={32} /> : <Play className="text-white fill-white ml-1" size={32} />}
+                                        {isSpeaking ? <Pause className="text-white fill-white" size={32} /> : <Play className="text-white fill-white ml-1" size={32} />}
                                     </button>
                                     <button
                                         onClick={handleNextChapter}

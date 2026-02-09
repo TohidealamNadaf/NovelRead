@@ -54,17 +54,18 @@ export const MiniPlayer = () => {
                         onClick={togglePlayback}
                         className="size-9 flex items-center justify-center rounded-full bg-primary text-white shadow-md hover:scale-105 transition-transform active:scale-95"
                     >
-                        {track.isPlaying ? <Pause size={20} className="fill-current" /> : <Play size={20} className="ml-0.5 fill-current" />}
+                        {track.isPlaying ? <Pause size={20} className="fill-current" /> : <Play size={20} className="fill-current ml-0.5" />}
                     </button>
+                </button>
 
-                    <button
-                        onClick={handleClose}
-                        className="size-8 flex items-center justify-center rounded-full hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors ml-1"
-                    >
-                        <X size={20} />
-                    </button>
-                </div>
+                <button
+                    onClick={handleClose}
+                    className="size-8 flex items-center justify-center rounded-full hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors ml-1"
+                >
+                    <X size={20} />
+                </button>
             </div>
         </div>
+        </div >
     );
 };

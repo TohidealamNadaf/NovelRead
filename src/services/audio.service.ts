@@ -83,6 +83,16 @@ export class AudioService {
             const result = await TextToSpeech.getSupportedVoices();
             this.nativeVoices = result.voices || [];
             console.log(`[TTS] Loaded ${this.nativeVoices.length} native voices`);
+
+            // Re-match selected voice if we have a name but no object (or just to be safe)
+            if (this.selectedVoiceName) {
+                const match = this.nativeVoices.find(v => v.name === this.selectedVoiceName);
+                if (match) {
+                    this.selectedVoice = match;
+                    // Also update settings in engine to ensure it has the VoiceInfo object if needed (though engine uses index/voice object)
+                    this.setSettings({ voiceName: this.selectedVoiceName });
+                }
+            }
         } catch (e) {
             console.error('[TTS] Failed to load native voices:', e);
         }
@@ -157,9 +167,17 @@ export class AudioService {
             this.selectedVoice = settings.voice;
             this.selectedVoiceName = settings.voice.name;
             settingsService.updateSettings({ ttsVoice: settings.voice.name });
-        }
-        if (settings.voiceName) {
+        } else if (settings.voiceName) {
             this.selectedVoiceName = settings.voiceName;
+
+            // Try to resolve the actual voice object if we have native voices loaded
+            if (this.isNative && this.nativeVoices.length > 0) {
+                const match = this.nativeVoices.find(v => v.name === settings.voiceName);
+                if (match) {
+                    this.selectedVoice = match;
+                }
+            }
+
             settingsService.updateSettings({ ttsVoice: settings.voiceName });
         }
 
