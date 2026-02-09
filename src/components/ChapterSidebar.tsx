@@ -62,7 +62,7 @@ export const ChapterSidebar = ({
                         className="fixed left-0 top-0 bottom-0 z-50 w-[85%] max-w-sm bg-white dark:bg-[#1a182b] shadow-2xl flex flex-col"
                     >
                         {/* Header */}
-                        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-white/10">
+                        <div className="flex items-center justify-between p-4 pt-[calc(env(safe-area-inset-top)+16px)] border-b border-slate-200 dark:border-white/10">
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                                 <div className="size-10 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
                                     <BookOpen className="text-primary" size={20} />
