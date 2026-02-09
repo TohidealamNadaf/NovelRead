@@ -122,7 +122,7 @@ export const ChapterList = () => {
 
         scraperService.downloadAll(novel.id, novel.title, chaptersToDownload.map(c => ({
             title: c.title,
-            url: c.url || c.link || '', // Ensure url is present
+            url: c.audioPath || '', // Use audioPath as the source URL
             audioPath: c.audioPath
         })));
     };
