@@ -56,16 +56,15 @@ export const MiniPlayer = () => {
                     >
                         {track.isPlaying ? <Pause size={20} className="fill-current" /> : <Play size={20} className="fill-current ml-0.5" />}
                     </button>
-                </button>
 
-                <button
-                    onClick={handleClose}
-                    className="size-8 flex items-center justify-center rounded-full hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors ml-1"
-                >
-                    <X size={20} />
-                </button>
+                    <button
+                        onClick={handleClose}
+                        className="size-8 flex items-center justify-center rounded-full hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors ml-1"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
             </div>
-        </div>
         </div >
     );
 };
