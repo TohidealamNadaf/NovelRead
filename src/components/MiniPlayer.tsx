@@ -9,7 +9,14 @@ export const MiniPlayer = () => {
 
     useEffect(() => {
         const unsubscribe = audioService.subscribe((state) => {
-            setTrack(state.currentTrack);
+            const currentTrack = state.currentTrack;
+            if (currentTrack) {
+                // Ensure isPlaying reflects actual TTS state if it's a TTS track
+                if (currentTrack.type === 'tts') {
+                    currentTrack.isPlaying = state.isTtsPlaying && !state.isTtsPaused;
+                }
+            }
+            setTrack(currentTrack);
         });
         return unsubscribe;
     }, []);

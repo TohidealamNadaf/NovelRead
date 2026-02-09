@@ -171,6 +171,8 @@ export const AudioSettings = () => {
                                 }
                             }}
                             value={settingsService.getSettings().ttsVoice || ''}
+                            // Add key to force re-render when availableVoices changes or selected voice changes
+                            key={settingsService.getSettings().ttsVoice}
                         >
                             {availableVoices
                                 .filter(v => {
