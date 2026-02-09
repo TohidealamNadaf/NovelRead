@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Zap, Flame, Trees, CloudRain, Music, Mic } from 'lucide-react';
 import { audioService, type VoiceInfo } from '../services/audio.service';
-import { Navbar } from '../components/Navbar';
+import { FooterNavigation } from '../components/FooterNavigation';
+import { Header } from '../components/Header';
 import clsx from 'clsx';
 import { Link } from 'react-router-dom';
 import { settingsService } from '../services/settings.service';
@@ -76,17 +77,17 @@ export const AudioSettings = () => {
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen font-sans flex flex-col transition-colors duration-300">
             {/* Header */}
-            <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-[24px] shrink-0 border-b border-slate-200 dark:border-white/5">
-                <div className="flex items-center justify-between">
+            <Header
+                title="AI Audio Settings"
+                leftContent={
                     <Link to="/profile" className="flex items-center justify-center p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
                         <div className="flex size-9 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20">
                             <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDjCOham51YfTM7PcgkgKspU9PvDHuom_3rGeCzHDOnhZnOzp09BhpYTuEnobo9LY8vOsfLsujPy9_QEMQ7WaQQSrFMdLgnji7T5irQ-C7DSmSq-0RKsDtEHLdFk2Jd7O9Qpw1VCPG_71gSZCD9ROyRef4a9hy1bzxv5Kmeyh5eiAx9wKqIXAtSkLrqYxyMQFSb2RIi6syEVabDEHarMZ8ece6wHlOJW3ky5o3LtKvE3JC2EZaJpRlwT5R61uO6G-mUqtqV5qNjIYyE")' }}></div>
                         </div>
                     </Link>
-                    <h2 className="text-xl font-bold leading-tight tracking-tight">AI Audio Settings</h2>
-                    <div className="w-10"></div>
-                </div>
-            </div>
+                }
+                className="border-b border-slate-200 dark:border-white/5"
+            />
 
             <div className="flex-1 overflow-y-auto px-4 pb-40">
                 <div className="mt-4 mb-8">
@@ -363,7 +364,7 @@ export const AudioSettings = () => {
 
 
 
-            <Navbar />
+            <FooterNavigation />
         </div>
     );
 };

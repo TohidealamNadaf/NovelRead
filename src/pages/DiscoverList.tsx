@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Search, Bolt, TrendingUp, BookOpen, RefreshCw } from 'lucide-react';
-import { Navbar } from '../components/Navbar';
+import { Search, Bolt, TrendingUp, BookOpen, RefreshCw } from 'lucide-react';
+import { FooterNavigation } from '../components/FooterNavigation';
+import { Header } from '../components/Header';
 import { scraperService } from '../services/scraper.service';
 
 export const DiscoverList = () => {
@@ -102,13 +103,12 @@ export const DiscoverList = () => {
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white h-screen w-full flex flex-col font-display overflow-hidden">
             {/* Header - Fixed at top */}
-            <div className="bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md z-40 shrink-0 pt-[16px]">
-                <div className="flex items-center p-4 pb-2">
-                    <button onClick={() => navigate(-1)} className="flex size-10 items-center justify-start rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
-                        <ArrowLeft size={24} />
-                    </button>
-                    <h2 className="text-xl font-bold leading-tight tracking-tight flex-1 text-center mr-10">{title}</h2>
-                </div>
+            <div className="bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md z-40 shrink-0">
+                <Header
+                    title={title}
+                    showBack
+                    transparent
+                />
                 {/* Search Bar */}
                 <div className="px-4 py-3">
                     <label className="flex flex-col min-w-40 h-11 w-full">
@@ -236,7 +236,7 @@ export const DiscoverList = () => {
             </div>
 
             {/* Navbar */}
-            <Navbar />
+            <FooterNavigation />
         </div>
     );
 };

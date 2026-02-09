@@ -16,16 +16,29 @@
   body {
     @apply font-display text-slate-900 dark:text-white bg-background-light dark:bg-background-dark;
     -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  input,
+  textarea,
+  [contenteditable] {
+    user-select: text;
+    -webkit-user-select: text;
   }
 }
 
-.hide-scrollbar::-webkit-scrollbar {
-  display: none;
+/* Global Scrollbar Hiding */
+* {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
 }
 
-.hide-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+*::-webkit-scrollbar {
+  display: none;
 }
 
 /* Reader specific styles */

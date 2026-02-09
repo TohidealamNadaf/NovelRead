@@ -11,7 +11,7 @@ export interface Notification {
     type: 'scrape' | 'chapter' | 'system' | 'update';
     icon?: string;
     imageUrl?: string;
-    payload?: any;
+    payload?: Record<string, unknown>;
 }
 
 type NotificationListener = (notifications: Notification[]) => void;

@@ -1,8 +1,9 @@
 
 import { useState, useEffect } from 'react';
 import { BookOpen, Headphones, History, Settings, Shield, Edit, Check, Camera } from 'lucide-react';
-import { Navbar } from '../components/Navbar';
-import { dbService } from '../services/database.service';
+import { FooterNavigation } from '../components/FooterNavigation';
+import { Header } from '../components/Header';
+import { dbService } from '../services/db.service';
 import { useNavigate } from 'react-router-dom';
 import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 
@@ -51,17 +52,15 @@ export const Profile = () => {
     return (
         <div className="bg-background-dark text-white min-h-screen font-sans flex flex-col">
             {/* Header */}
-            <div className="sticky top-0 z-20 bg-background-dark/80 backdrop-blur-md px-4 pb-2 pt-[22px] shrink-0 border-b border-white/5">
-                <div className="flex items-center justify-between">
-                    <div className="w-10"></div>
-                    <h2 className="text-xl font-bold leading-tight tracking-tight flex-1 text-center">Profile</h2>
-                    <div className="flex w-10 items-center justify-end">
-                        <button onClick={() => navigate('/settings')} className="flex items-center justify-center p-2 rounded-full hover:bg-white/10 transition-colors">
-                            <Settings size={20} />
-                        </button>
-                    </div>
-                </div>
-            </div>
+            {/* Header */}
+            <Header
+                title="Profile"
+                rightActions={
+                    <button onClick={() => navigate('/settings')} className="flex items-center justify-center p-2 rounded-full hover:bg-white/10 transition-colors">
+                        <Settings size={20} />
+                    </button>
+                }
+            />
 
             <div className="flex-1 overflow-y-auto w-full pb-24">
                 <div className="flex flex-col items-center px-4 py-8">
@@ -199,7 +198,7 @@ export const Profile = () => {
 
                 </div>
             </div>
-            <Navbar />
+            <FooterNavigation />
         </div>
     );
 };

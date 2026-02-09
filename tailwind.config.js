@@ -14,7 +14,7 @@ export default {
             },
             fontFamily: {
                 "display": ["Lexend", "sans-serif"],
-                "sans": ["Lexend", "sans-serif"],
+                "sans": ["Inter", "sans-serif"],
             },
             borderRadius: {
                 "DEFAULT": "0.25rem",

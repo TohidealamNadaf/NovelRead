@@ -1,22 +1,16 @@
 
-import { useNavigate } from 'react-router-dom';
-import { Navbar } from '../components/Navbar';
-import { ArrowLeft, Shield, Lock, Eye, Save } from 'lucide-react';
+// import { useNavigate } from 'react-router-dom'; // Unused
+import { FooterNavigation } from '../components/FooterNavigation';
+import { Header } from '../components/Header';
+import { Shield, Lock, Eye, Save } from 'lucide-react';
 
 export const PrivacySecurity = () => {
-    const navigate = useNavigate();
+    // const navigate = useNavigate(); // Unused
 
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen font-sans flex flex-col transition-colors">
             {/* Header */}
-            <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-[20px] shrink-0 border-b border-slate-200 dark:border-white/5">
-                <div className="flex items-center gap-4">
-                    <button onClick={() => navigate(-1)} className="size-10 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
-                        <ArrowLeft size={20} />
-                    </button>
-                    <h2 className="text-xl font-bold">Privacy & Security</h2>
-                </div>
-            </div>
+            <Header title="Privacy & Security" showBack withBorder />
 
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto px-4 py-4 pb-24 space-y-6">
@@ -74,7 +68,7 @@ export const PrivacySecurity = () => {
                     </button>
                 </div>
             </div>
-            <Navbar />
+            <FooterNavigation />
         </div>
     );
 };

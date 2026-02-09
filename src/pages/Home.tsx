@@ -1,13 +1,13 @@
-
 import { useState, useEffect } from 'react';
-import { Navbar } from '../components/Navbar';
-import { dbService } from '../services/database.service';
+import { FooterNavigation } from '../components/FooterNavigation';
+import { Header } from '../components/Header';
+import { dbService, type Novel } from '../services/db.service';
 import { Link } from 'react-router-dom';
 import { Search, Bell, Plus } from 'lucide-react';
 import { notificationService } from '../services/notification.service';
 
 export const Home = () => {
-    const [novels, setNovels] = useState<any[]>([]);
+    const [novels, setNovels] = useState<Novel[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
 
     useEffect(() => {
@@ -38,13 +38,15 @@ export const Home = () => {
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto pb-24">
                 {/* Top App Bar */}
-                <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md pt-[16px]">
-                    <div className="flex items-center p-4 pb-2 justify-between relative">
-                        <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
-                            <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${profileImage}")` }}></div>
-                        </Link>
-                        <h2 className="text-xl font-bold leading-tight tracking-tight absolute left-1/2 -translate-x-1/2">Library</h2>
-                        <div className="flex w-10 items-center justify-end">
+                <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md">
+                    <Header
+                        title="Library"
+                        leftContent={
+                            <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
+                                <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${profileImage}")` }}></div>
+                            </Link>
+                        }
+                        rightActions={
                             <Link to="/notifications" className="flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors relative">
                                 <Bell size={22} className="text-slate-700 dark:text-white" />
                                 {unreadCount > 0 && (
@@ -53,8 +55,10 @@ export const Home = () => {
                                     </span>
                                 )}
                             </Link>
-                        </div>
-                    </div>
+                        }
+                        transparent
+                    />
+
                     {/* Search Bar */}
                     <div className="px-4 py-3">
                         <label className="flex flex-col min-w-40 h-11 w-full">
@@ -106,7 +110,7 @@ export const Home = () => {
                 </div>
             </div>
 
-            <Navbar />
+            <FooterNavigation />
         </div >
     );
 };

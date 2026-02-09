@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, CheckCircle2, BookOpen, Star, RefreshCw, Zap } from 'lucide-react';
+import { CheckCircle2, BookOpen, Star, RefreshCw, Zap } from 'lucide-react';
 import { notificationService } from '../services/notification.service';
 import type { Notification } from '../services/notification.service';
-import { Navbar } from '../components/Navbar';
+import { FooterNavigation } from '../components/FooterNavigation';
+import { Header } from '../components/Header';
 import clsx from 'clsx';
 
 export const Notifications = () => {
-    const navigate = useNavigate();
+    const navigate = useNavigate(); // Used for navigation in Read Now button
     const [notifications, setNotifications] = useState<Notification[]>([]);
 
     useEffect(() => {
@@ -112,20 +113,19 @@ export const Notifications = () => {
 
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen font-display flex flex-col">
-            <div className="sticky top-0 z-30 bg-background-light/90 dark:bg-background-dark/90 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 pt-[20px]">
-                <div className="flex items-center justify-between h-14 px-4">
-                    <button onClick={() => navigate(-1)} className="flex items-center text-primary active:opacity-60 transition-opacity">
-                        <ChevronLeft size={32} />
-                    </button>
-                    <h1 className="text-lg font-bold">Notifications</h1>
+            <Header
+                title="Notifications"
+                showBack
+                rightActions={
                     <button
                         onClick={handleMarkAllRead}
                         className="text-[14px] font-semibold text-primary active:opacity-60 transition-opacity"
                     >
                         Mark all as read
                     </button>
-                </div>
-            </div>
+                }
+                withBorder
+            />
 
             <div className="flex-1 pb-48">
                 {notifications.length === 0 ? (
@@ -179,7 +179,7 @@ export const Notifications = () => {
                 )}
             </div>
 
-            <Navbar />
+            <FooterNavigation />
         </div>
     );
 };

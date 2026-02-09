@@ -1,6 +1,6 @@
 import { CapacitorHttp, Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { dbService } from './database.service';
+import { dbService } from './db.service';
 import { notificationService } from './notification.service';
 import * as cheerio from 'cheerio';
 
@@ -45,6 +45,11 @@ export class ScraperService {
         return () => {
             this.listeners = this.listeners.filter(l => l !== listener);
         };
+    }
+
+    resetProgress() {
+        this.currentProgress = { current: 0, total: 0, currentTitle: '', logs: [] };
+        this.notifyListeners();
     }
 
     private notifyListeners() {
@@ -176,7 +181,7 @@ export class ScraperService {
         }
     }
 
-    async downloadAll(novelId: string, novelTitle: string, chaptersToDownload: any[]) {
+    async downloadAll(novelId: string, novelTitle: string, chaptersToDownload: { title: string; url: string; audioPath?: string }[]) {
         if (this.isScrapingInternal) return;
 
         this.isScrapingInternal = true;
@@ -196,7 +201,7 @@ export class ScraperService {
         }
     }
 
-    private async scrapeChapterLoop(novelId: string, chapters: any[], novelTitle: string, offset: number = 0) {
+    private async scrapeChapterLoop(novelId: string, chapters: { title: string; url: string; audioPath?: string }[], novelTitle: string, offset: number = 0) {
         for (let i = 0; i < chapters.length; i++) {
             const chapter = chapters[i];
             const currentIndex = i + 1;
@@ -212,7 +217,7 @@ export class ScraperService {
             await this.updateNotification(novelTitle);
 
             try {
-                const content = await this.fetchChapterContent(chapter.url || chapter.audioPath);
+                const content = await this.fetchChapterContent(chapter.url || chapter.audioPath || '');
                 const chapterId = `${novelId}-ch-${offset + currentIndex}`;
 
                 await dbService.addChapter({
@@ -237,7 +242,7 @@ export class ScraperService {
 
     async fetchNovel(url: string): Promise<NovelMetadata> {
         // 1. Determine Info URL (for Metadata) and List URL (for Chapters)
-        let infoUrl = url.replace(/\/chapters\/?(\?.*)?$/, '');
+        const infoUrl = url.replace(/\/chapters\/?(\?.*)?$/, '');
         let listUrl = url;
         const userProvidedChapters = /\/chapters\/?(\?.*)?$/.test(url);
 
@@ -248,7 +253,7 @@ export class ScraperService {
         let summary = '';
         let status = 'Ongoing';
 
-        const extractMetadata = ($: any) => {
+        const extractMetadata = ($: cheerio.CheerioAPI) => {
             const getMeta = (selectors: string[]) => {
                 for (const sel of selectors) {
                     const txt = $(sel).text().trim();
@@ -352,7 +357,7 @@ export class ScraperService {
         }
 
         // 3. Scrape Chapters (Start Loop)
-        let allChapters: { title: string; url: string }[] = [];
+        const allChapters: { title: string; url: string }[] = [];
         const visitedUrls = new Set<string>();
         let pageCount = 0;
         const MAX_PAGES = 50;
@@ -479,7 +484,7 @@ export class ScraperService {
             if (relativeUrl.startsWith('/')) return `${origin}${relativeUrl}`;
             const baseDir = baseUrl.substring(0, baseUrl.lastIndexOf('/') + 1);
             return `${baseDir}${relativeUrl}`;
-        } catch (e) {
+        } catch {
             return relativeUrl;
         }
     }
@@ -572,7 +577,7 @@ export class ScraperService {
             }
         }
 
-        const options: any = {
+        const options: { url: string; headers: Record<string, string>; connectTimeout: number; readTimeout: number } = {
             url: finalUrl,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -591,7 +596,7 @@ export class ScraperService {
                     try {
                         const json = JSON.parse(response.data);
                         return json.contents || '';
-                    } catch (e) {
+                    } catch {
                         // Fall out to string check
                     }
                 }
@@ -619,7 +624,8 @@ export class ScraperService {
         ];
     }
 
-    private parseNovelsList($: any, selector: any): (NovelMetadata & { sourceUrl: string })[] {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private parseNovelsList($: cheerio.CheerioAPI, selector: any): (NovelMetadata & { sourceUrl: string })[] {
         const novels: (NovelMetadata & { sourceUrl: string })[] = [];
         const origin = 'https://novelfire.net';
 
@@ -628,6 +634,7 @@ export class ScraperService {
             ? $container
             : $container.find('.novel-item, .item, .book-item, .list-row, .col-6, .box, [class*="item"], a[href*="/book/"], a[href*="/novel/"]');
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         items.each((_: number, el: any) => {
             const $el = $(el);
             let title = $el.find('h1, h2, h3, h4, h5, .title, .novel-title, .book-name').first().text().trim();
@@ -1024,11 +1031,11 @@ export class ScraperService {
                     let htmlContent = '';
 
                     try {
-                        const data = JSON.parse(jsonStr);
+                        const data = JSON.parse(jsonStr) as { html?: string };
                         if (data && data.html) {
                             htmlContent = data.html;
                         }
-                    } catch (e) {
+                    } catch {
                         // Maybe it returned raw HTML if the proxy unwrapped it weirdly, or it failed
                         if (jsonStr.includes('<li') || jsonStr.includes('class="novel-item"')) {
                             htmlContent = jsonStr;
@@ -1058,7 +1065,7 @@ export class ScraperService {
             results.recentlyAdded = [...results.latest];
         }
 
-        const dedupe = (arr: any[]) => {
+        const dedupe = (arr: NovelMetadata[]) => {
             const seen = new Set();
             return arr.filter(item => {
                 if (!item.title) return false;

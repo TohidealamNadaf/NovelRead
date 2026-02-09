@@ -1,13 +1,14 @@
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Navbar } from '../components/Navbar';
-import { dbService } from '../services/database.service';
-import { ArrowLeft, Trash2, ExternalLink } from 'lucide-react';
+// import { useNavigate } from 'react-router-dom'; // Unused
+import { FooterNavigation } from '../components/FooterNavigation';
+import { dbService, type Novel } from '../services/db.service';
+import { Header } from '../components/Header';
+import { Trash2, ExternalLink } from 'lucide-react';
 
 export const ScrapingHistory = () => {
-    const navigate = useNavigate();
-    const [history, setHistory] = useState<any[]>([]);
+    // const navigate = useNavigate(); // Unused
+    const [history, setHistory] = useState<Novel[]>([]);
 
     useEffect(() => {
         loadHistory();
@@ -18,7 +19,7 @@ export const ScrapingHistory = () => {
             const novels = await dbService.getNovels();
             // Filter only imported novels (relaxed for debugging/legacy support)
             // If category is missing, assume it might be imported if it has a sourceUrl (which all do in this schema)
-            const imported = novels.filter(n => n.category === 'Imported' || !n.category || n.category === 'Unknown');
+            const imported = novels.filter((n: Novel) => n.category === 'Imported' || !n.category || n.category === 'Unknown');
             setHistory(imported);
         } catch (e) {
             console.error(e);
@@ -33,15 +34,13 @@ export const ScrapingHistory = () => {
     };
 
     return (
-        <div className="bg-background-dark text-white min-h-screen font-sans flex flex-col">
-            <div className="sticky top-0 z-20 bg-background-dark/80 backdrop-blur-md px-4 py-4 pt-[20px] shrink-0 border-b border-white/5">
-                <div className="flex items-center gap-4">
-                    <button onClick={() => navigate(-1)} className="size-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors">
-                        <ArrowLeft size={20} />
-                    </button>
-                    <h2 className="text-xl font-bold">Scraping History</h2>
-                </div>
-            </div>
+        <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen font-sans flex flex-col">
+            {/* Header */}
+            <Header
+                title="Scraping History"
+                showBack
+                withBorder
+            />
 
             <div className="flex-1 overflow-y-auto px-4 py-4 pb-24">
                 {history.length === 0 ? (
@@ -68,7 +67,7 @@ export const ScrapingHistory = () => {
                     </div>
                 )}
             </div>
-            <Navbar />
+            <FooterNavigation />
         </div>
     );
 };

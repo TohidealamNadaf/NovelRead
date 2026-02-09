@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2 } from 'lucide-react';
+import { MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2 } from 'lucide-react';
 import { scraperService, type NovelMetadata, type ScraperProgress } from '../services/scraper.service';
 import { useNavigate } from 'react-router-dom';
 import { CompletionModal } from '../components/CompletionModal';
+import { Header } from '../components/Header';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import clsx from 'clsx';
@@ -79,20 +80,19 @@ export const Import = () => {
     return (
         <div className="relative w-full h-screen bg-background-light dark:bg-background-dark flex flex-col overflow-hidden">
             {/* Top App Bar */}
-            <div className="flex flex-col pt-[16px] px-4 pb-2 bg-background-light dark:bg-background-dark/80 backdrop-blur-md sticky top-0 z-50 ">
-                <div className="flex items-center justify-between py-2">
-                    <button onClick={() => navigate(-1)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                        <ArrowLeft className="text-2xl" />
-                    </button>
-                    <h2 className="text-lg font-bold tracking-tight">Import Novel</h2>
+            {/* Top App Bar */}
+            <Header
+                title="Import Novel"
+                showBack
+                rightActions={
                     <button className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                         <MoreHorizontal className="text-2xl" />
                     </button>
-                </div>
-            </div>
+                }
+            />
 
             {/* Main Content */}
-            <div className="flex-1 overflow-y-auto px-4 pb-32">
+            <div className="flex-1 overflow-y-auto px-4 pb-48">
                 {/* URL Input Section */}
                 <div className="mt-4 space-y-4">
                     <div className="flex flex-col gap-2">
@@ -156,7 +156,7 @@ export const Import = () => {
                                 <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${(progress.current / progress.total) * 100}%` }}></div>
                             </div>
                             {/* Progress Log */}
-                            <div className="bg-black/5 dark:bg-black/20 rounded-lg p-3 font-mono text-[11px] leading-relaxed opacity-80 min-h-[80px]">
+                            <div className="bg-black/5 dark:bg-black/20 rounded-lg p-3 font-mono text-[11px] leading-relaxed opacity-80 h-40 overflow-y-auto">
                                 {progress.logs.map((log, index) => (
                                     <div key={index} className={clsx("flex justify-between items-center", index === 0 ? "text-primary animate-pulse" : "text-emerald-500")}>
                                         <span>{log}</span>
@@ -207,6 +207,7 @@ export const Import = () => {
                 isOpen={showSuccess}
                 onClose={() => {
                     setShowSuccess(false);
+                    scraperService.resetProgress();
                     navigate('/');
                 }}
                 title="Success!"

@@ -2,6 +2,30 @@ import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacito
 import { Capacitor } from '@capacitor/core';
 
 
+export interface Novel {
+    id: string;
+    title: string;
+    author?: string;
+    coverUrl?: string;
+    sourceUrl: string;
+    summary?: string;
+    category?: string;
+    status?: string;
+    source?: string;
+    lastReadChapterId?: string;
+    createdAt?: number;
+}
+
+export interface Chapter {
+    id: string;
+    novelId: string;
+    title: string;
+    content?: string;
+    orderIndex: number;
+    audioPath?: string;
+    isRead?: number;
+}
+
 class DatabaseService {
     private sqlite: SQLiteConnection;
     private db: SQLiteDBConnection | null = null;
@@ -56,6 +80,19 @@ class DatabaseService {
 
             await this.db.execute(schema);
 
+            // Migration: Ensure new column 'chapter_summaries' table exists
+            const summaryTableSchema = `
+                CREATE TABLE IF NOT EXISTS chapter_summaries (
+                    chapterId TEXT NOT NULL,
+                    summaryType TEXT NOT NULL,
+                    summaryText TEXT NOT NULL,
+                    createdAt INTEGER DEFAULT (strftime('%s', 'now')),
+                    PRIMARY KEY (chapterId, summaryType),
+                    FOREIGN KEY(chapterId) REFERENCES chapters(id) ON DELETE CASCADE
+                );
+            `;
+            await this.db.execute(summaryTableSchema);
+
             // Migration: Ensure new columns exist for older databases
             const columnsToAdd = [
                 { name: 'summary', type: 'TEXT' },
@@ -67,7 +104,7 @@ class DatabaseService {
                 try {
                     // Check if column exists
                     const tableInfo = await this.db.query(`PRAGMA table_info(novels)`);
-                    const exists = tableInfo.values?.some((c: any) => c.name === col.name);
+                    const exists = tableInfo.values?.some((c: { name: string }) => c.name === col.name);
 
                     if (!exists) {
                         console.log(`Migration: Adding column ${col.name} to novels table`);
@@ -93,7 +130,7 @@ class DatabaseService {
         }
     }
 
-    async addNovel(novel: { id: string; title: string; author?: string; coverUrl?: string; sourceUrl: string; category?: string; status?: string; summary?: string }) {
+    async addNovel(novel: Novel) {
         const db = await this.getDB();
         if (!db) return;
         const query = `
@@ -114,7 +151,7 @@ class DatabaseService {
         await this.save();
     }
 
-    async addChapter(chapter: { id: string; novelId: string; title: string; content: string; orderIndex: number; audioPath?: string }) {
+    async addChapter(chapter: Chapter) {
         const db = await this.getDB();
         if (!db) return;
         const query = `
@@ -125,32 +162,32 @@ class DatabaseService {
         await this.save();
     }
 
-    async getNovels() {
+    async getNovels(): Promise<Novel[]> {
         const db = await this.getDB();
         if (!db) return [];
         const result = await db.query('SELECT * FROM novels ORDER BY createdAt DESC');
-        return result.values || [];
+        return (result.values as Novel[]) || [];
     }
 
-    async getNovel(id: string) {
+    async getNovel(id: string): Promise<Novel | null> {
         const db = await this.getDB();
         if (!db) return null;
         const result = await db.query('SELECT * FROM novels WHERE id = ?', [id]);
-        return result.values && result.values.length > 0 ? result.values[0] : null;
+        return result.values && result.values.length > 0 ? (result.values[0] as Novel) : null;
     }
 
-    async getChapters(novelId: string) {
+    async getChapters(novelId: string): Promise<Chapter[]> {
         const db = await this.getDB();
         if (!db) return [];
         const result = await db.query('SELECT * FROM chapters WHERE novelId = ? ORDER BY orderIndex ASC', [novelId]);
-        return result.values || [];
+        return (result.values as Chapter[]) || [];
     }
 
-    async getChapter(novelId: string, chapterId: string) {
+    async getChapter(novelId: string, chapterId: string): Promise<Chapter | null> {
         const db = await this.getDB();
         if (!db) return null;
         const result = await db.query('SELECT * FROM chapters WHERE novelId = ? AND id = ?', [novelId, chapterId]);
-        return result.values && result.values.length > 0 ? result.values[0] : null;
+        return result.values && result.values.length > 0 ? (result.values[0] as Chapter) : null;
     }
     async deleteNovel(id: string) {
         const db = await this.getDB();
@@ -166,24 +203,24 @@ class DatabaseService {
         }
     }
 
-    async getNextChapter(novelId: string, currentOrderIndex: number) {
+    async getNextChapter(novelId: string, currentOrderIndex: number): Promise<Chapter | null> {
         const db = await this.getDB();
         if (!db) return null;
         const result = await db.query(
             'SELECT * FROM chapters WHERE novelId = ? AND orderIndex > ? ORDER BY orderIndex ASC LIMIT 1',
             [novelId, currentOrderIndex]
         );
-        return result.values && result.values.length > 0 ? result.values[0] : null;
+        return result.values && result.values.length > 0 ? (result.values[0] as Chapter) : null;
     }
 
-    async getPrevChapter(novelId: string, currentOrderIndex: number) {
+    async getPrevChapter(novelId: string, currentOrderIndex: number): Promise<Chapter | null> {
         const db = await this.getDB();
         if (!db) return null;
         const result = await db.query(
             'SELECT * FROM chapters WHERE novelId = ? AND orderIndex < ? ORDER BY orderIndex DESC LIMIT 1',
             [novelId, currentOrderIndex]
         );
-        return result.values && result.values.length > 0 ? result.values[0] : null;
+        return result.values && result.values.length > 0 ? (result.values[0] as Chapter) : null;
     }
 
     async updateReadingProgress(novelId: string, chapterId: string) {
@@ -212,6 +249,35 @@ class DatabaseService {
         } catch (e) {
             console.error("Failed to update chapter content", e);
             throw e;
+        }
+    }
+
+    async getSummary(chapterId: string, type: 'extractive' | 'events'): Promise<string | null> {
+        const db = await this.getDB();
+        if (!db) return null;
+        try {
+            const result = await db.query(
+                'SELECT summaryText FROM chapter_summaries WHERE chapterId = ? AND summaryType = ?',
+                [chapterId, type]
+            );
+            return result.values && result.values.length > 0 ? result.values[0].summaryText : null;
+        } catch (e) {
+            console.error("Failed to get summary", e);
+            return null;
+        }
+    }
+
+    async saveSummary(chapterId: string, type: 'extractive' | 'events', text: string) {
+        const db = await this.getDB();
+        if (!db) return;
+        try {
+            await db.run(
+                'INSERT OR REPLACE INTO chapter_summaries (chapterId, summaryType, summaryText) VALUES (?, ?, ?)',
+                [chapterId, type, text]
+            );
+            await this.save();
+        } catch (e) {
+            console.error("Failed to save summary", e);
         }
     }
 }

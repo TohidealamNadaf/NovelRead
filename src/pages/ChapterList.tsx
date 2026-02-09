@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { dbService } from '../services/database.service';
+import { dbService, type Novel, type Chapter } from '../services/db.service';
 import { scraperService, type ScraperProgress } from '../services/scraper.service';
 import { CompletionModal } from '../components/CompletionModal';
-import { ArrowLeft, MoreHorizontal, Search, Filter, Download, CheckCircle, DownloadCloud, PlayCircle, Trash2, Minimize2 } from 'lucide-react';
+import { MoreHorizontal, Search, Filter, Download, CheckCircle, DownloadCloud, PlayCircle, Trash2, Minimize2 } from 'lucide-react';
+import { Header } from '../components/Header';
 
 export const ChapterList = () => {
     const { novelId } = useParams<{ novelId: string }>();
@@ -18,8 +19,8 @@ export const ChapterList = () => {
     const [modalInfo, setModalInfo] = useState({ isOpen: false, title: '', message: '' });
 
     // Restore missing state variables
-    const [novel, setNovel] = useState<any>(null);
-    const [chapters, setChapters] = useState<any[]>([]);
+    const [novel, setNovel] = useState<Novel | null>(null);
+    const [chapters, setChapters] = useState<Chapter[]>([]);
     const [loading, setLoading] = useState(true);
     const [downloading, setDownloading] = useState<Set<string>>(new Set());
     const [isScrapingNew, setIsScrapingNew] = useState(false);
@@ -110,6 +111,7 @@ export const ChapterList = () => {
     };
 
     const handleDownloadAll = async () => {
+        if (!novel) return;
         const chaptersToDownload = chapters.filter(c => !c.content);
         if (chaptersToDownload.length === 0) {
             alert("All chapters are already downloaded!");
@@ -191,13 +193,14 @@ export const ChapterList = () => {
 
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans min-h-screen pb-20">
-            {/* Top Navigation Bar */}
-            <div className="sticky top-0 z-50 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 pt-[16px]">
-                <div className="flex items-center p-4 justify-between max-w-lg mx-auto relative">
-                    <button className="flex items-center justify-center size-10 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => navigate('/')}>
-                        <ArrowLeft className="text-primary cursor-pointer" />
-                    </button>
-                    <h2 className="text-lg font-bold truncate absolute left-1/2 -translate-x-1/2">Chapter Index</h2>
+            {/* Top Navigation Bar using Global Header */}
+            <Header
+                title="Chapter Index"
+                showBack={true}
+                onBack={() => navigate('/')}
+                className="bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md"
+                withBorder
+                rightActions={
                     <div className="relative flex items-center">
                         <button className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => setShowMenu(!showMenu)}>
                             <MoreHorizontal className="text-primary" />
@@ -237,61 +240,37 @@ export const ChapterList = () => {
                             </>
                         )}
                     </div>
-                </div>
-                <div className="px-4 py-3">
-                    <label className="flex flex-col min-w-40 h-11 w-full">
-                        <div className="flex w-full flex-1 items-stretch rounded-xl h-full bg-slate-200/50 dark:bg-[#2b2839]">
-                            <div className="text-slate-500 dark:text-[#a19db9] flex items-center justify-center pl-4">
-                                <Search size={20} />
-                            </div>
-                            <input
-                                className="flex w-full min-w-0 flex-1 border-none bg-transparent focus:outline-0 focus:ring-0 text-base font-normal placeholder:text-slate-500 dark:placeholder:text-[#a19db9] px-3"
-                                placeholder="Search titles or paste URL..."
-                                value={searchQuery}
-                                id="search-input"
-                                name="search-query"
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={handleSearch}
-                                disabled={isScrapingNew || isGlobalScraping}
-                            />
-                            {(isScrapingNew || isGlobalScraping) && (
-                                <div className="flex items-center pr-3">
-                                    <div className="size-4 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
-                                </div>
-                            )}
-                        </div>
-                    </label>
-                </div>
+                }
+            />
 
-                {/* Global Scraping Progress Bar */}
-                {(isScrapingNew || isGlobalScraping) && (
-                    <div className="px-4 pb-2 animate-in slide-in-from-top-2 duration-300">
-                        <div className="bg-primary/10 border border-primary/20 rounded-xl p-3">
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                    <div className="size-4 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
-                                    <span className="text-[11px] font-bold text-primary uppercase tracking-wider line-clamp-1">
-                                        {scrapingProgress.currentTitle}
-                                    </span>
-                                </div>
-                                <span className="text-[11px] font-bold text-primary whitespace-nowrap">
-                                    {scrapingProgress.current} / {scrapingProgress.total}
+            {/* Global Scraping Progress Bar */}
+            {(isScrapingNew || isGlobalScraping) && (
+                <div className="sticky top-[60px] z-40 bg-background-light dark:bg-background-dark px-4 pb-2 pt-2 animate-in slide-in-from-top-2 duration-300 border-b border-slate-200 dark:border-slate-800">
+                    <div className="bg-primary/10 border border-primary/20 rounded-xl p-3">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <div className="size-4 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
+                                <span className="text-[11px] font-bold text-primary uppercase tracking-wider line-clamp-1">
+                                    {scrapingProgress.currentTitle}
                                 </span>
                             </div>
-                            <div className="h-1.5 w-full bg-primary/20 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-primary transition-all duration-300"
-                                    style={{ width: `${(scrapingProgress.current / scrapingProgress.total) * 100}%` }}
-                                ></div>
-                            </div>
-                            <div className="flex items-center gap-2 mt-2 opacity-70">
-                                <Minimize2 size={12} className="text-primary" />
-                                <span className="text-[10px] text-primary font-medium">Processing in background</span>
-                            </div>
+                            <span className="text-[11px] font-bold text-primary whitespace-nowrap">
+                                {scrapingProgress.current} / {scrapingProgress.total}
+                            </span>
+                        </div>
+                        <div className="h-1.5 w-full bg-primary/20 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-primary transition-all duration-300"
+                                style={{ width: `${(scrapingProgress.current / scrapingProgress.total) * 100}%` }}
+                            ></div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2 opacity-70">
+                            <Minimize2 size={12} className="text-primary" />
+                            <span className="text-[10px] text-primary font-medium">Processing in background</span>
                         </div>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
 
             <main className="max-w-lg mx-auto pb-24">
                 {loading || !novel ? (
@@ -377,7 +356,10 @@ export const ChapterList = () => {
                         })()}
 
                         {/* Utilities & Search */}
-                        <div className="px-4 sticky top-[65px] z-40 bg-background-light dark:bg-background-dark py-2 flex flex-col gap-3">
+                        <div
+                            className="px-4 sticky z-40 bg-background-light dark:bg-background-dark py-2 flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800 transition-[top] duration-300"
+                            style={{ top: (isScrapingNew || isGlobalScraping) ? '150px' : '60px' }}
+                        >
                             <div className="flex gap-2">
                                 <div className="relative flex-1">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />

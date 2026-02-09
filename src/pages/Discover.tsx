@@ -3,7 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Search, Bolt, BookOpen, Filter, RefreshCcw, Minimize2 } from 'lucide-react';
 import { scraperService, type ScraperProgress } from '../services/scraper.service';
 import { App as CapacitorApp } from '@capacitor/app';
-import { Navbar } from '../components/Navbar';
+import { FooterNavigation } from '../components/FooterNavigation';
+import { Header } from '../components/Header';
 import { CompletionModal } from '../components/CompletionModal';
 
 export const Discover = () => {
@@ -105,45 +106,52 @@ export const Discover = () => {
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto pb-24">
                 {/* Header */}
-                <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md pt-[18px]">
-                    <div className="flex items-center p-4 pb-2 justify-between">
-                        <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
-                            <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDjCOham51YfTM7PcgkgKspU9PvDHuom_3rGeCzHDOnhZnOzp09BhpYTuEnobo9LY8vOsfLsujPy9_QEMQ7WaQQSrFMdLgnji7T5irQ-C7DSmSq-0RKsDtEHLdFk2Jd7O9Qpw1VCPG_71gSZCD9ROyRef4a9hy1bzxv5Kmeyh5eiAx9wKqIXAtSkLrqYxyMQFSb2RIi6syEVabDEHarMZ8ece6wHlOJW3ky5o3LtKvE3JC2EZaJpRlwT5R61uO6G-mUqtqV5qNjIYyE")' }}></div>
-                        </Link>
-                        <h2 className="text-xl font-bold leading-tight tracking-tight flex-1 text-center">Discover</h2>
-                        <div className="flex w-20 items-center justify-end gap-1 relative">
-                            <button
-                                onClick={syncHomeData}
-                                disabled={isGlobalScraping}
-                                className={`flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors ${isSyncingHome ? 'animate-spin opacity-50' : ''}`}
-                            >
-                                <RefreshCcw size={20} className="text-primary" />
-                            </button>
-                            <button
-                                onClick={() => setIsFilterOpen(!isFilterOpen)}
-                                className="flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-                            >
-                                <Filter className="text-primary" size={20} />
-                            </button>
-                            {isFilterOpen && (
-                                <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-[#1c1c1e] rounded-xl shadow-xl border border-slate-200 dark:border-white/10 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
-                                    <h3 className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">Categories</h3>
-                                    {['Fantasy', 'Sci-Fi', 'Romance', 'Action', 'Mystery', 'Horror'].map(cat => (
-                                        <button
-                                            key={cat}
-                                            onClick={() => {
-                                                navigate(`/discover/${cat.toLowerCase()}`);
-                                                setIsFilterOpen(false);
-                                            }}
-                                            className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
-                                        >
-                                            {cat}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                {/* Header */}
+                <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md">
+                    <Header
+                        title="Discover"
+                        transparent
+                        leftContent={
+                            <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
+                                <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDjCOham51YfTM7PcgkgKspU9PvDHuom_3rGeCzHDOnhZnOzp09BhpYTuEnobo9LY8vOsfLsujPy9_QEMQ7WaQQSrFMdLgnji7T5irQ-C7DSmSq-0RKsDtEHLdFk2Jd7O9Qpw1VCPG_71gSZCD9ROyRef4a9hy1bzxv5Kmeyh5eiAx9wKqIXAtSkLrqYxyMQFSb2RIi6syEVabDEHarMZ8ece6wHlOJW3ky5o3LtKvE3JC2EZaJpRlwT5R61uO6G-mUqtqV5qNjIYyE")' }}></div>
+                            </Link>
+                        }
+                        rightActions={
+                            <div className="flex w-20 items-center justify-end gap-1 relative">
+                                <button
+                                    onClick={syncHomeData}
+                                    disabled={isGlobalScraping}
+                                    className={`flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors ${isSyncingHome ? 'animate-spin opacity-50' : ''}`}
+                                >
+                                    <RefreshCcw size={20} className="text-primary" />
+                                </button>
+                                <button
+                                    onClick={() => setIsFilterOpen(!isFilterOpen)}
+                                    className="flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                                >
+                                    <Filter className="text-primary" size={20} />
+                                </button>
+                                {isFilterOpen && (
+                                    <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-[#1c1c1e] rounded-xl shadow-xl border border-slate-200 dark:border-white/10 py-2 z-50 animate-in fade-in zoom-in-95 duration-200 cursor-default" onClick={(e) => e.stopPropagation()}>
+                                        <div className="fixed inset-0 z-[-1]" onClick={() => setIsFilterOpen(false)}></div>
+                                        <h3 className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500">Categories</h3>
+                                        {['Fantasy', 'Sci-Fi', 'Romance', 'Action', 'Mystery', 'Horror'].map(cat => (
+                                            <button
+                                                key={cat}
+                                                onClick={() => {
+                                                    navigate(`/discover/${cat.toLowerCase()}`);
+                                                    setIsFilterOpen(false);
+                                                }}
+                                                className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                                            >
+                                                {cat}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        }
+                    />
 
                     <div className="px-4 py-3">
                         <label className="flex flex-col min-w-40 h-11 w-full">
@@ -387,7 +395,7 @@ export const Discover = () => {
                 </div>
             </div>
 
-            <Navbar />
+            <FooterNavigation />
 
             <CompletionModal
                 isOpen={showSuccess}
