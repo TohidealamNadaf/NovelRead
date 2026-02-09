@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef, useCallback } from 'react';
 import { MoreHorizontal, Play, Pause, FastForward, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
@@ -11,6 +11,7 @@ import { CompletionModal } from '../components/CompletionModal';
 import { SummaryModal } from '../components/SummaryModal';
 import { summarizerService } from '../services/summarizer.service';
 import { Header } from '../components/Header';
+import { useChapterPullNavigation } from '../hooks/useChapterPullNavigation';
 
 export const Reader = () => {
     const navigate = useNavigate();
@@ -22,12 +23,11 @@ export const Reader = () => {
     const [novel, setNovel] = useState<Novel | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // Pull to Previous state
+    // Visual indicators state (Decoupled from core gesture logic)
     const [pullDistance, setPullDistance] = useState(0);
-    const [isPulling, setIsPulling] = useState(false);
-    const touchStartRef = useRef(0);
-    const PULL_THRESHOLD = 100; // More responsive threshold
+    const [pushDistance, setPushDistance] = useState(0);
     const [navigationDirection, setNavigationDirection] = useState<'next' | 'prev' | null>(null);
+    const PULL_THRESHOLD = 80;
 
     // Audio State
     const [isSpeaking, setIsSpeaking] = useState(false);
@@ -38,11 +38,6 @@ export const Reader = () => {
     const [showSettings, setShowSettings] = useState(false);
     const [showComingSoon, setShowComingSoon] = useState(false);
     const [isResyncing, setIsResyncing] = useState(false);
-
-    // Swipe-up-to-next at bottom state
-    const [pushDistance, setPushDistance] = useState(0);
-    const [isPushingUp, setIsPushingUp] = useState(false);
-    const [isAtBottom, setIsAtBottom] = useState(false);
 
     // Summary State
     const [showSummary, setShowSummary] = useState(false);
@@ -100,14 +95,13 @@ export const Reader = () => {
             console.error("Failed to load data", error);
         } finally {
             setLoading(false);
-            // Scroll container to top on new chapter
-            if (scrollContainerRef.current) {
-                scrollContainerRef.current.scrollTop = 0;
-            }
+            // NOTE: Automatic scroll-to-top removed here.
+            // Scroll restoration is now handled by useChapterPullNavigation hook
+            // to support multi-directional (top/bottom) positioning.
         }
     };
 
-    const handleNextChapter = () => {
+    const handleNextChapter = useCallback(() => {
         if (nextChapter) {
             setNavigationDirection('next');
             navigate(`/read/${novelId}/${nextChapter.id}`);
@@ -115,15 +109,40 @@ export const Reader = () => {
         } else {
             setShowComingSoon(true);
         }
-    };
+    }, [nextChapter, novelId, navigate]);
 
-    const handlePrevChapter = () => {
+    const handlePrevChapter = useCallback(() => {
         if (prevChapter) {
             setNavigationDirection('prev');
             navigate(`/read/${novelId}/${prevChapter.id}`);
             setShowSettings(false);
         }
-    };
+    }, [prevChapter, novelId, navigate]);
+
+    // STABLE GESTURE NAVIGATION SYSTEM (FSM + Async Locking)
+    const { onTouchStart, onTouchMove, onTouchEnd } = useChapterPullNavigation({
+        containerRef: scrollContainerRef,
+        hasPrev: !!prevChapter,
+        hasNext: !!nextChapter,
+        onLoadPrev: handlePrevChapter,
+        onLoadNext: handleNextChapter,
+        activeChapterId: chapterId,
+        isLoading: loading,
+        onPulling: (dist, dir) => {
+            // Update visual indicators based on normalized distance
+            const resistance = 0.45;
+            if (dir === 'prev') {
+                setPullDistance(dist * resistance);
+                setPushDistance(0);
+            } else if (dir === 'next') {
+                setPushDistance(dist * resistance);
+                setPullDistance(0);
+            } else {
+                setPullDistance(0);
+                setPushDistance(0);
+            }
+        }
+    });
 
     const handleBackToIndex = () => {
         navigate(`/novel/${novelId}`);
@@ -149,62 +168,6 @@ export const Reader = () => {
         }
     };
 
-    const handleTouchStart = (e: React.TouchEvent) => {
-        touchStartRef.current = e.touches[0].clientY;
-
-        // Check if at top - for pull-to-previous
-        if (scrollContainerRef.current?.scrollTop === 0) {
-            setIsPulling(true);
-        }
-
-        // Check if at bottom - for swipe-up-to-next
-        const container = scrollContainerRef.current;
-        if (container) {
-            const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-            setIsAtBottom(atBottom);
-            if (atBottom && nextChapter) {
-                setIsPushingUp(true);
-            }
-        }
-    };
-
-    const handleTouchMove = (e: React.TouchEvent) => {
-        const currentY = e.touches[0].clientY;
-        const diff = currentY - touchStartRef.current;
-
-        // Pull-to-previous (at top, pulling down)
-        if (isPulling && prevChapter && diff > 0 && scrollContainerRef.current?.scrollTop === 0) {
-            const resistance = 0.45; // slightly more resistance
-            setPullDistance(diff * resistance);
-            setPushDistance(0);
-        }
-        // Swipe-up-to-next (at bottom, swiping up)
-        else if (isPushingUp && nextChapter && diff < 0 && isAtBottom) {
-            const resistance = 0.45;
-            setPushDistance(Math.abs(diff) * resistance);
-            setPullDistance(0);
-        } else {
-            setPullDistance(0);
-            setPushDistance(0);
-        }
-    };
-
-    const handleTouchEnd = () => {
-        // Handle pull-to-previous
-        if (pullDistance > PULL_THRESHOLD && prevChapter) {
-            handlePrevChapter();
-        }
-        setPullDistance(0);
-        setIsPulling(false);
-
-        // Handle swipe-up-to-next
-        if (pushDistance > PULL_THRESHOLD && nextChapter) {
-            handleNextChapter();
-        }
-        setPushDistance(0);
-        setIsPushingUp(false);
-        setIsAtBottom(false);
-    };
 
     const toggleTTS = () => {
         if (isSpeaking) {
@@ -285,19 +248,23 @@ export const Reader = () => {
         }
     };
 
-    // Global double-click handler
-    useEffect(() => {
-        const handleDoubleClick = (e: MouseEvent) => {
-            // Ignore double clicks on buttons, inputs, or inside the settings menu itself
-            const target = e.target as HTMLElement;
-            if (target.closest('button') || target.closest('input') || target.closest('.settings-menu')) {
-                return;
-            }
-            setShowSettings(prev => !prev);
-        };
+    // Mobile-friendly double-tap detector
+    const lastTapRef = useRef<number>(0);
+    const handleDoubleTap = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+        const target = e.target as HTMLElement;
+        // Ignore taps on interactive elements
+        if (target.closest('button') || target.closest('input') || target.closest('.settings-menu') || target.closest('a')) {
+            return;
+        }
 
-        window.addEventListener('dblclick', handleDoubleClick);
-        return () => window.removeEventListener('dblclick', handleDoubleClick);
+        const now = Date.now();
+        const DOUBLE_TAP_DELAY = 300;
+        if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
+            setShowSettings(prev => !prev);
+            lastTapRef.current = 0; // Reset
+        } else {
+            lastTapRef.current = now;
+        }
     }, []);
 
     const fontSizes = [
@@ -348,10 +315,14 @@ export const Reader = () => {
             {/* Main Reading Area */}
             <div
                 ref={scrollContainerRef}
-                className={`flex-1 overflow-y-auto px-6 py-8 ${getThemeClass()} scroll-smooth relative`}
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
+                className={`flex-1 overflow-y-auto px-6 py-8 ${getThemeClass()} relative`}
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={(e) => {
+                    handleDoubleTap(e);
+                    onTouchEnd(e);
+                }}
+                onClick={handleDoubleTap}
                 onScroll={(e) => {
                     const target = e.currentTarget;
                     if (nextChapter && target.scrollHeight - target.scrollTop - target.clientHeight < 50) {
@@ -448,13 +419,25 @@ export const Reader = () => {
             }
 
             {/* Customization Overlay */}
-            {
-                showSettings && (
+            <AnimatePresence>
+                {showSettings && (
                     <>
                         {/* Backdrop to close settings on click outside */}
-                        <div className="fixed inset-0 z-10 bg-black/5" onClick={() => setShowSettings(false)}></div>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-10 bg-black/20 backdrop-blur-sm"
+                            onClick={() => setShowSettings(false)}
+                        />
 
-                        <div className="settings-menu absolute bottom-0 left-0 w-full bg-white dark:bg-[#1a182b] rounded-t-3xl shadow-2xl border-t border-white/10 z-20 animate-in slide-in-from-bottom">
+                        <motion.div
+                            initial={{ y: "100%" }}
+                            animate={{ y: 0 }}
+                            exit={{ y: "100%" }}
+                            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                            className="settings-menu absolute bottom-0 left-0 w-full bg-white dark:bg-[#1a182b] rounded-t-3xl shadow-2xl border-t border-white/10 z-20 overflow-hidden"
+                        >
                             {/* Grab Handle */}
                             <div className="flex justify-center py-3" onClick={() => setShowSettings(false)}>
                                 <div className="w-10 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
@@ -536,12 +519,7 @@ export const Reader = () => {
                                                 <button
                                                     key={size.label}
                                                     onClick={() => settingsService.updateSettings({ fontSize: size.value })}
-                                                    className={clsx(
-                                                        "w-8 h-7 text-xs font-bold rounded shadow-sm transition-all",
-                                                        fontSize === size.value
-                                                            ? "bg-white dark:bg-gray-700 text-primary dark:text-white ring-1 ring-primary/20 scale-110"
-                                                            : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                                                    )}
+                                                    className={clsx("size-8 text-[10px] font-black rounded-lg transition-all", fontSize === size.value ? "bg-primary text-white shadow-lg shadow-primary/30 scale-110" : "text-gray-400 hover:text-gray-600")}
                                                 >
                                                     {size.label}
                                                 </button>
@@ -554,29 +532,37 @@ export const Reader = () => {
                                 <div className="space-y-3">
                                     <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Reading Theme</p>
                                     <div className="grid grid-cols-4 gap-3">
-                                        <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => settingsService.updateSettings({ theme: 'light' })}>
-                                            <div className={clsx("w-full aspect-video bg-white border-2 rounded-lg shadow-inner", theme === 'light' ? "border-primary" : "border-transparent")}></div>
-                                            <span className={clsx("text-[10px] font-bold", theme === 'light' ? "text-primary" : "text-gray-400")}>Light</span>
-                                        </div>
-                                        <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => settingsService.updateSettings({ theme: 'sepia' })}>
-                                            <div className={clsx("w-full aspect-video bg-[#f4ecd8] border-2 rounded-lg shadow-inner", theme === 'sepia' ? "border-primary" : "border-transparent")}></div>
-                                            <span className={clsx("text-[10px] font-bold", theme === 'sepia' ? "text-primary" : "text-gray-400")}>Sepia</span>
-                                        </div>
-                                        <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => settingsService.updateSettings({ theme: 'dark' })}>
-                                            <div className={clsx("w-full aspect-video bg-[#1e1e1e] border-2 rounded-lg shadow-inner", theme === 'dark' ? "border-primary" : "border-transparent")}></div>
-                                            <span className={clsx("text-[10px] font-bold", theme === 'dark' ? "text-primary" : "text-gray-400")}>Dark</span>
-                                        </div>
-                                        <div className="flex flex-col items-center gap-1.5 cursor-pointer" onClick={() => settingsService.updateSettings({ theme: 'oled' })}>
-                                            <div className={clsx("w-full aspect-video bg-black border-2 rounded-lg shadow-inner", theme === 'oled' ? "border-primary" : "border-transparent")}></div>
-                                            <span className={clsx("text-[10px] font-bold", theme === 'oled' ? "text-primary" : "text-gray-400")}>OLED</span>
-                                        </div>
+                                        {[
+                                            { id: 'light', color: 'bg-white', label: 'Paper' },
+                                            { id: 'sepia', color: 'bg-[#f4ecd8]', label: 'Sepia' },
+                                            { id: 'dark', color: 'bg-[#1e1e1e]', label: 'Eclipse' },
+                                            { id: 'oled', color: 'bg-black', label: 'OLED' },
+                                        ].map((t) => (
+                                            <button
+                                                key={t.id}
+                                                onClick={() => settingsService.updateSettings({ theme: t.id as any })}
+                                                className={clsx(
+                                                    "group flex flex-col items-center gap-2",
+                                                    theme === t.id ? "scale-105" : "opacity-60 grayscale-[0.5]"
+                                                )}
+                                            >
+                                                <div className={clsx(
+                                                    "size-12 rounded-2xl border-2 transition-all",
+                                                    t.color,
+                                                    theme === t.id ? "border-primary shadow-lg shadow-primary/20" : "border-transparent"
+                                                )} />
+                                                <span className={clsx("text-[10px] font-bold uppercase tracking-tighter transition-colors", theme === t.id ? "text-primary" : "text-gray-500")}>
+                                                    {t.label}
+                                                </span>
+                                            </button>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        </motion.div>
                     </>
-                )
-            }
+                )}
+            </AnimatePresence>
 
             <CompletionModal
                 isOpen={showComingSoon}

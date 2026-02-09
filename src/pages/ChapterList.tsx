@@ -192,7 +192,7 @@ export const ChapterList = () => {
         });
 
     return (
-        <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans min-h-screen pb-20">
+        <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans overflow-hidden">
             {/* Top Navigation Bar using Global Header */}
             <Header
                 title="Chapter Index"
@@ -272,7 +272,8 @@ export const ChapterList = () => {
                 </div>
             )}
 
-            <main className="max-w-lg mx-auto pb-24">
+            {/* Scrollable Content Container */}
+            <main className="flex-1 overflow-y-auto hide-scrollbar pb-24">
                 {loading || !novel ? (
                     <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
                         <div className="size-12 border-4 border-primary border-t-transparent animate-spin rounded-full" />

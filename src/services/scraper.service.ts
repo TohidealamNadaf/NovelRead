@@ -61,6 +61,116 @@ export class ScraperService {
         this.listeners.forEach(l => l(this.currentProgress, this.isScrapingInternal));
     }
 
+    /**
+     * Clean chapter title by removing noise like indices and timestamps.
+     * Rule: DO NOT use .text() on container elements.
+     */
+    private cleanChapterTitle(raw: string): string {
+        if (!raw) return '';
+
+        let cleaned = raw.trim();
+
+        // 1. Remove leading numeric indices (e.g., "1 Chapter 1" -> "Chapter 1")
+        cleaned = cleaned.replace(/^\d+\s+/g, '');
+
+        // 2. Remove timestamps (e.g., "1 day ago", "2 hours ago")
+        const timestampRegex = /\b\d+\s*(minute|hour|day|week|month)s?\s*ago\b/gi;
+        cleaned = cleaned.replace(timestampRegex, '');
+
+        // 3. Normalize whitespace
+        cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+        return cleaned;
+    }
+
+    /**
+     * Validate if a title is a legitimate chapter title.
+     */
+    private isValidChapterTitle(title: string): boolean {
+        if (!title) return false;
+
+        // Minimum length check
+        if (title.length <= 5) return false;
+
+        // Must contain alphabetic characters
+        if (!/[a-zA-Z]/.test(title)) return false;
+
+        // Must NOT contain timestamps
+        const timestampRegex = /\b\d+\s*(minute|hour|day|week|month)s?\s*ago\b/gi;
+        if (timestampRegex.test(title)) return false;
+
+        // Must NOT be only numbers
+        if (/^\d+$/.test(title)) return false;
+
+        return true;
+    }
+
+    private extractChaptersFromPage($: cheerio.CheerioAPI, baseUrl: string) {
+        const chapters: { title: string; url: string }[] = [];
+        const listSelectors = [
+            '.chapter-list li', 'ul.chapter-list li', '.list-chapter li',
+            '#chapter-list li', '.chapters li', '.list-chapters li',
+            '#list-chapter .row', '.list-item', '.chapter-item'
+        ];
+
+        const origin = new URL(baseUrl).origin;
+
+        for (const sel of listSelectors) {
+            const items = $(sel);
+            if (items.length > 0) {
+                items.each((_, el) => {
+                    const anchor = $(el).find('a').first();
+                    const rawTitle = anchor.text().trim();
+                    const link = anchor.attr('href');
+
+                    if (rawTitle && link && !link.startsWith('javascript') && !link.startsWith('#')) {
+                        const cleanTitle = this.cleanChapterTitle(rawTitle);
+                        if (this.isValidChapterTitle(cleanTitle)) {
+                            let chUrl = link;
+                            if (!chUrl.startsWith('http')) {
+                                chUrl = chUrl.startsWith('/') ? `${origin}${chUrl}` : `${origin}/${chUrl}`;
+                            }
+                            chapters.push({ title: cleanTitle, url: chUrl });
+                        }
+                    }
+                });
+                if (chapters.length > 0) break;
+            }
+        }
+
+        if (chapters.length === 0) {
+            $('a').each((_, el) => {
+                const anchor = $(el);
+                const rawTitle = anchor.text().trim();
+                const link = anchor.attr('href');
+                if (rawTitle && link && (link.includes('chapter') || link.includes('ch-'))) {
+                    const cleanTitle = this.cleanChapterTitle(rawTitle);
+                    if (this.isValidChapterTitle(cleanTitle)) {
+                        let chUrl = link;
+                        if (!chUrl.startsWith('http')) {
+                            chUrl = chUrl.startsWith('/') ? `${origin}${chUrl}` : `${origin}/${chUrl}`;
+                        }
+                        chapters.push({ title: cleanTitle, url: chUrl });
+                    }
+                }
+            });
+        }
+        return chapters;
+    }
+
+    private findNextPage($: cheerio.CheerioAPI, baseUrl: string): string | null {
+        const nextSelectors = ['a[rel="next"]', '.pagination .next a', '.pager .next a', '.pagination a:contains("Next")', 'li.next a'];
+        const origin = new URL(baseUrl).origin;
+        for (const sel of nextSelectors) {
+            const el = $(sel);
+            const nextPath = el.attr('href');
+            if (nextPath) {
+                return nextPath.startsWith('http') ? nextPath : `${origin}${nextPath.startsWith('/') ? '' : '/'}${nextPath}`;
+            }
+        }
+        return null;
+    }
+
     private async updateNotification(novelTitle: string) {
         if (Capacitor.getPlatform() === 'web') return;
 
@@ -208,36 +318,43 @@ export class ScraperService {
 
     private async scrapeChapterLoop(novelId: string, chapters: { title: string; url: string; audioPath?: string }[], novelTitle: string, offset: number = 0) {
         for (let i = 0; i < chapters.length; i++) {
-            const chapter = chapters[i];
-            const currentIndex = i + 1;
+            const ch = chapters[i];
+            const currentIndex = offset + i + 1;
 
-            this.currentProgress = {
-                ...this.currentProgress,
-                current: currentIndex,
-                total: chapters.length,
-                currentTitle: chapter.title,
-                logs: [`[${new Date().toLocaleTimeString()}] ${chapter.title}: Loading...`, ...this.currentProgress.logs.slice(0, 2)]
-            };
+            // Safe Duplicate Check: Prevent re-saving existing chapters
+            // We use the URL as a unique identifier for the chapter source
+            const exists = await dbService.isChapterExists(novelId, ch.url);
+            if (exists) {
+                console.log(`[Scraper] Skipping existing chapter: ${ch.title}`);
+                continue;
+            }
+
+            this.currentProgress.current = currentIndex;
+            this.currentProgress.currentTitle = ch.title;
+            this.currentProgress.logs.unshift(`[${new Date().toLocaleTimeString()}] Fetching: ${ch.title}`);
+            if (this.currentProgress.logs.length > 50) this.currentProgress.logs.pop();
             this.notifyListeners();
             await this.updateNotification(novelTitle);
 
             try {
-                const content = await this.fetchChapterContent(chapter.url || chapter.audioPath || '');
-                const chapterId = `${novelId}-ch-${offset + currentIndex}`;
-
-                await dbService.addChapter({
-                    id: chapterId,
-                    novelId: novelId,
-                    title: chapter.title,
-                    content: content,
-                    orderIndex: offset + i,
-                    audioPath: chapter.url || chapter.audioPath
-                });
-
-                this.currentProgress.logs[0] = `[${new Date().toLocaleTimeString()}] ${chapter.title}: Success`;
+                const content = await this.fetchChapterContent(ch.url);
+                if (content && content.length > 100) {
+                    const chapterData = {
+                        id: `${novelId}-ch-${currentIndex}`,
+                        novelId,
+                        title: ch.title,
+                        content,
+                        orderIndex: currentIndex,
+                        audioPath: ch.url
+                    };
+                    await dbService.addChapter(chapterData);
+                    this.currentProgress.logs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: DONE`;
+                } else {
+                    this.currentProgress.logs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: FAILED (Empty Content)`;
+                }
             } catch (e) {
-                console.error(`Failed to scrape ${chapter.title}`, e);
-                this.currentProgress.logs[0] = `[${new Date().toLocaleTimeString()}] ${chapter.title}: FAILED`;
+                console.error(`Failed to scrape ${ch.title}`, e);
+                this.currentProgress.logs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: ERROR`;
             }
 
             this.notifyListeners();
@@ -368,51 +485,6 @@ export class ScraperService {
         const MAX_PAGES = 50;
         let currentUrl = listUrl;
 
-        const extractChaptersFromPage = ($: cheerio.CheerioAPI, baseUrl: string) => {
-            const chapters: { title: string; url: string }[] = [];
-            const listSelectors = [
-                '.chapter-list a', 'ul.chapter-list li a', '.list-chapter li a',
-                '#chapter-list a', '.chapters a', '.list-chapters a',
-                '#list-chapter .row a', '.list-item a', '.chapter-item a'
-            ];
-
-            for (const sel of listSelectors) {
-                const els = $(sel);
-                if (els.length > 0) {
-                    els.each((_, el) => {
-                        const t = $(el).text().trim();
-                        const h = $(el).attr('href') || '';
-                        if (h && !h.startsWith('javascript') && !h.startsWith('#')) {
-                            chapters.push({ title: t, url: h });
-                        }
-                    });
-                    if (chapters.length > 0) break;
-                }
-            }
-
-            const origin = new URL(baseUrl).origin;
-            return chapters.map(ch => {
-                let chUrl = ch.url;
-                if (chUrl && !chUrl.startsWith('http')) {
-                    chUrl = chUrl.startsWith('/') ? `${origin}${chUrl}` : `${origin}/${chUrl}`;
-                }
-                return { ...ch, url: chUrl };
-            }).filter(ch => ch.url);
-        };
-
-        const findNextPage = ($: cheerio.CheerioAPI, baseUrl: string): string | null => {
-            const nextSelectors = ['a[rel="next"]', '.pagination .next a', '.pager .next a', '.pagination a:contains("Next")', 'li.next a'];
-            for (const sel of nextSelectors) {
-                const el = $(sel);
-                const nextPath = el.attr('href');
-                if (nextPath) {
-                    const origin = new URL(baseUrl).origin;
-                    return nextPath.startsWith('http') ? nextPath : `${origin}${nextPath.startsWith('/') ? '' : '/'}${nextPath}`;
-                }
-            }
-            return null;
-        };
-
         // --- Chapter Paging Loop ---
         while (currentUrl && !visitedUrls.has(currentUrl) && pageCount < MAX_PAGES) {
             visitedUrls.add(currentUrl);
@@ -434,7 +506,7 @@ export class ScraperService {
                     }
 
                     const $ = cheerio.load(html);
-                    const newChapters = extractChaptersFromPage($, currentUrl);
+                    const newChapters = this.extractChaptersFromPage($, currentUrl);
 
                     for (const ch of newChapters) {
                         if (!allChapters.some(c => c.url === ch.url)) {
@@ -442,7 +514,7 @@ export class ScraperService {
                         }
                     }
 
-                    const nextPage = findNextPage($, currentUrl);
+                    const nextPage = this.findNextPage($, currentUrl);
                     currentUrl = nextPage && !visitedUrls.has(nextPage) ? nextPage : '';
                     pageFound = true;
                     break;
@@ -494,7 +566,7 @@ export class ScraperService {
         }
     }
 
-    async fetchChapterContent(url: string, visitedUrls: Set<string> = new Set()): Promise<string> {
+    public async fetchChapterContent(url: string, visitedUrls: Set<string> = new Set()): Promise<string> {
         if (visitedUrls.has(url)) {
             console.warn('[Scraper] Recursive redirect detected for:', url);
             return '<p>Error: Infinite redirect detected at source.</p>';

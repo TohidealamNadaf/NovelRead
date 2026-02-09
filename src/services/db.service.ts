@@ -183,6 +183,13 @@ class DatabaseService {
         return (result.values as Chapter[]) || [];
     }
 
+    async isChapterExists(novelId: string, audioPath: string): Promise<boolean> {
+        const db = await this.getDB();
+        if (!db) return false;
+        const result = await db.query('SELECT id FROM chapters WHERE novelId = ? AND audioPath = ? LIMIT 1', [novelId, audioPath]);
+        return !!(result.values && result.values.length > 0);
+    }
+
     async getChapter(novelId: string, chapterId: string): Promise<Chapter | null> {
         const db = await this.getDB();
         if (!db) return null;
