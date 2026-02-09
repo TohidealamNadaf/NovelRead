@@ -3,12 +3,13 @@ import { FooterNavigation } from '../components/FooterNavigation';
 import { Header } from '../components/Header';
 import { dbService, type Novel } from '../services/db.service';
 import { Link } from 'react-router-dom';
-import { Search, Bell, Plus } from 'lucide-react';
+import { Search, Bell, Plus, X } from 'lucide-react';
 import { notificationService } from '../services/notification.service';
 
 export const Home = () => {
     const [novels, setNovels] = useState<Novel[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
+    const [editMode, setEditMode] = useState(false);
 
     useEffect(() => {
         loadLibrary();
@@ -28,6 +29,20 @@ export const Home = () => {
             console.error("Failed to load library", error);
             // Fallback for UI if DB fails
             setNovels([]);
+        }
+    };
+
+    const handleDeleteNovel = async (novelId: string, e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (confirm('Are you sure you want to delete this novel? All chapters and progress will be removed.')) {
+            try {
+                await dbService.deleteNovel(novelId);
+                setNovels(prev => prev.filter(n => n.id !== novelId));
+            } catch (error) {
+                console.error('Failed to delete novel:', error);
+            }
         }
     };
 
@@ -83,12 +98,26 @@ export const Home = () => {
                 {/* Collection Grid */}
                 <div className="flex items-center justify-between px-4 pt-4 pb-3">
                     <h3 className="text-lg font-bold tracking-tight">My Collection</h3>
-                    <button className="text-primary text-sm font-medium">Edit</button>
+                    <button
+                        onClick={() => setEditMode(!editMode)}
+                        className={`text-sm font-medium ${editMode ? 'text-red-500' : 'text-primary'}`}
+                    >
+                        {editMode ? 'Done' : 'Edit'}
+                    </button>
                 </div>
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3 px-4 pb-4">
                     {novels.map((novel) => (
-                        <Link key={novel.id} to={`/novel/${novel.id}`} className="flex flex-col gap-2 group">
-                            <div className="relative aspect-[2/3] w-full rounded-lg overflow-hidden shadow-md group-active:scale-95 transition-transform duration-200">
+                        <Link key={novel.id} to={editMode ? '#' : `/novel/${novel.id}`} className="flex flex-col gap-2 group relative">
+                            {/* Delete Badge */}
+                            {editMode && (
+                                <button
+                                    onClick={(e) => handleDeleteNovel(novel.id, e)}
+                                    className="absolute -top-1 -right-1 z-10 size-6 bg-red-500 rounded-full flex items-center justify-center shadow-lg animate-in zoom-in duration-200"
+                                >
+                                    <X size={14} className="text-white" />
+                                </button>
+                            )}
+                            <div className={`relative aspect-[2/3] w-full rounded-lg overflow-hidden shadow-md group-active:scale-95 transition-transform duration-200 ${editMode ? 'animate-pulse ring-2 ring-red-500/50' : ''}`}>
                                 <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url('${novel.coverUrl}')` }}></div>
                                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
                                     <div className="h-full bg-primary" style={{ width: '0%' }}></div>

@@ -341,15 +341,15 @@ export const ChapterList = () => {
                             const readChaptersCount = chapters.filter((ch: any) => ch.isRead).length;
 
                             return (
-                                <div className="mx-4 mb-6 p-4 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
-                                    <div className="flex justify-between items-end mb-2">
+                                <div className="mx-4 mb-4 p-3 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
+                                    <div className="flex justify-between items-center mb-2">
                                         <div>
-                                            <p className="text-xs uppercase tracking-widest text-slate-500 dark:text-slate-400 font-sans font-bold">Reading Progress</p>
-                                            <p className="text-xl font-bold">Chapter {currentChapterNum} <span className="text-sm font-normal text-slate-500">of {chapters.length}</span></p>
+                                            <p className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400 font-sans font-bold">Reading Progress</p>
+                                            <p className="text-sm font-bold">Chapter {currentChapterNum} <span className="text-xs font-normal text-slate-500">of {chapters.length}</span></p>
                                         </div>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400 font-sans">{readChaptersCount} read</p>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-sans">{readChaptersCount} read</p>
                                     </div>
-                                    <div className="w-full bg-slate-300 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                                    <div className="w-full bg-slate-300 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
                                         <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }}></div>
                                     </div>
                                 </div>
