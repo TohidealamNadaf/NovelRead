@@ -120,7 +120,11 @@ export const ChapterList = () => {
 
         if (!confirm(`Download ${chaptersToDownload.length} chapters in background?`)) return;
 
-        scraperService.downloadAll(novel.id, novel.title, chaptersToDownload);
+        scraperService.downloadAll(novel.id, novel.title, chaptersToDownload.map(c => ({
+            title: c.title,
+            url: c.url || c.link || '', // Ensure url is present
+            audioPath: c.audioPath
+        })));
     };
 
     const handleSync = async () => {
@@ -157,11 +161,7 @@ export const ChapterList = () => {
         }
     };
 
-    const handleSearch = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            // Logic for search within chapters
-        }
-    };
+
 
     if (loading) {
         return <div className="flex h-screen items-center justify-center dark:bg-background-dark"><p className="dark:text-white">Loading...</p></div>;
