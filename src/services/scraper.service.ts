@@ -49,7 +49,12 @@ export class ScraperService {
 
     resetProgress() {
         this.currentProgress = { current: 0, total: 0, currentTitle: '', logs: [] };
+        this.clearMetadata();
         this.notifyListeners();
+    }
+
+    clearMetadata() {
+        this.activeNovel = null;
     }
 
     private notifyListeners() {

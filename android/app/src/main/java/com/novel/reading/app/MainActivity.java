@@ -12,19 +12,27 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        // Enable edge-to-edge (explicitly)
+        // 1. Enable full edge-to-edge
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
-        // Apply system bar padding dynamically
-        ViewCompat.setOnApplyWindowInsetsListener(getWindow().getDecorView(), (view, insets) -> {
-            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            view.setPadding(
-                systemBars.left,
-                systemBars.top,
-                systemBars.right,
-                systemBars.bottom
-            );
-            return insets;
-        });
+        // 2. Make system bars transparent
+        getWindow().setStatusBarColor(android.graphics.Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(android.graphics.Color.TRANSPARENT);
+        
+        // Remove semi-transparent scrim on some gesture navigation versions
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            getWindow().setNavigationBarContrastEnforced(false);
+        }
+
+        // 3. Dynamically control icon coloring
+        boolean isDarkMode = (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) 
+            == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+            
+        androidx.core.view.WindowInsetsControllerCompat controller = 
+            new androidx.core.view.WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+        
+        // Light icons in Dark Mode, Dark icons in Light Mode
+        controller.setAppearanceLightStatusBars(!isDarkMode);
+        controller.setAppearanceLightNavigationBars(!isDarkMode);
     }
 }

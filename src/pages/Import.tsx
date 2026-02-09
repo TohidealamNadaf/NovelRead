@@ -28,12 +28,23 @@ export const Import = () => {
             setProgress(newProgress);
             setScraping(isScraping);
 
+            // Update local novel state if needed (e.g. if we navigated back to this page)
+            if (isScraping && scraperService.activeNovelMetadata) {
+                setNovel(scraperService.activeNovelMetadata);
+            }
+
             // Auto-open success if it just finished and we are on this page
             if (!isScraping && newProgress.current > 0 && newProgress.current === newProgress.total) {
                 // Only show if we haven't already
                 setShowSuccess(true);
             }
         });
+
+        // Clear metadata on mount if not currently scraping
+        if (!scraperService.isScraping) {
+            scraperService.clearMetadata();
+            setNovel(null);
+        }
 
         return unsub;
     }, []);
@@ -103,7 +114,11 @@ export const Import = () => {
                                 placeholder="https://novelfire.com/..."
                                 type="text"
                                 value={url}
-                                onChange={(e) => setUrl(e.target.value)}
+                                onChange={(e) => {
+                                    setUrl(e.target.value);
+                                    // Reset detected metadata when URL changes
+                                    if (novel) setNovel(null);
+                                }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                         handlePreview();

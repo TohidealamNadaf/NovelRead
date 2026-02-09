@@ -26,7 +26,8 @@ export const Reader = () => {
     const [pullDistance, setPullDistance] = useState(0);
     const [isPulling, setIsPulling] = useState(false);
     const touchStartRef = useRef(0);
-    const PULL_THRESHOLD = 120;
+    const PULL_THRESHOLD = 100; // More responsive threshold
+    const [navigationDirection, setNavigationDirection] = useState<'next' | 'prev' | null>(null);
 
     // Audio State
     const [isSpeaking, setIsSpeaking] = useState(false);
@@ -108,6 +109,7 @@ export const Reader = () => {
 
     const handleNextChapter = () => {
         if (nextChapter) {
+            setNavigationDirection('next');
             navigate(`/read/${novelId}/${nextChapter.id}`);
             setShowSettings(false);
         } else {
@@ -117,6 +119,7 @@ export const Reader = () => {
 
     const handlePrevChapter = () => {
         if (prevChapter) {
+            setNavigationDirection('prev');
             navigate(`/read/${novelId}/${prevChapter.id}`);
             setShowSettings(false);
         }
@@ -171,17 +174,17 @@ export const Reader = () => {
 
         // Pull-to-previous (at top, pulling down)
         if (isPulling && prevChapter && diff > 0 && scrollContainerRef.current?.scrollTop === 0) {
-            const resistance = 0.5;
+            const resistance = 0.45; // slightly more resistance
             setPullDistance(diff * resistance);
+            setPushDistance(0);
+        }
+        // Swipe-up-to-next (at bottom, swiping up)
+        else if (isPushingUp && nextChapter && diff < 0 && isAtBottom) {
+            const resistance = 0.45;
+            setPushDistance(Math.abs(diff) * resistance);
+            setPullDistance(0);
         } else {
             setPullDistance(0);
-        }
-
-        // Swipe-up-to-next (at bottom, swiping up)
-        if (isPushingUp && nextChapter && diff < 0 && isAtBottom) {
-            const resistance = 0.5;
-            setPushDistance(Math.abs(diff) * resistance);
-        } else if (!isPulling) {
             setPushDistance(0);
         }
     };
@@ -363,24 +366,38 @@ export const Reader = () => {
                         className="flex flex-col items-center justify-end pb-4 overflow-hidden pointer-events-none"
                     >
                         <motion.div
-                            animate={{ y: pullDistance > PULL_THRESHOLD ? [0, -5, 0] : 0 }}
-                            className="flex flex-col items-center gap-2"
+                            animate={{ y: pullDistance > PULL_THRESHOLD ? [0, -4, 0] : 0 }}
+                            className="flex flex-col items-center gap-1.5"
                         >
-                            <ChevronUp className={clsx("transition-transform duration-300", pullDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
-                            <p className={clsx("text-[10px] font-bold uppercase tracking-widest bg-background-light dark:bg-background-dark px-3 py-1 rounded-full border border-gray-100 dark:border-gray-800", pullDistance > PULL_THRESHOLD ? "text-primary border-primary/30" : "text-gray-500")}>
-                                {pullDistance > PULL_THRESHOLD ? "Release for Previous" : "Pull for Previous"}
+                            <ChevronDown className={clsx("transition-all duration-300", pullDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
+                            <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pullDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
+                                {pullDistance > PULL_THRESHOLD ? "Release" : "Pull for Prev"}
                             </p>
                         </motion.div>
                     </motion.div>
                 )}
 
-                <AnimatePresence mode="wait">
+                <AnimatePresence mode="wait" initial={false} custom={navigationDirection}>
                     <motion.div
                         key={chapter.id}
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -20 }}
-                        transition={{ duration: 0.3 }}
+                        custom={navigationDirection}
+                        variants={{
+                            initial: (direction: string) => ({
+                                opacity: 0,
+                                y: direction === 'next' ? 50 : direction === 'prev' ? -50 : 0,
+                                scale: 0.98
+                            }),
+                            animate: { opacity: 1, y: 0, scale: 1 },
+                            exit: (direction: string) => ({
+                                opacity: 0,
+                                y: direction === 'next' ? -50 : direction === 'prev' ? 50 : 0,
+                                scale: 0.98
+                            })
+                        }}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        transition={{ duration: 0.3, ease: "easeOut" }}
                         className={clsx("max-w-2xl mx-auto space-y-6 reader-text", font === 'serif' ? 'font-serif' : font === 'sans' ? 'font-sans' : '')}
                         style={{
                             fontSize: `${fontSize}rem`,
@@ -400,13 +417,13 @@ export const Reader = () => {
                         className="flex flex-col items-center justify-start pt-4 overflow-hidden pointer-events-none"
                     >
                         <motion.div
-                            animate={{ y: pushDistance > PULL_THRESHOLD ? [0, 5, 0] : 0 }}
-                            className="flex flex-col items-center gap-2"
+                            animate={{ y: pushDistance > PULL_THRESHOLD ? [0, 4, 0] : 0 }}
+                            className="flex flex-col items-center gap-1.5"
                         >
-                            <p className={clsx("text-[10px] font-bold uppercase tracking-widest bg-background-light dark:bg-background-dark px-3 py-1 rounded-full border border-gray-100 dark:border-gray-800", pushDistance > PULL_THRESHOLD ? "text-primary border-primary/30" : "text-gray-500")}>
-                                {pushDistance > PULL_THRESHOLD ? "Release for Next" : "Pull for Next"}
+                            <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pushDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
+                                {pushDistance > PULL_THRESHOLD ? "Release" : "Pull for Next"}
                             </p>
-                            <ChevronDown className={clsx("transition-transform duration-300", pushDistance > PULL_THRESHOLD ? "text-primary scale-125" : "text-gray-400")} />
+                            <ChevronUp className={clsx("transition-all duration-300", pushDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
                         </motion.div>
                     </motion.div>
                 )}
