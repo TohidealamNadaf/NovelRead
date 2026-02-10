@@ -15,9 +15,9 @@ export class AsuraScraperService {
         const results: NovelMetadata[] = [];
         const seenUrls = new Set<string>();
 
-        // Find all links containing /series/ (results are typically in a grid)
+        // Find all links containing series/ (results are typically in a grid)
         // We avoid strict parent selectors like 'div.grid' which may change on mobile
-        $('a[href*="/series/"]').each((_, el) => {
+        $('a[href*="series/"]').each((_, el) => {
             const a = $(el);
             const href = a.attr('href');
             if (!href) return;
@@ -30,11 +30,12 @@ export class AsuraScraperService {
             // Title detection: 
             // 1. Specific spans used in grid (font-bold or text-white for mobile)
             // 2. Headings (h3)
-            // 3. Fallback to anchor text itself (cleaned)
+            // 3. Fallback to any element with font-bold class or text-white
             let title = a.find('span.font-bold').text().trim() ||
                 a.find('span.text-white').text().trim() ||
                 a.find('h3').text().trim() ||
-                a.find('div.font-bold').first().text().trim();
+                a.find('.font-bold').first().text().trim() ||
+                a.find('.text-white').first().text().trim();
 
             if (!title) {
                 // Remove common UI elements and get pure text
@@ -52,7 +53,11 @@ export class AsuraScraperService {
 
             // Image detection: check multiple sources for lazy loading
             const img = a.find('img');
-            const coverUrl = img.attr('src') || img.attr('data-src') || img.attr('data-lazy-src') || img.attr('srcset')?.split(' ')[0] || '';
+            const coverUrl = img.attr('src') ||
+                img.attr('data-src') ||
+                img.attr('data-lazy-src') ||
+                img.attr('srcset')?.split(' ')[0] ||
+                img.attr('data-srcset')?.split(' ')[0] || '';
 
             const status = a.find('span.status, .status').text().trim() || 'Ongoing';
 
@@ -194,9 +199,17 @@ export class AsuraScraperService {
                     url: url,
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.178 Mobile Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.5',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                        'Accept-Language': 'en-US,en;q=0.9',
                         'Referer': 'https://asuracomic.net/',
+                        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+                        'Sec-Ch-Ua-Mobile': '?1',
+                        'Sec-Ch-Ua-Platform': '"Android"',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'same-origin',
+                        'Sec-Fetch-User': '?1',
+                        'Upgrade-Insecure-Requests': '1',
                         'Cache-Control': 'no-cache'
                     },
                     connectTimeout: 30000,

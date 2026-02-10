@@ -25,6 +25,7 @@ export const Import = () => {
     const [searchResults, setSearchResults] = useState<NovelMetadata[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [selectedSource, setSelectedSource] = useState<'mangadex' | 'asura'>('mangadex');
+    const [isImportComplete, setIsImportComplete] = useState(false);
 
     useEffect(() => {
         // Request Permissions
@@ -33,8 +34,15 @@ export const Import = () => {
         }
 
         // Subscribe to scraper progress
+        let wasScrapingNovel = false;
         const unsubScraper = scraperService.subscribe((newProgress, isScraping) => {
             if (!manhwaScraperService.isScraping) {
+                // Check if just finished
+                if (wasScrapingNovel && !isScraping) {
+                    setIsImportComplete(true);
+                }
+                wasScrapingNovel = isScraping;
+
                 setProgress(newProgress);
                 setScraping(isScraping);
                 if (isScraping && scraperService.activeNovelMetadata) {
@@ -44,7 +52,14 @@ export const Import = () => {
             }
         });
 
+        let wasScrapingManhwa = false;
         const unsubManhwa = manhwaScraperService.subscribe((newProgress, isScraping) => {
+            // Check if just finished
+            if (wasScrapingManhwa && !isScraping) {
+                setIsImportComplete(true);
+            }
+            wasScrapingManhwa = isScraping;
+
             if (isScraping) {
                 setProgress(newProgress);
                 setScraping(isScraping);
@@ -66,6 +81,21 @@ export const Import = () => {
             unsubManhwa();
         };
     }, []);
+
+    const resetImportState = () => {
+        setUrl('');
+        setNovel(null);
+        setSearchQuery('');
+        setSearchResults([]);
+        setSelectedPublisher('');
+        setIsImportComplete(false);
+        scraperService.clearMetadata();
+        // Reset services to prevent progress bars from showing old data
+        if (!scraperService.isScraping && !manhwaScraperService.isScraping) {
+            scraperService.resetProgress?.();
+            manhwaScraperService.resetProgress?.();
+        }
+    };
 
     const handleSearch = async () => {
         if (!searchQuery.trim()) return;
@@ -176,8 +206,7 @@ export const Import = () => {
                     <button
                         onClick={() => {
                             setActiveTab('novel');
-                            setUrl('');
-                            setNovel(null);
+                            resetImportState();
                         }}
                         className={clsx(
                             "flex-1 h-9 rounded-lg text-sm font-bold transition-all",
@@ -191,8 +220,7 @@ export const Import = () => {
                     <button
                         onClick={() => {
                             setActiveTab('manhwa');
-                            setUrl('');
-                            setNovel(null);
+                            resetImportState();
                         }}
                         className={clsx(
                             "flex-1 h-9 rounded-lg text-sm font-bold transition-all",
@@ -206,7 +234,7 @@ export const Import = () => {
                     <button
                         onClick={() => {
                             setActiveTab('search');
-                            setNovel(null);
+                            resetImportState();
                         }}
                         className={clsx(
                             "flex-1 h-9 rounded-lg text-sm font-bold transition-all",
@@ -426,6 +454,27 @@ export const Import = () => {
                                 You can safely leave this page or minimize the app.
                                 <span className="block opacity-70 mt-0.5">Scraping will continue in the background.</span>
                             </p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Success State */}
+                {isImportComplete && !scraping && (
+                    <div className="mt-8 animate-in zoom-in-95 fade-in duration-300">
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-6 flex flex-col items-center text-center">
+                            <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/30">
+                                <Bookmark size={32} />
+                            </div>
+                            <h3 className="text-xl font-bold text-emerald-600 dark:text-emerald-400">Import Complete!</h3>
+                            <p className="text-sm opacity-70 mt-2 max-w-[240px]">
+                                Your {activeTab === 'manhwa' ? 'manhwa' : 'novel'} has been successfully added to your library.
+                            </p>
+                            <button
+                                onClick={resetImportState}
+                                className="mt-6 px-8 h-12 bg-emerald-500 text-white rounded-xl font-bold transition-all active:scale-95 shadow-md shadow-emerald-500/20"
+                            >
+                                START NEW IMPORT
+                            </button>
                         </div>
                     </div>
                 )}

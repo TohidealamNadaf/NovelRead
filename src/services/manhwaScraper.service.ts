@@ -29,6 +29,12 @@ export class ManhwaScraperService {
         this.listeners.forEach(l => l(this.currentProgress, this.isScrapingInternal));
     }
 
+    resetProgress() {
+        this.currentProgress = { current: 0, total: 0, currentTitle: '', logs: [] };
+        this.activeNovel = null;
+        this.notifyListeners();
+    }
+
     // --- Proxy Management ---
     // On native (Android/iOS), direct fetch works best (no CORS).
     // On web, we need proxies. Order matters - try best ones first.
