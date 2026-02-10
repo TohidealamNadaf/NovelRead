@@ -12,6 +12,8 @@ import { ScrapingHistory } from './pages/ScrapingHistory';
 import { PrivacySecurity } from './pages/PrivacySecurity';
 import { Notifications } from './pages/Notifications';
 import { MiniPlayer } from './components/MiniPlayer';
+import { ManhwaSeries } from './pages/ManhwaSeries';
+import { ManhwaReader } from './pages/ManhwaReader';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -54,6 +56,11 @@ function App() {
         <Route path="/import" element={<Import />} />
         <Route path="/novel/:novelId" element={<ChapterList />} />
         <Route path="/read/:novelId/:chapterId" element={<Reader />} />
+
+        {/* Manhwa Routes */}
+        <Route path="/manhwa/:novelId" element={<ManhwaSeries />} />
+        <Route path="/manhwa/read/:novelId/:chapterId" element={<ManhwaReader />} />
+
         <Route path="/discover" element={<Discover />} />
         <Route path="/discover/:category" element={<DiscoverList />} />
         <Route path="/audio" element={<AudioSettings />} />

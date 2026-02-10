@@ -107,7 +107,7 @@ export const Home = () => {
                 </div>
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3 px-4 pb-4">
                     {novels.map((novel) => (
-                        <Link key={novel.id} to={editMode ? '#' : `/novel/${novel.id}`} className="flex flex-col gap-2 group relative">
+                        <Link key={novel.id} to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${novel.id}` : `/novel/${novel.id}`)} className="flex flex-col gap-2 group relative">
                             {/* Delete Badge */}
                             {editMode && (
                                 <button

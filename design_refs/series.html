@@ -1,0 +1,269 @@
+<!-- My Library & Downloads -->
+<!DOCTYPE html>
+<html class="dark" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Comic Series Details</title>
+    <!-- ... (See original prompt for full content) ... -->
+    <!-- I'm saving the full content as provided in the prompt logic internally, but for this tool call I will just write the essential parts to save tokens if it's large, but wait, I should write the WHOLE thing to be safe. It is not that large. -->
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&amp;display=swap" rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#3713ec",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#131022",
+                        "surface-dark": "#1d1c27",
+                        "surface-light": "#ffffff"
+                    },
+                    fontFamily: {
+                        "display": ["Lexend", "sans-serif"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+    <style type="text/tailwindcss">
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .font-variation-fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .cinematic-shadow {
+            box-shadow: inset 0 -120px 80px -20px rgba(19, 16, 34, 1);
+        }
+    </style>
+    <style>
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+</head>
+
+<body
+    class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white font-display antialiased selection:bg-primary selection:text-white pb-10">
+    <header
+        class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between p-4 bg-gradient-to-b from-black/60 to-transparent">
+        <button class="h-10 w-10 flex items-center justify-center rounded-full bg-black/20 backdrop-blur-md text-white">
+            <span class="material-symbols-outlined">arrow_back_ios_new</span>
+        </button>
+        <div class="flex gap-2">
+            <button
+                class="h-10 w-10 flex items-center justify-center rounded-full bg-black/20 backdrop-blur-md text-white">
+                <span class="material-symbols-outlined">share</span>
+            </button>
+            <button
+                class="h-10 w-10 flex items-center justify-center rounded-full bg-black/20 backdrop-blur-md text-white">
+                <span class="material-symbols-outlined">more_horiz</span>
+            </button>
+        </div>
+    </header>
+    <div class="relative w-full h-[460px] overflow-hidden">
+        <img alt="Series cover" class="w-full h-full object-cover"
+            src="https://lh3.googleusercontent.com/aida-public/AB6AXuAOLvo8fSBNoGPiIbl7rwxTbf8yWW7IWSq1G-osYcZUJL6GetPqNxzXWMij92yyIjDrb4n6xhYHuMe0Uzu5dQETj49sO9lU_d3_gLPM1CTPKEGWvzOVOj4k7QR8aYxQWGCdpDVSbFNzy66jrqkbTYJAmqcRP4cpDE6ttNBg03e5sK_vRJdPZp5noJ5f_lSifph2hX0mvhszXXeqgxsayDMpJ9wpdL5GGUAiLaTLvviQlLGazl1neRaI5UGMPvNvu7hfFQCnkvy9LKA0" />
+        <div
+            class="absolute inset-0 cinematic-shadow bg-gradient-to-t from-background-dark via-background-dark/20 to-transparent">
+        </div>
+        <div class="absolute bottom-0 left-0 right-0 p-6 flex flex-col gap-4">
+            <div class="flex flex-wrap gap-2">
+                <span
+                    class="px-2.5 py-1 rounded-md bg-primary text-white text-[10px] font-bold tracking-wider uppercase">Weekly</span>
+                <span
+                    class="px-2.5 py-1 rounded-md bg-white/10 backdrop-blur-md text-white text-[10px] font-bold tracking-wider uppercase border border-white/10">Action</span>
+                <span
+                    class="px-2.5 py-1 rounded-md bg-white/10 backdrop-blur-md text-white text-[10px] font-bold tracking-wider uppercase border border-white/10">Fantasy</span>
+            </div>
+            <h1 class="text-3xl font-black leading-tight drop-shadow-lg">Shadow Monarch's Ascent</h1>
+            <div class="flex items-center gap-4 text-sm text-slate-300">
+                <div class="flex items-center gap-1">
+                    <span class="material-symbols-outlined text-yellow-500 font-variation-fill text-lg">star</span>
+                    <span class="font-bold">4.9</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    <span class="material-symbols-outlined text-lg">visibility</span>
+                    <span>2.4M</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    <span class="material-symbols-outlined text-lg">book</span>
+                    <span>148 Chs</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="px-6 -mt-4 relative z-10 grid grid-cols-2 gap-3">
+        <button
+            class="flex items-center justify-center gap-2 bg-primary h-12 rounded-xl text-white font-bold shadow-lg shadow-primary/25 active:scale-95 transition-transform">
+            <span class="material-symbols-outlined font-variation-fill">play_arrow</span>
+            Read Now
+        </button>
+        <button
+            class="flex items-center justify-center gap-2 bg-surface-dark border border-white/10 h-12 rounded-xl text-white font-bold active:scale-95 transition-transform">
+            <span class="material-symbols-outlined">bookmark</span>
+            Library
+        </button>
+    </div>
+    <main class="px-6 mt-8 flex flex-col gap-8">
+        <section>
+            <h2 class="text-lg font-bold mb-3">Summary</h2>
+            <p class="text-slate-400 text-sm leading-relaxed line-clamp-3">
+                In a world where gates connect our dimension to monster-filled dungeons, Jin-Woo is the weakest of all
+                hunters. But after a mysterious incident in a high-rank dungeon, he gains a unique interface that allows
+                him to level up without limits. Follow his journey as he rises from E-rank to the ultimate Shadow
+                Monarch.
+            </p>
+            <button class="text-primary text-xs font-bold mt-2">Read more</button>
+        </section>
+        <section class="flex flex-col gap-4">
+            <div class="flex items-center justify-between">
+                <div class="flex flex-col">
+                    <h2 class="text-lg font-bold">Chapters</h2>
+                    <p class="text-xs text-slate-500">Last updated: 2 hours ago</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button
+                        class="h-9 w-9 flex items-center justify-center rounded-lg bg-surface-dark border border-white/5 text-slate-300">
+                        <span class="material-symbols-outlined text-[20px]">swap_vert</span>
+                    </button>
+                    <div class="flex bg-surface-dark border border-white/5 p-1 rounded-lg">
+                        <button class="h-7 w-7 flex items-center justify-center rounded-md bg-white/10 text-white">
+                            <span class="material-symbols-outlined text-[18px]">view_list</span>
+                        </button>
+                        <button
+                            class="h-7 w-7 flex items-center justify-center rounded-md text-slate-500 hover:text-white">
+                            <span class="material-symbols-outlined text-[18px]">grid_view</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between bg-primary/5 border border-primary/20 p-3 rounded-xl">
+                <div class="flex items-center gap-3">
+                    <div class="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">
+                        <span class="material-symbols-outlined text-[20px]">download_for_offline</span>
+                    </div>
+                    <span class="text-sm font-medium text-slate-200">Available for offline reading</span>
+                </div>
+                <button class="text-xs font-bold bg-primary px-3 py-1.5 rounded-lg text-white shadow-sm">
+                    Mass Download
+                </button>
+            </div>
+            <div class="flex flex-col divide-y divide-white/5">
+                <div class="py-4 flex items-center justify-between group">
+                    <div class="flex items-center gap-4">
+                        <div
+                            class="h-12 w-12 rounded-lg bg-surface-dark border border-white/5 flex items-center justify-center overflow-hidden shrink-0">
+                            <img alt="ch-thumb" class="w-full h-full object-cover opacity-60"
+                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXvkkAYi2HHDIDQgfBzY8jP4HhiDv3Mj68rUQMTTPAYVtQRxJwwfl382bsenOb6mX2ifKxpLoKGBMOQLpuwzvzZeGTubDGF7ZBoLWlpB8BCpk4Nb34OKfviweZ3v3Ayc27Eb9Bzlow4cyHacw1SpY9-tS5ugVvD9GOAHoRC8kbPwZ1-xdHGUS4jsY7Kz2DhZ8uKCjMUgtRB7V0DTV1VKQJlD8wOJbf5lD3dRHBt8JYrfgaGH2GefkgcpIvpLcQsGHD-2MyhX-WquZj" />
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-sm font-bold">Chapter 148</span>
+                            <span class="text-[11px] text-slate-500">Aug 24, 2023 • 12.4MB</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span
+                            class="px-2 py-0.5 rounded bg-green-500/10 text-green-500 text-[10px] font-bold">NEW</span>
+                        <button class="text-slate-500 hover:text-white">
+                            <span class="material-symbols-outlined">download</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="py-4 flex items-center justify-between group">
+                    <div class="flex items-center gap-4">
+                        <div
+                            class="h-12 w-12 rounded-lg bg-surface-dark border border-white/5 flex items-center justify-center overflow-hidden shrink-0">
+                            <img alt="ch-thumb" class="w-full h-full object-cover opacity-60"
+                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuD2BSlwW2i4otUf15znVUB14s65b1Kasx8QEY38D4wxufroG6KdflcCY7yKFt55lpdWR6OrPf5BbO-A2A9tC6R_CNURtshSgQq1d7DPEehTyBbhmsEQkrbqvlNn_tex13TpoN5r8efN0V7jG8hmXbgDgl7zSuggsovaVxJMbxx5wsa746wVvCaLdqnoWXzlgU0_4x8hwL6JAO73PomMvUMqicsEDG0WNp1n5VZHn_8w-1ak3MAgRgFiWLMcVP2MkZGndoDab0gKkbBN" />
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-sm font-bold text-slate-400">Chapter 147</span>
+                            <span class="text-[11px] text-slate-500">Aug 17, 2023 • 11.2MB</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-slate-600"><span
+                                class="material-symbols-outlined font-variation-fill text-lg">check_circle</span></span>
+                        <button class="text-slate-500 hover:text-white">
+                            <span class="material-symbols-outlined">download</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="py-4 flex items-center justify-between group">
+                    <div class="flex items-center gap-4">
+                        <div
+                            class="h-12 w-12 rounded-lg bg-surface-dark border border-white/5 flex items-center justify-center overflow-hidden shrink-0">
+                            <img alt="ch-thumb" class="w-full h-full object-cover opacity-60"
+                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDyopBY2iqezTi2iGYvLK1JkcD0ZtNIlOtyd47-BvYRH2rebN-QzlKdLW3H9AoqHALqO8WIgy5ozpWsL_sZloaeiE4QQCUPmNG6ndVwsHMkYjQZjrQT_mWpCaVc7nbhGQbzgkeV4yuI1ZHmD9HmHB5G9N3R1xZyPIFioZWhShOSpP-4Jf1gnBBluUG91pujdQm-S7ipktEQZM-ZCzjlzr3baQr88yRZOEKHBgqo612ZWhTrfmD5UpXYs0lUDAdcdkHwnXVdOF9cBg38" />
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="text-sm font-bold text-slate-400">Chapter 146</span>
+                            <span class="text-[11px] text-slate-500">Aug 10, 2023 • 10.8MB</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-slate-600"><span
+                                class="material-symbols-outlined font-variation-fill text-lg">check_circle</span></span>
+                        <button class="text-slate-500 hover:text-white">
+                            <span class="material-symbols-outlined">download</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <button class="w-full py-4 text-sm font-bold text-slate-400 border-t border-white/5">
+                View all 148 chapters
+            </button>
+        </section>
+        <section class="pb-10">
+            <h2 class="text-lg font-bold mb-4">You May Also Like</h2>
+            <div class="flex gap-4 overflow-x-auto no-scrollbar -mx-6 px-6">
+                <div class="flex-none w-32">
+                    <div class="aspect-[2/3] rounded-xl bg-surface-dark overflow-hidden mb-2">
+                        <img alt="Rec" class="w-full h-full object-cover"
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDPCYjOYUWQ-UlQ5zkw3q_DYb4AcHvOK0_LjoCrz7aNFOxbvqyK5T-i34GTXpqG97icDjcDKqkopN0ylxCNWK336_8xqOlAopv-Pzw3mdS2wtjyBWBK9n9Yp6t0pVn4izGd48Oqe3vueyT1H_BN3zMOech7uiXzM9yPVx8kzTeSIZ6OBLpPRj9C0m1jFNXyHDRK-JnFH8SymuDenGdrJNDcWGuNW-hZ18unXB60bJAo32hnUghNUUUHHzC3gLE_V2cUGazAiFV4sTCx" />
+                    </div>
+                    <h4 class="text-xs font-bold line-clamp-2">Leveling Up Alone</h4>
+                </div>
+                <div class="flex-none w-32">
+                    <div class="aspect-[2/3] rounded-xl bg-surface-dark overflow-hidden mb-2">
+                        <img alt="Rec" class="w-full h-full object-cover"
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDZjMh7dHO1XQo7k9frNIchpaTBLdf2ZK1P8JIFrNgzP0gOYtGVH_QD6AO4lITsGgIXjAydkbsvr_OK6r2kvTV_ecwdSPfHbu_M0ZlY3sj5z1jww8IIeiRyUiXD8Ldi098J3a9hIx7NviVuDEtfauh5bbYwzmt3aTrLo9uyfwV5bswxwk6VIfLRLVOXRv2ZrNINVTbfF88l23n95LW4G5SeCW5jmZC_uZUpqhXoxcjExwuWgwbA0mez7Jtm-8pksQrqd6Kohb_AEDKy" />
+                    </div>
+                    <h4 class="text-xs font-bold line-clamp-2">The Hero Returns</h4>
+                </div>
+                <div class="flex-none w-32">
+                    <div class="aspect-[2/3] rounded-xl bg-surface-dark overflow-hidden mb-2">
+                        <img alt="Rec" class="w-full h-full object-cover"
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXvkkAYi2HHDIDQgfBzY8jP4HhiDv3Mj68rUQMTTPAYVtQRxJwwfl382bsenOb6mX2ifKxpLoKGBMOQLpuwzvzZeGTubDGF7ZBoLWlpB8BCpk4Nb34OKfviweZ3v3Ayc27Eb9Bzlow4cyHacw1SpY9-tS5ugVvD9GOAHoRC8kbPwZ1-xdHGUS4jsY7Kz2DhZ8uKCjMUgtRB7V0DTV1VKQJlD8wOJbf5lD3dRHBt8JYrfgaGH2GefkgcpIvpLcQsGHD-2MyhX-WquZj" />
+                    </div>
+                    <h4 class="text-xs font-bold line-clamp-2">Dungeon Master</h4>
+                </div>
+            </div>
+        </section>
+    </main>
+    <div class="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-48px)] max-w-md z-50">
+        <button
+            class="w-full h-14 bg-white text-background-dark rounded-full font-black text-lg shadow-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all">
+            <span class="material-symbols-outlined font-variation-fill">auto_stories</span>
+            CONTINUE READING
+        </button>
+    </div>
+
+</body>
+
+</html>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2 } from 'lucide-react';
 import { scraperService, type NovelMetadata, type ScraperProgress } from '../services/scraper.service';
+import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { useNavigate } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { LocalNotifications } from '@capacitor/local-notifications';
@@ -14,6 +15,7 @@ export const Import = () => {
     const [novel, setNovel] = useState<NovelMetadata | null>(scraperService.activeNovelMetadata);
     const [scraping, setScraping] = useState(scraperService.isScraping);
     const [progress, setProgress] = useState<ScraperProgress>(scraperService.progress);
+    const [activeTab, setActiveTab] = useState<'novel' | 'manhwa'>('novel');
 
     useEffect(() => {
         // Request Permissions
@@ -22,34 +24,51 @@ export const Import = () => {
         }
 
         // Subscribe to scraper progress
-        const unsub = scraperService.subscribe((newProgress, isScraping) => {
-            setProgress(newProgress);
-            setScraping(isScraping);
+        const unsubScraper = scraperService.subscribe((newProgress, isScraping) => {
+            if (!manhwaScraperService.isScraping) {
+                setProgress(newProgress);
+                setScraping(isScraping);
+                if (isScraping && scraperService.activeNovelMetadata) {
+                    setNovel(scraperService.activeNovelMetadata);
+                    setActiveTab('novel');
+                }
+            }
+        });
 
-            // Update local novel state if needed (e.g. if we navigated back to this page)
-            if (isScraping && scraperService.activeNovelMetadata) {
-                setNovel(scraperService.activeNovelMetadata);
+        const unsubManhwa = manhwaScraperService.subscribe((newProgress, isScraping) => {
+            if (isScraping) {
+                setProgress(newProgress);
+                setScraping(isScraping);
+                if (manhwaScraperService.activeNovelMetadata) {
+                    setNovel(manhwaScraperService.activeNovelMetadata);
+                    setActiveTab('manhwa');
+                }
             }
         });
 
         // Clear metadata on mount if not currently scraping
-        if (!scraperService.isScraping) {
+        if (!scraperService.isScraping && !manhwaScraperService.isScraping) {
             scraperService.clearMetadata();
             setNovel(null);
         }
 
-        return unsub;
+        return () => {
+            unsubScraper();
+            unsubManhwa();
+        };
     }, []);
 
     const handlePreview = async () => {
         if (!url) return;
         setLoading(true);
+        setNovel(null); // Clear previous
         try {
-            const data = await scraperService.fetchNovel(url);
+            const service = activeTab === 'manhwa' ? manhwaScraperService : scraperService;
+            const data = await service.fetchNovel(url);
             setNovel(data);
         } catch (error) {
             console.error(error);
-            alert('Failed to fetch novel metadata');
+            alert('Failed to fetch novel metadata. Check URL or try another source.');
         } finally {
             setLoading(false);
         }
@@ -59,12 +78,13 @@ export const Import = () => {
         if (!url) return;
 
         let targetNovel = novel;
+        const service = activeTab === 'manhwa' ? manhwaScraperService : scraperService;
 
         // Auto-fetch metadata if not already loaded
         if (!targetNovel) {
             setLoading(true);
             try {
-                targetNovel = await scraperService.fetchNovel(url);
+                targetNovel = await service.fetchNovel(url);
                 setNovel(targetNovel);
             } catch (error) {
                 console.error(error);
@@ -77,7 +97,11 @@ export const Import = () => {
 
         if (!targetNovel) return;
 
-        scraperService.startImport(url, targetNovel);
+        if (activeTab === 'manhwa') {
+            manhwaScraperService.startImport(url, targetNovel);
+        } else {
+            scraperService.startImport(url, targetNovel, 'Imported');
+        }
     };
 
     return (
@@ -96,6 +120,40 @@ export const Import = () => {
 
             {/* Main Content */}
             <div className="flex-1 overflow-y-auto px-4 pb-48">
+                {/* Tabs */}
+                <div className="mt-4 flex p-1 bg-slate-100 dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54]">
+                    <button
+                        onClick={() => {
+                            setActiveTab('novel');
+                            setUrl('');
+                            setNovel(null);
+                        }}
+                        className={clsx(
+                            "flex-1 h-9 rounded-lg text-sm font-bold transition-all",
+                            activeTab === 'novel'
+                                ? "bg-white dark:bg-[#3f3b54] text-primary shadow-sm"
+                                : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-300"
+                        )}
+                    >
+                        Novel
+                    </button>
+                    <button
+                        onClick={() => {
+                            setActiveTab('manhwa');
+                            setUrl('');
+                            setNovel(null);
+                        }}
+                        className={clsx(
+                            "flex-1 h-9 rounded-lg text-sm font-bold transition-all",
+                            activeTab === 'manhwa'
+                                ? "bg-white dark:bg-[#3f3b54] text-primary shadow-sm"
+                                : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-300"
+                        )}
+                    >
+                        Manhwa
+                    </button>
+                </div>
+
                 {/* URL Input Section */}
                 <div className="mt-4 space-y-4">
                     <div className="flex flex-col gap-2">
@@ -103,7 +161,7 @@ export const Import = () => {
                         <div className="flex items-stretch bg-white dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54] overflow-hidden focus-within:ring-2 ring-primary/50 transition-all">
                             <input
                                 className="flex-1 bg-transparent border-none text-base p-4 focus:ring-0 placeholder:text-slate-400 dark:placeholder:text-[#a19db9] outline-none"
-                                placeholder="https://novelfire.com/..."
+                                placeholder={activeTab === 'novel' ? "https://novelfire.com/..." : "https://manhwa-site.com/..."}
                                 type="text"
                                 value={url}
                                 onChange={(e) => {

@@ -250,7 +250,7 @@ export class ScraperService {
         });
     }
 
-    async startImport(url: string, novel: NovelMetadata) {
+    async startImport(url: string, novel: NovelMetadata, category: string = 'Imported') {
         if (this.isScrapingInternal) return;
 
         this.isScrapingInternal = true;
@@ -270,10 +270,10 @@ export class ScraperService {
                 author: novel.author,
                 coverUrl: novel.coverUrl,
                 sourceUrl: url,
-                category: 'Imported'
+                category: category
             });
 
-            await this.scrapeChapterLoop(novelId, novel.chapters, novel.title);
+            await this.scrapeChapterLoop(novelId, novel.chapters, novel.title, 0, category === 'Manhwa');
 
             await this.finishNotification(novel.title, true, `Successfully imported ${novel.title}`, novelId);
         } catch (error) {
@@ -346,7 +346,7 @@ export class ScraperService {
         }
     }
 
-    private async scrapeChapterLoop(novelId: string, chapters: { title: string; url: string; audioPath?: string }[], novelTitle: string, offset: number = 0) {
+    private async scrapeChapterLoop(novelId: string, chapters: { title: string; url: string; audioPath?: string }[], novelTitle: string, offset: number = 0, isManhwa: boolean = false) {
         for (let i = 0; i < chapters.length; i++) {
             const ch = chapters[i];
             const currentIndex = offset + i + 1;
@@ -380,8 +380,11 @@ export class ScraperService {
             await this.updateNotification(novelTitle);
 
             try {
-                const content = await this.fetchChapterContent(ch.url);
-                if (content && content.length > 100) {
+                const content = isManhwa
+                    ? await this.fetchManhwaContent(ch.url)
+                    : await this.fetchChapterContent(ch.url);
+
+                if (content && content.length > 50) { // Lower threshold for Manhwa (might be just img tags)
                     const chapterData = {
                         id: `${novelId}-ch-${currentIndex}`,
                         novelId,
@@ -699,6 +702,49 @@ export class ScraperService {
             }
         }
         return '<p>Content not found. The source might be protected or requires a specific redirect.</p>';
+    }
+
+    public async fetchManhwaContent(url: string): Promise<string> {
+        // Similar to fetchChapterContent but prioritizes image containers
+        let content = '';
+        for (const getProxyUrl of this.getProxies()) {
+            try {
+                const html = await this.fetchHtml(url, getProxyUrl);
+                if (!html || html.length < 500) continue;
+
+                const $ = cheerio.load(html);
+                $('script, style, .ads, .ad-container, iframe, .hidden, .announcement').remove();
+
+                // Selectors common for manga/manhwa sites
+                const imageSelectors = [
+                    '.reading-content', '.vung-doc', '.read-content',
+                    '.page-break', '#chapter-content', '.chapter-content',
+                    '#readerarea', '.entry-content', '.container-chapter-reader'
+                ];
+
+                for (const sel of imageSelectors) {
+                    const el = $(sel);
+                    if (el.length > 0 && el.find('img').length > 0) {
+                        // Extract just the images to keep it clean
+                        const images = el.find('img').map((_, img) => {
+                            const src = $(img).attr('data-src') || $(img).attr('data-lazy-src') || $(img).attr('src');
+                            if (src) return `<img src="${src}" />`;
+                            return '';
+                        }).get().join('');
+
+                        if (images.length > 0) {
+                            content = images;
+                            break;
+                        }
+                    }
+                }
+
+                if (content) return content;
+            } catch (e) {
+                console.warn(`[Scraper] Manhwa fetch failed`, e);
+            }
+        }
+        return '<p>No images found.</p>';
     }
 
     async fetchHtml(url: string, proxyUrl?: string): Promise<string> {
