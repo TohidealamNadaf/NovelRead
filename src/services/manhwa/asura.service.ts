@@ -13,24 +13,53 @@ export class AsuraScraperService {
 
         const $ = cheerio.load(html);
         const results: NovelMetadata[] = [];
+        const seenUrls = new Set<string>();
 
-        // Select the grid items. The grid container usually has grid-cols-2 etc.
-        // We look for <a> tags inside the main content area that link to series.
-        // Based on debug HTML: div.grid.grid-cols-2... > a
-        $('div.grid a[href*="/series/"]').each((_, el) => {
-            const href = $(el).attr('href');
-            const title = $(el).find('span.font-bold').text().trim();
-            const coverUrl = $(el).find('img').attr('src');
-            const status = $(el).find('span.status').text().trim() || 'Ongoing';
+        // Find all links containing /series/ (results are typically in a grid)
+        // We avoid strict parent selectors like 'div.grid' which may change on mobile
+        $('a[href*="/series/"]').each((_, el) => {
+            const a = $(el);
+            const href = a.attr('href');
+            if (!href) return;
 
-            if (href && title) {
-                // Ensure absolute URL
-                const sourceUrl = href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`;
+            // Ensure absolute URL and deduplicate
+            const sourceUrl = href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`;
+            if (seenUrls.has(sourceUrl)) return;
+            seenUrls.add(sourceUrl);
 
+            // Title detection: 
+            // 1. Specific spans used in grid (font-bold or text-white for mobile)
+            // 2. Headings (h3)
+            // 3. Fallback to anchor text itself
+            let title = a.find('span.font-bold').text().trim() ||
+                a.find('span.text-white').text().trim() ||
+                a.find('h3').text().trim() ||
+                a.find('div.font-bold').first().text().trim();
+
+            if (!title) {
+                const tempA = a.clone();
+                tempA.find('span.status, .status, .type, .px-1').remove();
+                title = tempA.text().trim().split('\n')[0].trim();
+            }
+
+            // Cleanup title (remove extra spaces/newlines)
+            title = title.replace(/\s+/g, ' ').trim();
+
+            // Flexible image extraction
+            const img = a.find('img');
+            const coverUrl = img.attr('src') || img.attr('data-src') || img.attr('data-lazy-src') || '';
+
+            const status = a.find('span.status, .status').text().trim() || 'Ongoing';
+
+            // Filter out obvious navigation/header links
+            if (title && title.length > 2 &&
+                !title.toLowerCase().includes('home') &&
+                !title.toLowerCase().includes('series') &&
+                !title.toLowerCase().includes('bookmark')) {
                 results.push({
                     title,
                     author: 'Asura Scans',
-                    coverUrl: coverUrl || '',
+                    coverUrl: coverUrl,
                     chapters: [],
                     sourceUrl: sourceUrl,
                     sourceId: sourceUrl,
@@ -145,6 +174,12 @@ export class AsuraScraperService {
         return Array.from(uniqueImages);
     }
 
+    private isValidHtml(html: string): boolean {
+        if (!html || html.length < 500) return false;
+        const blockedIndicators = ['cf-browser-verification', 'Checking your browser', 'Just a moment', 'Verifying you are human', 'cf-challenge'];
+        return !blockedIndicators.some(indicator => html.includes(indicator));
+    }
+
     private async fetchHtml(url: string): Promise<string> {
         const isNative = Capacitor.isNativePlatform();
 
@@ -153,11 +188,24 @@ export class AsuraScraperService {
                 const options = {
                     url: url,
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
-                    }
+                        'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.178 Mobile Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.5',
+                        'Referer': 'https://asuracomic.net/',
+                        'Cache-Control': 'no-cache'
+                    },
+                    connectTimeout: 30000,
+                    readTimeout: 30000
                 };
                 const response = await CapacitorHttp.get(options);
-                return response.data;
+                const html = response.data || '';
+
+                if (!this.isValidHtml(html)) {
+                    console.warn('Asura Scans: Cloudflare challenge detected on mobile.');
+                    return '';
+                }
+
+                return html;
             } else {
                 const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
                 const response = await fetch(proxyUrl);
