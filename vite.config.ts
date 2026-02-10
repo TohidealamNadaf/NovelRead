@@ -23,7 +23,7 @@ export default defineConfig({
         configure: (proxy) => {
           proxy.on('error', (err, _req, res) => {
             console.error('Proxy Error:', err);
-            if (!res.headersSent && (res as any).writeHead) {
+            if (!(res as any).headersSent && (res as any).writeHead) {
               (res as any).writeHead(500, { 'Content-Type': 'text/plain' });
             }
             res.end('Proxy encountered an error.');
