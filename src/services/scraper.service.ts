@@ -12,6 +12,10 @@ export interface NovelMetadata {
     status?: string;
     category?: string;
     chapters: { title: string; url: string }[];
+    publishers?: string[];
+    selectedPublisher?: string;
+    sourceUrl?: string; // For search results to link back to source
+    sourceId?: string; // Original ID from source
 }
 
 export interface HomeData {

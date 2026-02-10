@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2 } from 'lucide-react';
+import { MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2, ChevronDown, Users, Search } from 'lucide-react';
 import { scraperService, type NovelMetadata, type ScraperProgress } from '../services/scraper.service';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { useNavigate } from 'react-router-dom';
@@ -15,7 +15,16 @@ export const Import = () => {
     const [novel, setNovel] = useState<NovelMetadata | null>(scraperService.activeNovelMetadata);
     const [scraping, setScraping] = useState(scraperService.isScraping);
     const [progress, setProgress] = useState<ScraperProgress>(scraperService.progress);
-    const [activeTab, setActiveTab] = useState<'novel' | 'manhwa'>('novel');
+    const [activeTab, setActiveTab] = useState<'novel' | 'manhwa' | 'search'>('novel');
+    const [selectedPublisher, setSelectedPublisher] = useState<string>('');
+    const [publisherLoading, setPublisherLoading] = useState(false);
+    const [showPublisherDropdown, setShowPublisherDropdown] = useState(false);
+
+    // Search State
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<NovelMetadata[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
+    const [selectedSource, setSelectedSource] = useState<'mangadex' | 'asura'>('mangadex');
 
     useEffect(() => {
         // Request Permissions
@@ -58,19 +67,61 @@ export const Import = () => {
         };
     }, []);
 
-    const handlePreview = async () => {
-        if (!url) return;
-        setLoading(true);
-        setNovel(null); // Clear previous
+    const handleSearch = async () => {
+        if (!searchQuery.trim()) return;
+        setIsSearching(true);
+        setSearchResults([]);
         try {
-            const service = activeTab === 'manhwa' ? manhwaScraperService : scraperService;
-            const data = await service.fetchNovel(url);
-            setNovel(data);
+            const results = await manhwaScraperService.searchManga(searchQuery, selectedSource);
+            setSearchResults(results);
         } catch (error) {
             console.error(error);
-            alert('Failed to fetch novel metadata. Check URL or try another source.');
+            alert('Search failed. Please try again.');
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
+    const handlePreview = async (overrideUrl?: string) => {
+        const targetUrl = overrideUrl || url;
+        if (!targetUrl) return;
+        setLoading(true);
+        setNovel(null);
+        setSelectedPublisher('');
+        try {
+            const service = activeTab === 'manhwa' || activeTab === 'search' ? manhwaScraperService : scraperService;
+            const data = await service.fetchNovel(targetUrl);
+            setNovel(data);
+            // If comick.art with publishers, auto-show publisher selection
+            if (data.publishers && data.publishers.length > 0) {
+                setShowPublisherDropdown(true);
+            }
+        } catch (error: any) {
+            console.error(error);
+            const msg = error.message || 'Failed to fetch novel metadata. Check URL or try another source.';
+            alert(msg);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handlePublisherSelect = async (publisher: string) => {
+        setSelectedPublisher(publisher);
+        setShowPublisherDropdown(false);
+        if (!novel || !url) return;
+
+        setPublisherLoading(true);
+        try {
+            const filteredChapters = await manhwaScraperService.fetchComickChaptersByPublisher(url, publisher);
+            setNovel({
+                ...novel,
+                chapters: filteredChapters,
+                selectedPublisher: publisher
+            });
+        } catch (error) {
+            console.error('Failed to filter chapters by publisher:', error);
+        } finally {
+            setPublisherLoading(false);
         }
     };
 
@@ -152,34 +203,126 @@ export const Import = () => {
                     >
                         Manhwa
                     </button>
+                    <button
+                        onClick={() => {
+                            setActiveTab('search');
+                            setNovel(null);
+                        }}
+                        className={clsx(
+                            "flex-1 h-9 rounded-lg text-sm font-bold transition-all",
+                            activeTab === 'search'
+                                ? "bg-white dark:bg-[#3f3b54] text-primary shadow-sm"
+                                : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-300"
+                        )}
+                    >
+                        Search
+                    </button>
                 </div>
 
-                {/* URL Input Section */}
+                {/* Search / URL Input Section */}
                 <div className="mt-4 space-y-4">
-                    <div className="flex flex-col gap-2">
-                        <label className="text-sm font-medium opacity-70 px-1">Source URL</label>
-                        <div className="flex items-stretch bg-white dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54] overflow-hidden focus-within:ring-2 ring-primary/50 transition-all">
-                            <input
-                                className="flex-1 bg-transparent border-none text-base p-4 focus:ring-0 placeholder:text-slate-400 dark:placeholder:text-[#a19db9] outline-none"
-                                placeholder={activeTab === 'novel' ? "https://novelfire.com/..." : "https://manhwa-site.com/..."}
-                                type="text"
-                                value={url}
-                                onChange={(e) => {
-                                    setUrl(e.target.value);
-                                    // Reset detected metadata when URL changes
-                                    if (novel) setNovel(null);
-                                }}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        handlePreview();
-                                    }
-                                }}
-                            />
-                            <button onClick={handlePreview} disabled={loading || scraping} className="px-4 flex items-center justify-center text-primary border-l border-slate-100 dark:border-[#3f3b54] disabled:opacity-50">
-                                {loading ? <Loader2 className="animate-spin" /> : <Clipboard />}
-                            </button>
+                    {activeTab === 'search' ? (
+                        <div className="flex flex-col gap-2 animate-in fade-in">
+                            <div className="flex items-center justify-between px-1">
+                                <label className="text-sm font-medium opacity-70">Search Manga</label>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setSelectedSource('mangadex')}
+                                        className={clsx(
+                                            "text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors",
+                                            selectedSource === 'mangadex'
+                                                ? "bg-primary text-white border-primary"
+                                                : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                        )}
+                                    >
+                                        MangaDex
+                                    </button>
+                                    <button
+                                        onClick={() => setSelectedSource('asura')}
+                                        className={clsx(
+                                            "text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors",
+                                            selectedSource === 'asura'
+                                                ? "bg-primary text-white border-primary"
+                                                : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                        )}
+                                    >
+                                        Asura Scans
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="flex items-stretch bg-white dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54] overflow-hidden focus-within:ring-2 ring-primary/50 transition-all">
+                                <input
+                                    className="flex-1 bg-transparent border-none text-base p-4 focus:ring-0 placeholder:text-slate-400 dark:placeholder:text-[#a19db9] outline-none"
+                                    placeholder="Enter manga title (e.g. Solo Leveling)"
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            handleSearch();
+                                        }
+                                    }}
+                                />
+                                <button onClick={handleSearch} disabled={loading || isSearching} className="px-4 flex items-center justify-center text-primary border-l border-slate-100 dark:border-[#3f3b54] disabled:opacity-50">
+                                    {isSearching ? <Loader2 className="animate-spin" /> : <Search />}
+                                </button>
+                            </div>
+
+                            {/* Search Results */}
+                            {searchResults.length > 0 && (
+                                <div className="grid grid-cols-2 gap-3 mt-2">
+                                    {searchResults.map((result) => (
+                                        <div
+                                            key={result.sourceUrl || result.title}
+                                            onClick={() => {
+                                                if (result.sourceUrl) {
+                                                    setUrl(result.sourceUrl);
+                                                    setActiveTab('manhwa'); // Switch to Manhwa tab to preview
+                                                    handlePreview(result.sourceUrl);
+                                                }
+                                            }}
+                                            className="bg-white dark:bg-[#1d1c27] rounded-xl p-2 border border-slate-200 dark:border-[#3f3b54] active:scale-95 transition-transform cursor-pointer"
+                                        >
+                                            <div className="aspect-[2/3] bg-cover bg-center rounded-lg mb-2 shadow-sm" style={{ backgroundImage: `url('${result.coverUrl}')` }}></div>
+                                            <p className="font-bold text-xs line-clamp-2 leading-tight px-1">{result.title}</p>
+                                            <p className="text-[10px] opacity-60 px-1 mt-0.5">{result.author}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {searchResults.length === 0 && searchQuery && !isSearching && (
+                                <div className="text-center py-8 opacity-50 text-sm">
+                                    No results found
+                                </div>
+                            )}
                         </div>
-                    </div>
+                    ) : (
+                        <div className="flex flex-col gap-2 animate-in fade-in">
+                            <label className="text-sm font-medium opacity-70 px-1">Source URL</label>
+                            <div className="flex items-stretch bg-white dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54] overflow-hidden focus-within:ring-2 ring-primary/50 transition-all">
+                                <input
+                                    className="flex-1 bg-transparent border-none text-base p-4 focus:ring-0 placeholder:text-slate-400 dark:placeholder:text-[#a19db9] outline-none"
+                                    placeholder={activeTab === 'novel' ? "https://novelfire.com/..." : "https://mangadex.org/..."}
+                                    type="text"
+                                    value={url}
+                                    onChange={(e) => {
+                                        setUrl(e.target.value);
+                                        // Reset detected metadata when URL changes
+                                        if (novel) setNovel(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            handlePreview();
+                                        }
+                                    }}
+                                />
+                                <button onClick={() => handlePreview()} disabled={loading || scraping} className="px-4 flex items-center justify-center text-primary border-l border-slate-100 dark:border-[#3f3b54] disabled:opacity-50">
+                                    {loading ? <Loader2 className="animate-spin" /> : <Clipboard />}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Preview Card */}
@@ -189,7 +332,7 @@ export const Import = () => {
                         <div className="bg-white dark:bg-[#1d1c27] rounded-xl p-4 flex gap-4 shadow-sm border border-slate-100 dark:border-[#3f3b54]">
                             <div className="w-24 h-36 rounded-lg bg-cover bg-center shadow-md flex-shrink-0" style={{ backgroundImage: `url('${novel.coverUrl}')` }}>
                             </div>
-                            <div className="flex flex-col justify-between py-1">
+                            <div className="flex flex-col justify-between py-1 flex-1 min-w-0">
                                 <div>
                                     <h3 className="text-lg font-bold leading-tight">{novel.title}</h3>
                                     <p className="text-sm opacity-60 mt-1">{novel.author}</p>
@@ -197,7 +340,10 @@ export const Import = () => {
                                 <div className="space-y-2">
                                     <div className="flex items-center gap-2 text-xs font-medium opacity-70">
                                         <Book size={14} />
-                                        {novel.chapters.length} Chapters Found
+                                        {publisherLoading ? 'Loading chapters...' : `${novel.chapters.length} Chapters Found`}
+                                        {novel.selectedPublisher && (
+                                            <span className="text-primary">({novel.selectedPublisher})</span>
+                                        )}
                                     </div>
                                     <a href={url} target="_blank" rel="noreferrer" className="flex items-center justify-center w-full h-8 bg-slate-100 dark:bg-[#3f3b54] text-xs font-bold rounded-lg transition-active active:scale-95">
                                         VIEW SOURCE SITE
@@ -205,6 +351,49 @@ export const Import = () => {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Publisher Selection for comick.art */}
+                        {novel.publishers && novel.publishers.length > 0 && (
+                            <div className="mt-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Users size={14} className="text-primary" />
+                                    <p className="text-xs font-bold uppercase tracking-widest opacity-50">Select Publisher</p>
+                                </div>
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setShowPublisherDropdown(!showPublisherDropdown)}
+                                        className="w-full flex items-center justify-between p-3 bg-white dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54] text-sm font-medium transition-colors hover:border-primary/50"
+                                    >
+                                        <span className={selectedPublisher ? '' : 'opacity-50'}>
+                                            {selectedPublisher || 'Choose a publisher / scanlation group...'}
+                                        </span>
+                                        <ChevronDown size={16} className={clsx('transition-transform', showPublisherDropdown && 'rotate-180')} />
+                                    </button>
+
+                                    {showPublisherDropdown && (
+                                        <div className="absolute z-20 mt-1 w-full bg-white dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54] shadow-lg max-h-60 overflow-y-auto">
+                                            {novel.publishers.map((pub) => (
+                                                <button
+                                                    key={pub}
+                                                    onClick={() => handlePublisherSelect(pub)}
+                                                    className={clsx(
+                                                        'w-full text-left px-4 py-3 text-sm font-medium transition-colors hover:bg-primary/10 first:rounded-t-xl last:rounded-b-xl',
+                                                        selectedPublisher === pub && 'bg-primary/10 text-primary'
+                                                    )}
+                                                >
+                                                    {pub}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                {!selectedPublisher && (
+                                    <p className="text-xs text-amber-500 mt-2 px-1">
+                                        ⚠ Please select a publisher before importing
+                                    </p>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -247,7 +436,7 @@ export const Import = () => {
                 <div className="flex flex-col gap-3">
                     <button
                         onClick={handleScrape}
-                        disabled={!url || loading || scraping}
+                        disabled={!url || loading || scraping || publisherLoading || (novel?.publishers && novel.publishers.length > 0 && !selectedPublisher)}
                         className="w-full h-14 bg-primary text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100"
                     >
                         {loading ? <Loader2 className="animate-spin" /> : (scraping ? <Loader2 className="animate-spin" /> : <Book />)}
