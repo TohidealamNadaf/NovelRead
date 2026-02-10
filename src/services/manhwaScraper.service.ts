@@ -378,6 +378,20 @@ export class ManhwaScraperService {
 
     // --- Core Scraping Logic ---
 
+    // --- Discovery API ---
+    async getDiscoveryData(): Promise<{ trending: NovelMetadata[], popular: NovelMetadata[], latest: NovelMetadata[] }> {
+        try {
+            return await asuraScraperService.getDiscoverManga();
+        } catch (error) {
+            console.error('[ManhwaScraper] Error fetching discovery data:', error);
+            return { trending: [], popular: [], latest: [] };
+        }
+    }
+
+    async fetchSeriesList(page: number): Promise<NovelMetadata[]> {
+        return await asuraScraperService.fetchSeriesList(page);
+    }
+
     // --- Search API ---
     async searchManga(query: string, source: 'mangadex' | 'asura' = 'mangadex'): Promise<NovelMetadata[]> {
         if (source === 'asura') {

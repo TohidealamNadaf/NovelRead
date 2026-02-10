@@ -81,6 +81,164 @@ export class AsuraScraperService {
         return results;
     }
 
+    async getDiscoverManga(): Promise<{ trending: NovelMetadata[], popular: NovelMetadata[], latest: NovelMetadata[] }> {
+        const url = BASE_URL;
+        const html = await this.fetchHtml(url);
+        if (!html) return { trending: [], popular: [], latest: [] };
+
+        const $ = cheerio.load(html);
+        const trending: NovelMetadata[] = [];
+        const popular: NovelMetadata[] = [];
+        const latest: NovelMetadata[] = [];
+
+        // 1. Trending (Carousel slides)
+        // From home analysis: slides have class 'slide'
+        $('li.slide').each((_, el) => {
+            const slide = $(el);
+            const a = slide.find('a[href*="series/"]').first();
+            const href = a.attr('href');
+            if (!href) return;
+
+            const title = slide.find('.ellipsis a').text().trim() || a.find('span.font-bold').text().trim();
+            const coverUrl = slide.find('img[alt="poster"]').attr('src') || '';
+            const status = slide.find('span.status, .status').text().trim() || 'Ongoing';
+
+            if (title) {
+                trending.push({
+                    title,
+                    author: slide.find('.info-left .release-year').text().trim() || 'Asura Scans',
+                    coverUrl,
+                    chapters: [],
+                    sourceUrl: href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`,
+                    status,
+                    category: 'Manhwa'
+                });
+            }
+        });
+
+        const seenUrls = new Set<string>();
+
+        // 2. Popular Today & Latest Updates
+        // These sections use different classes but both are text-white containers
+        $('div.text-white').each((_, section) => {
+            const header = $(section).find('h3').text().trim();
+            const isPopular = header.includes('Popular Today');
+            const isLatest = header.includes('Latest Update');
+
+            if (isPopular || isLatest) {
+                // Find all items within this section
+                $(section).find('a[href*="series/"]').each((_, el) => {
+                    const a = $(el);
+                    let href = a.attr('href') || '';
+                    if (!href) return;
+
+                    let sourceUrl = href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`;
+
+                    // Skip genres or other non-series links
+                    if (sourceUrl.includes('?genre=')) return;
+
+                    // We allow some duplicates if the second link provides a better title/cover
+                    const titleRaw = a.find('span.font-bold').text().trim() || a.find('h3').text().trim() || a.text().trim();
+                    const title = titleRaw.replace(/\s+/g, ' ').replace('MANHWA', '').trim();
+                    const coverUrl = a.find('img').attr('src') || a.find('img').attr('data-src') || '';
+
+                    if (title || coverUrl) {
+                        // If we already have this URL but found a better title or cover, merge it
+                        const targetList = isPopular ? popular : latest;
+                        const existing = targetList.find(item => item.sourceUrl === sourceUrl);
+
+                        if (existing) {
+                            // Only update if current one is better
+                            if (title && (existing.title === 'Loading...' || !existing.title)) {
+                                existing.title = title;
+                            }
+                            if (coverUrl && !existing.coverUrl) {
+                                existing.coverUrl = coverUrl;
+                            }
+                        } else {
+                            const item = {
+                                title: title || 'Loading...',
+                                author: 'Asura Scans',
+                                coverUrl,
+                                chapters: [],
+                                sourceUrl,
+                                status: 'Ongoing',
+                                category: 'Manhwa'
+                            };
+                            targetList.push(item);
+                            seenUrls.add(sourceUrl);
+                        }
+                    }
+                });
+            }
+        });
+
+        // Deduplicate and limit
+        const limitToUnique = (arr: NovelMetadata[]) => {
+            const seen = new Set<string>();
+            return arr.filter(item => {
+                if (seen.has(item.title)) return false;
+                seen.add(item.title);
+                return true;
+            }).slice(0, 15);
+        };
+
+        return {
+            trending: limitToUnique(trending),
+            popular: limitToUnique(popular),
+            latest: limitToUnique(latest)
+        };
+    }
+
+    async fetchSeriesList(page: number): Promise<NovelMetadata[]> {
+        const url = `${BASE_URL}/series?page=${page}`;
+        const html = await this.fetchHtml(url);
+        if (!html) return [];
+
+        const $ = cheerio.load(html);
+        const results: NovelMetadata[] = [];
+        const seenUrls = new Set<string>();
+
+        // Find all items in the series list grid
+        $('a[href*="series/"]').each((_, el) => {
+            const a = $(el);
+            const href = a.attr('href');
+            if (!href) return;
+
+            // Ensure absolute URL and deduplicate
+            const sourceUrl = href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`;
+            if (seenUrls.has(sourceUrl)) return;
+            seenUrls.add(sourceUrl);
+
+            // Structure detection based on asura_series_raw.html analysis
+            const titleRaw = a.find('span.font-bold').first().text().trim() ||
+                a.find('h3').first().text().trim() ||
+                a.text().trim();
+
+            const title = titleRaw.replace(/\s+/g, ' ').replace('MANHWA', '').trim();
+
+            const coverUrl = a.find('img').attr('src') ||
+                a.find('img').attr('data-src') || '';
+
+            const status = a.find('span.status, .status').text().trim() || 'Ongoing';
+
+            if (title && !title.toLowerCase().includes('chapter') && !title.toLowerCase().includes('previous') && !title.toLowerCase().includes('next')) {
+                results.push({
+                    title: title.replace(/\s+/g, ' ').trim(),
+                    author: 'Asura Scans',
+                    coverUrl,
+                    chapters: [],
+                    sourceUrl: sourceUrl,
+                    sourceId: sourceUrl,
+                    status: status,
+                    category: 'Manhwa'
+                });
+            }
+        });
+
+        return results;
+    }
+
     async fetchMangaDetails(url: string): Promise<NovelMetadata | null> {
         const html = await this.fetchHtml(url);
         if (!html) return null;
@@ -118,6 +276,8 @@ export class AsuraScraperService {
         $('div.overflow-y-auto a').each((_, el) => {
             const link = $(el).attr('href');
             let chapTitle = $(el).find('h3.text-sm').text().trim();
+            // Clean up title (remove excess whitespace, "MANHWA" labels if any)
+            chapTitle = chapTitle.replace(/\s+/g, ' ').replace('MANHWA', '').trim();
             const date = $(el).find('h3.text-xs').text().trim();
 
             if (link) {
@@ -149,7 +309,7 @@ export class AsuraScraperService {
             status,
             summary,
             category: 'Manhwa',
-            chapters: chapters,
+            chapters: chapters.reverse(), // Reversing to ensure oldest chapters (Chapter 1) are at index 0
             sourceUrl: url,
             sourceId: url
         };
@@ -228,7 +388,15 @@ export class AsuraScraperService {
                 // Web: try local proxy first, then fallback to corsproxy.io
                 try {
                     const localProxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
-                    const response = await fetch(localProxyUrl);
+                    const response = await fetch(localProxyUrl, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                            'Accept-Language': 'en-US,en;q=0.9',
+                            'Referer': 'https://asuracomic.net/',
+                            'Cache-Control': 'no-cache'
+                        }
+                    });
                     if (response.ok) return await response.text();
                     console.warn(`Local proxy failed (${response.status}) for Asura, trying fallback...`);
                 } catch (e) {

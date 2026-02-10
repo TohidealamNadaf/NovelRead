@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Search, Bolt, BookOpen, Filter, RefreshCcw, Minimize2 } from 'lucide-react';
 import { scraperService, type ScraperProgress } from '../services/scraper.service';
+import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { App as CapacitorApp } from '@capacitor/app';
 import { FooterNavigation } from '../components/FooterNavigation';
 import { Header } from '../components/Header';
@@ -18,9 +19,17 @@ export const Discover = () => {
     const [showSyncModal, setShowSyncModal] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [mode, setMode] = useState<'novels' | 'manhwa'>('novels');
+    const [manhwaData, setManhwaData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
+    const [isLoadingManhwa, setIsLoadingManhwa] = useState(false);
 
     useEffect(() => {
         loadHomeData();
+
+        // Initial load of manhwa in background if not loaded
+        if (!manhwaData) {
+            loadManhwaData();
+        }
 
         const unsub = scraperService.subscribe((progress, isGlobalScraping) => {
             setScrapingProgress(progress);
@@ -42,13 +51,31 @@ export const Discover = () => {
         };
     }, []);
 
+    const loadManhwaData = async () => {
+        setIsLoadingManhwa(true);
+        try {
+            const data = await manhwaScraperService.getDiscoveryData();
+            if (data && (data.trending.length > 0 || data.popular.length > 0 || data.latest.length > 0)) {
+                setManhwaData(data);
+                // Also cache in localStorage
+                localStorage.setItem('manhwaDiscoveryData', JSON.stringify(data));
+            }
+        } catch (e) {
+            console.error("Failed to load manhwa discovery data", e);
+        } finally {
+            setIsLoadingManhwa(false);
+        }
+    };
+
     const loadHomeData = async () => {
         const stored = localStorage.getItem('homeData');
         if (stored) {
             setHomeData(JSON.parse(stored));
-        } else {
-            // Auto sync if no data
-            // syncHomeData(); // Optional: don't auto sync to save bandwidth/proxy limits on dev
+        }
+
+        const storedManhwa = localStorage.getItem('manhwaDiscoveryData');
+        if (storedManhwa) {
+            setManhwaData(JSON.parse(storedManhwa));
         }
     };
 
@@ -82,18 +109,27 @@ export const Discover = () => {
             if (searchQuery.startsWith('http')) {
                 await performQuickScrape(searchQuery);
             } else {
-                alert(`Searching for: ${searchQuery}`);
+                if (mode === 'manhwa') {
+                    navigate('/import', { state: { initialQuery: searchQuery } });
+                } else {
+                    alert(`Searching for: ${searchQuery}`);
+                }
             }
         }
     };
 
     const performQuickScrape = async (url: string) => {
+        const isManhwa = mode === 'manhwa' || url.includes('asura') || url.includes('mangadex');
+
+        if (isManhwa) {
+            navigate('/import', { state: { initialUrl: url } });
+            return;
+        }
+
         if (confirm("Start quick scrape for this novel?")) {
-            // We don't have a local isScraping state anymore, rely on global
             try {
                 const novel = await scraperService.fetchNovel(url);
                 scraperService.startImport(url, novel);
-                // The subscription will handle the rest
             } catch (e) {
                 console.error(e);
                 alert("Quick scrape failed");
@@ -153,7 +189,7 @@ export const Discover = () => {
                         }
                     />
 
-                    <div className="px-4 py-3">
+                    <div className="px-4 py-3 pb-1">
                         <label className="flex flex-col min-w-40 h-11 w-full">
                             <div className="flex w-full flex-1 items-stretch rounded-xl h-full bg-slate-200/50 dark:bg-[#2b2839]">
                                 <div className="text-slate-500 dark:text-[#a19db9] flex items-center justify-center pl-4">
@@ -161,7 +197,7 @@ export const Discover = () => {
                                 </div>
                                 <input
                                     className="flex w-full min-w-0 flex-1 border-none bg-transparent focus:outline-0 focus:ring-0 text-base font-normal placeholder:text-slate-500 dark:placeholder:text-[#a19db9] px-3"
-                                    placeholder="Search titles or paste URL..."
+                                    placeholder={mode === 'manhwa' ? "Search Asura/MangaDex..." : "Search titles or paste URL..."}
                                     value={searchQuery}
                                     id="search-input"
                                     name="search-query"
@@ -176,6 +212,25 @@ export const Discover = () => {
                                 )}
                             </div>
                         </label>
+                    </div>
+
+                    {/* Tab Switcher */}
+                    <div className="px-4 py-2 flex gap-4">
+                        <button
+                            onClick={() => setMode('novels')}
+                            className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all ${mode === 'novels' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-slate-200/50 dark:bg-[#2b2839] text-slate-500 dark:text-[#a19db9]'}`}
+                        >
+                            Novels
+                        </button>
+                        <button
+                            onClick={() => {
+                                setMode('manhwa');
+                                if (!manhwaData) loadManhwaData();
+                            }}
+                            className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all ${mode === 'manhwa' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-slate-200/50 dark:bg-[#2b2839] text-slate-500 dark:text-[#a19db9]'}`}
+                        >
+                            Manhwa
+                        </button>
                     </div>
 
                     {/* Global Scraping Progress Bar */}
@@ -212,118 +267,259 @@ export const Discover = () => {
 
                 {/* Content */}
                 <div className="flex flex-col gap-6">
-                    {/* Recommended - if empty show nothing or skeleton */}
-                    {!homeData && (
-                        <div className="flex flex-col items-center justify-center py-10 opacity-50">
-                            <RefreshCcw className="animate-spin mb-2" size={24} />
-                            <p className="text-sm font-medium">Fetching dynamic content...</p>
-                        </div>
-                    )}
+                    {mode === 'novels' ? (
+                        <>
+                            {/* Recommended - if empty show nothing or skeleton */}
+                            {!homeData && (
+                                <div className="flex flex-col items-center justify-center py-10 opacity-50">
+                                    <RefreshCcw className="animate-spin mb-2" size={24} />
+                                    <p className="text-sm font-medium">Fetching dynamic content...</p>
+                                </div>
+                            )}
 
-                    {/* Recommends (from synced pools) */}
-                    {homeData?.recommended?.length > 0 && (
-                        <div className="flex flex-col gap-3">
-                            <div className="flex items-center justify-between px-4">
-                                <h3 className="text-lg font-bold tracking-tight">Recommends</h3>
-                                <button onClick={() => navigate('/discover/recommended')} className="text-primary text-sm font-medium">See all</button>
-                            </div>
-                            <div className="carousel-container flex overflow-x-auto gap-4 px-4 hide-scrollbar snap-x snap-mandatory">
-                                {homeData.recommended.slice(0, 10).map((novel: any, idx: number) => (
-                                    <div
-                                        key={idx}
-                                        className="carousel-item flex-none w-[85%] aspect-[16/9] relative rounded-2xl overflow-hidden shadow-xl snap-center shrink-0 cursor-pointer active:scale-[0.98] transition-transform"
-                                        onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}
-                                    >
-                                        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url('${novel.coverUrl}')` }}></div>
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
-                                        <div className="absolute bottom-4 left-4 right-4">
-                                            <span className="bg-primary/90 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider mb-2 inline-block">Recommended</span>
-                                            <h4 className="text-white text-xl font-bold leading-tight line-clamp-1">{novel.title}</h4>
-                                            <p className="text-white/70 text-sm line-clamp-1">{novel.author || 'Best of NovelFire'}</p>
-                                        </div>
+                            {/* Recommends (from synced pools) */}
+                            {homeData?.recommended?.length > 0 && (
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-center justify-between px-4">
+                                        <h3 className="text-lg font-bold tracking-tight">Recommends</h3>
+                                        <button onClick={() => navigate('/discover/recommended')} className="text-primary text-sm font-medium">See all</button>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Ranking List */}
-                    {homeData?.ranking?.length > 0 && (
-                        <div className="flex flex-col gap-3">
-                            <div className="flex items-center justify-between px-4">
-                                <h3 className="text-lg font-bold tracking-tight">Top Ranking</h3>
-                                <button onClick={() => navigate('/discover/ranking')} className="text-primary text-sm font-medium">View More</button>
-                            </div>
-                            <div className="flex overflow-x-auto gap-4 px-4 hide-scrollbar">
-                                {homeData.ranking.slice(0, 10).map((novel: any, idx: number) => (
-                                    <div
-                                        key={idx}
-                                        className="flex-none w-32 flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform"
-                                        onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}
-                                    >
-                                        <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg border border-slate-100 dark:border-white/5">
-                                            {novel.coverUrl ? (
-                                                <img src={novel.coverUrl} className="absolute inset-0 w-full h-full object-cover" alt={novel.title} />
-                                            ) : (
-                                                <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
-                                                    <BookOpen className="text-4xl text-slate-400" />
+                                    <div className="carousel-container flex overflow-x-auto gap-4 px-4 hide-scrollbar snap-x snap-mandatory">
+                                        {homeData.recommended.slice(0, 10).map((novel: any, idx: number) => (
+                                            <div
+                                                key={idx}
+                                                className="carousel-item flex-none w-[85%] aspect-[16/9] relative rounded-2xl overflow-hidden shadow-xl snap-center shrink-0 cursor-pointer active:scale-[0.98] transition-transform"
+                                                onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}
+                                            >
+                                                <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url('${novel.coverUrl}')` }}></div>
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
+                                                <div className="absolute bottom-4 left-4 right-4">
+                                                    <span className="bg-primary/90 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider mb-2 inline-block">Recommended</span>
+                                                    <h4 className="text-white text-xl font-bold leading-tight line-clamp-1">{novel.title}</h4>
+                                                    <p className="text-white/70 text-sm line-clamp-1">{novel.author || 'Best of NovelFire'}</p>
                                                 </div>
-                                            )}
-                                            <div className="absolute top-1.5 left-1.5 bg-black/60 backdrop-blur-sm text-white min-w-[24px] px-1.5 h-6 flex items-center justify-center rounded-lg font-bold text-[10px] shadow-sm">
-                                                #{idx + 1}
                                             </div>
-                                        </div>
-                                        <div className="flex flex-col px-0.5">
-                                            <p className="font-bold text-[13px] line-clamp-2 text-slate-900 dark:text-white leading-tight">{novel.title}</p>
-                                        </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                                </div>
+                            )}
 
-                    {/* Latest Updates */}
-                    {homeData?.latest?.length > 0 && (
-                        <div className="flex flex-col gap-3">
-                            <div className="flex items-center justify-between px-4">
-                                <h3 className="text-lg font-bold tracking-tight">Latest Updates</h3>
-                                <button onClick={() => navigate('/discover/latest')} className="text-primary text-sm font-medium">See all</button>
-                            </div>
-                            <div className="flex flex-col px-4 gap-3">
-                                {homeData.latest.slice(0, 10).map((novel: any, idx: number) => (
-                                    <div
-                                        key={idx}
-                                        className="flex items-center gap-4 bg-white dark:bg-[#121118] p-3 rounded-[20px] border border-slate-200 dark:border-white/5 active:scale-[0.98] transition-all cursor-pointer shadow-sm shadow-slate-200/50 dark:shadow-none"
-                                        onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}
-                                    >
-                                        <div className="size-16 rounded-xl overflow-hidden shrink-0 border border-slate-100 dark:border-white/10 shadow-sm">
-                                            {novel.coverUrl ? (
-                                                <img src={novel.coverUrl} className="w-full h-full object-cover" alt={novel.title} />
-                                            ) : (
-                                                <div className="w-full h-full bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center text-slate-400">
-                                                    <BookOpen size={24} />
+                            {/* Ranking List */}
+                            {homeData?.ranking?.length > 0 && (
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-center justify-between px-4">
+                                        <h3 className="text-lg font-bold tracking-tight">Top Ranking</h3>
+                                        <button onClick={() => navigate('/discover/ranking')} className="text-primary text-sm font-medium">View More</button>
+                                    </div>
+                                    <div className="flex overflow-x-auto gap-4 px-4 hide-scrollbar">
+                                        {homeData.ranking.slice(0, 10).map((novel: any, idx: number) => (
+                                            <div
+                                                key={idx}
+                                                className="flex-none w-32 flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform"
+                                                onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}
+                                            >
+                                                <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg border border-slate-100 dark:border-white/5">
+                                                    {novel.coverUrl ? (
+                                                        <img src={novel.coverUrl} className="absolute inset-0 w-full h-full object-cover" alt={novel.title} />
+                                                    ) : (
+                                                        <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
+                                                            <BookOpen className="text-4xl text-slate-400" />
+                                                        </div>
+                                                    )}
+                                                    <div className="absolute top-1.5 left-1.5 bg-black/60 backdrop-blur-sm text-white min-w-[24px] px-1.5 h-6 flex items-center justify-center rounded-lg font-bold text-[10px] shadow-sm">
+                                                        #{idx + 1}
+                                                    </div>
                                                 </div>
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <h4 className="font-bold text-[15px] truncate text-slate-900 dark:text-white mb-1">{novel.title}</h4>
-                                            <p className="text-[11px] text-slate-500 dark:text-[#a19db9] line-clamp-2 font-medium leading-normal">
-                                                {novel.summary || novel.author || 'Recently updated release.'}
-                                            </p>
-                                        </div>
-                                        <div className="pr-1">
-                                            <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center">
-                                                <Bolt size={18} className="text-primary" />
+                                                <div className="flex flex-col px-0.5">
+                                                    <p className="font-bold text-[13px] line-clamp-2 text-slate-900 dark:text-white leading-tight">{novel.title}</p>
+                                                </div>
                                             </div>
-                                        </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
-                        </div>
+                                </div>
+                            )}
+
+                            {/* Latest Updates */}
+                            {homeData?.latest?.length > 0 && (
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-center justify-between px-4">
+                                        <h3 className="text-lg font-bold tracking-tight">Latest Updates</h3>
+                                        <button onClick={() => navigate('/discover/latest')} className="text-primary text-sm font-medium">See all</button>
+                                    </div>
+                                    <div className="flex flex-col px-4 gap-3">
+                                        {homeData.latest.slice(0, 10).map((novel: any, idx: number) => (
+                                            <div
+                                                key={idx}
+                                                className="flex items-center gap-4 bg-white dark:bg-[#121118] p-3 rounded-[20px] border border-slate-200 dark:border-white/5 active:scale-[0.98] transition-all cursor-pointer shadow-sm shadow-slate-200/50 dark:shadow-none"
+                                                onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}
+                                            >
+                                                <div className="size-16 rounded-xl overflow-hidden shrink-0 border border-slate-100 dark:border-white/10 shadow-sm">
+                                                    {novel.coverUrl ? (
+                                                        <img src={novel.coverUrl} className="w-full h-full object-cover" alt={novel.title} />
+                                                    ) : (
+                                                        <div className="w-full h-full bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center text-slate-400">
+                                                            <BookOpen size={24} />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="font-bold text-[15px] truncate text-slate-900 dark:text-white mb-1">{novel.title}</h4>
+                                                    <p className="text-[11px] text-slate-500 dark:text-[#a19db9] line-clamp-2 font-medium leading-normal">
+                                                        {novel.summary || novel.author || 'Recently updated release.'}
+                                                    </p>
+                                                </div>
+                                                <div className="pr-1">
+                                                    <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center">
+                                                        <Bolt size={18} className="text-primary" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            {/* MANHWA DISCOVERY VIEW */}
+                            {isLoadingManhwa && !manhwaData && (
+                                <div className="flex flex-col items-center justify-center py-10 opacity-50">
+                                    <RefreshCcw className="animate-spin mb-2" size={24} />
+                                    <p className="text-sm font-medium">Fetching Asura Scans content...</p>
+                                </div>
+                            )}
+
+                            {!isLoadingManhwa && (!manhwaData || (manhwaData.trending?.length === 0 && manhwaData.popular?.length === 0)) && (
+                                <div className="px-6 py-10 text-center">
+                                    <RefreshCcw className="mx-auto mb-4 text-primary opacity-50" size={32} />
+                                    <p className="text-slate-500 dark:text-[#a19db9] mb-4">No discovery data available for Asura Scans right now.</p>
+                                    <button
+                                        onClick={loadManhwaData}
+                                        className="bg-primary text-white px-6 py-2 rounded-xl font-bold"
+                                    >
+                                        Try Refresh
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Manhwa Trending */}
+                            {manhwaData?.trending && manhwaData.trending.length > 0 && (
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-center justify-between px-4">
+                                        <h3 className="text-lg font-bold tracking-tight">Trending Manhwa</h3>
+                                        <button
+                                            onClick={() => navigate('/discover/trending?mode=manhwa')}
+                                            className="text-primary text-sm font-medium"
+                                        >
+                                            See all
+                                        </button>
+                                    </div>
+                                    <div className="carousel-container flex overflow-x-auto gap-4 px-4 hide-scrollbar snap-x snap-mandatory">
+                                        {manhwaData.trending.map((manga: any, idx: number) => (
+                                            <div
+                                                key={idx}
+                                                className="carousel-item flex-none w-[85%] aspect-[16/9] relative rounded-2xl overflow-hidden shadow-xl snap-center shrink-0 cursor-pointer active:scale-[0.98] transition-transform"
+                                                onClick={() => navigate('/import', { state: { initialUrl: manga.sourceUrl } })}
+                                            >
+                                                <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url('${manga.coverUrl}')` }}></div>
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
+                                                <div className="absolute bottom-4 left-4 right-4 text-left">
+                                                    <span className="bg-primary/90 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider mb-2 inline-block">TRENDING</span>
+                                                    <h4 className="text-white text-xl font-bold leading-tight line-clamp-1">{manga.title}</h4>
+                                                    <p className="text-white/70 text-sm line-clamp-1">{manga.status || 'Ongoing'}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Popular Today */}
+                            {manhwaData?.popular && manhwaData.popular.length > 0 && (
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-center justify-between px-4">
+                                        <h3 className="text-lg font-bold tracking-tight">Popular Today</h3>
+                                        <button
+                                            onClick={() => navigate('/discover/popular?mode=manhwa')}
+                                            className="text-primary text-sm font-medium"
+                                        >
+                                            See all
+                                        </button>
+                                    </div>
+                                    <div className="flex overflow-x-auto gap-4 px-4 hide-scrollbar">
+                                        {manhwaData.popular.map((manga: any, idx: number) => (
+                                            <div
+                                                key={idx}
+                                                className="flex-none w-32 flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform"
+                                                onClick={() => navigate('/import', { state: { initialUrl: manga.sourceUrl } })}
+                                            >
+                                                <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg border border-slate-100 dark:border-white/5">
+                                                    {manga.coverUrl ? (
+                                                        <img src={manga.coverUrl} className="absolute inset-0 w-full h-full object-cover" alt={manga.title} />
+                                                    ) : (
+                                                        <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
+                                                            <BookOpen className="text-4xl text-slate-400" />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-col px-0.5 text-left">
+                                                    <p className="font-bold text-[13px] line-clamp-2 text-slate-900 dark:text-white leading-tight">{manga.title}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Latest Updates (Manhwa) */}
+                            {manhwaData?.latest && manhwaData.latest.length > 0 && (
+                                <div className="flex flex-col gap-3 pb-4">
+                                    <div className="flex items-center justify-between px-4">
+                                        <h3 className="text-lg font-bold tracking-tight">Latest Updates</h3>
+                                        <button
+                                            onClick={() => navigate('/discover/latest?mode=manhwa')}
+                                            className="text-primary text-sm font-medium"
+                                        >
+                                            See all
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-col px-4 gap-3">
+                                        {manhwaData.latest.map((manga: any, idx: number) => (
+                                            <div
+                                                key={idx}
+                                                className="flex items-center gap-4 bg-white dark:bg-[#121118] p-3 rounded-[20px] border border-slate-200 dark:border-white/5 active:scale-[0.98] transition-all cursor-pointer shadow-sm shadow-slate-200/50 dark:shadow-none"
+                                                onClick={() => navigate('/import', { state: { initialUrl: manga.sourceUrl } })}
+                                            >
+                                                <div className="size-16 rounded-xl overflow-hidden shrink-0 border border-slate-100 dark:border-white/10 shadow-sm">
+                                                    {manga.coverUrl ? (
+                                                        <img src={manga.coverUrl} className="w-full h-full object-cover" alt={manga.title} />
+                                                    ) : (
+                                                        <div className="w-full h-full bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center text-slate-400">
+                                                            <BookOpen size={24} />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0 text-left">
+                                                    <h4 className="font-bold text-[15px] truncate text-slate-900 dark:text-white mb-1">{manga.title}</h4>
+                                                    <p className="text-[11px] text-slate-500 dark:text-[#a19db9] line-clamp-1 font-medium leading-normal">
+                                                        {manga.sourceUrl.split('/').pop()}
+                                                    </p>
+                                                </div>
+                                                <div className="pr-1">
+                                                    <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center">
+                                                        <Bolt size={18} className="text-primary" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
 
-                    {/* Recently Added (from AJAX or Fallback) */}
-                    {homeData?.recentlyAdded?.length > 0 && (
+                    {/* Recently Added (from AJAX or Fallback) - Novel Only */}
+                    {mode === 'novels' && homeData?.recentlyAdded?.length > 0 && (
                         <div className="flex flex-col gap-3">
                             <div className="flex items-center justify-between px-4">
                                 <h3 className="text-lg font-bold tracking-tight">Recently Added</h3>
@@ -355,8 +551,8 @@ export const Discover = () => {
                         </div>
                     )}
 
-                    {/* Completed Stories */}
-                    {homeData?.completed?.length > 0 && (
+                    {/* Completed Stories - Novel Only */}
+                    {mode === 'novels' && homeData?.completed?.length > 0 && (
                         <div className="flex flex-col gap-4">
                             <div className="flex items-center justify-between px-4">
                                 <h3 className="text-lg font-bold tracking-tight">Completed Stories</h3>
