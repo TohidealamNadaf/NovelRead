@@ -30,24 +30,29 @@ export class AsuraScraperService {
             // Title detection: 
             // 1. Specific spans used in grid (font-bold or text-white for mobile)
             // 2. Headings (h3)
-            // 3. Fallback to anchor text itself
+            // 3. Fallback to anchor text itself (cleaned)
             let title = a.find('span.font-bold').text().trim() ||
                 a.find('span.text-white').text().trim() ||
                 a.find('h3').text().trim() ||
                 a.find('div.font-bold').first().text().trim();
 
             if (!title) {
+                // Remove common UI elements and get pure text
                 const tempA = a.clone();
-                tempA.find('span.status, .status, .type, .px-1').remove();
-                title = tempA.text().trim().split('\n')[0].trim();
+                tempA.find('span.status, .status, .type, .px-1, .absolute, .hidden').remove();
+                title = tempA.text().trim();
+                if (title.includes('\n')) title = title.split('\n')[0].trim();
             }
 
-            // Cleanup title (remove extra spaces/newlines)
-            title = title.replace(/\s+/g, ' ').trim();
+            // Final fallback to anchor text if still empty
+            if (!title) title = a.text().trim();
 
-            // Flexible image extraction
+            // Cleanup title (remove extra spaces/newlines)
+            title = title.replace(/\s+/g, ' ').replace('Chapter', '').trim();
+
+            // Image detection: check multiple sources for lazy loading
             const img = a.find('img');
-            const coverUrl = img.attr('src') || img.attr('data-src') || img.attr('data-lazy-src') || '';
+            const coverUrl = img.attr('src') || img.attr('data-src') || img.attr('data-lazy-src') || img.attr('srcset')?.split(' ')[0] || '';
 
             const status = a.find('span.status, .status').text().trim() || 'Ongoing';
 
@@ -207,9 +212,20 @@ export class AsuraScraperService {
 
                 return html;
             } else {
-                const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                // Web: try local proxy first, then fallback to corsproxy.io
+                try {
+                    const localProxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+                    const response = await fetch(localProxyUrl);
+                    if (response.ok) return await response.text();
+                    console.warn(`Local proxy failed (${response.status}) for Asura, trying fallback...`);
+                } catch (e) {
+                    console.warn('Local proxy error, trying fallback...');
+                }
+
+                // Fallback to external CORS proxy
+                const fallbackUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+                const response = await fetch(fallbackUrl);
+                if (!response.ok) throw new Error(`HTTP ${response.status} via fallback`);
                 return await response.text();
             }
         } catch (error) {

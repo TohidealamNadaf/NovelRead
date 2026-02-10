@@ -152,16 +152,23 @@ export class MangaDexService {
         let finalUrl = url;
 
         if (!isNative) {
-            // Web: Use Vite dev proxy or CORS proxy
-            finalUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+            // Web: MangaDex API supports CORS, so we can fetch directly.
+            // Using the proxy sometimes triggers 403 errors depending on the referer/origin headers.
+            finalUrl = url;
+        }
+
+        const headers: any = {
+            'Accept': 'application/json'
+        };
+
+        // User-Agent is a forbidden header in browsers (web)
+        if (isNative) {
+            headers['User-Agent'] = 'NovelReadingApp/1.0';
         }
 
         try {
             const response = await fetch(finalUrl, {
-                headers: {
-                    'User-Agent': 'NovelReadingApp/1.0',
-                    'Accept': 'application/json'
-                }
+                headers: headers
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             return await response.json();
