@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import type { NovelMetadata } from '../scraper.service';
 
 const BASE_URL = 'https://api.mangadex.org';
@@ -147,8 +148,16 @@ export class MangaDexService {
     }
 
     private async fetchJson(url: string): Promise<any> {
+        const isNative = Capacitor.isNativePlatform();
+        let finalUrl = url;
+
+        if (!isNative) {
+            // Web: Use Vite dev proxy or CORS proxy
+            finalUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+        }
+
         try {
-            const response = await fetch(url, {
+            const response = await fetch(finalUrl, {
                 headers: {
                     'User-Agent': 'NovelReadingApp/1.0',
                     'Accept': 'application/json'
@@ -157,7 +166,7 @@ export class MangaDexService {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             return await response.json();
         } catch (error) {
-            console.warn('Fetch failed', error);
+            console.warn('MangaDex Fetch failed', error);
             throw error;
         }
     }

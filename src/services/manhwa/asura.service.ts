@@ -159,7 +159,7 @@ export class AsuraScraperService {
                 const response = await CapacitorHttp.get(options);
                 return response.data;
             } else {
-                const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+                const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
                 const response = await fetch(proxyUrl);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 return await response.text();

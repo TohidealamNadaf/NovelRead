@@ -382,7 +382,7 @@ export class ManhwaScraperService {
 
     async fetchNovel(url: string): Promise<NovelMetadata> {
         // ASURA SCANS
-        if (url.includes('asuratoon.com')) {
+        if (url.includes('asuracomic.net') || url.includes('asuratoon.com')) {
             const data = await asuraScraperService.fetchMangaDetails(url);
             if (data) return data;
         }
@@ -594,10 +594,20 @@ export class ManhwaScraperService {
     // --- Lazy Loading Images ---
     async fetchChapterImages(url: string): Promise<string> {
         // ASURA SCANS
-        if (url.includes('asuratoon.com')) {
+        if (url.includes('asuracomic.net') || url.includes('asuratoon.com')) {
             const images = await asuraScraperService.fetchChapterImages(url);
             if (images.length === 0) return '<p>No images found.</p>';
             return images.map(src => `<img src="${src}" class="w-full object-contain" loading="lazy" />`).join('');
+        }
+
+        // MANGADEX
+        if (url.includes('mangadex.org')) {
+            const id = url.split('/chapter/')[1]?.split('/')[0];
+            if (id) {
+                const images = await mangaDexService.fetchChapterImages(id);
+                if (images.length === 0) return '<p>No images found in this chapter.</p>';
+                return images.map(src => `<img src="${src}" class="w-full object-contain" loading="lazy" />`).join('');
+            }
         }
 
         // Comick.art: URL is actually a HID (short hash), not a real URL
