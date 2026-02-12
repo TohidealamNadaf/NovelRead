@@ -56,6 +56,7 @@ function App() {
         <Route path="/import" element={<Import />} />
         <Route path="/novel/:novelId" element={<ChapterList />} />
         <Route path="/read/:novelId/:chapterId" element={<Reader />} />
+        <Route path="/read/live/*" element={<Reader />} />
 
         {/* Manhwa Routes */}
         <Route path="/manhwa/:novelId" element={<ManhwaSeries />} />

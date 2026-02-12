@@ -425,7 +425,7 @@ export class AsuraScraperService {
             summary = $('span.font-medium.text-sm').first().text().trim();
         }
 
-        const chapters: { title: string; url: string }[] = [];
+        const chapters: { title: string; url: string; date?: string }[] = [];
 
         // Chapter list container
         // Selector: div.overflow-y-auto a

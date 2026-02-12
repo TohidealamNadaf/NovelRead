@@ -1,8 +1,8 @@
 ﻿import { useState, useEffect, useRef, useCallback } from 'react';
-import { MoreHorizontal, Play, Pause, FastForward, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List } from 'lucide-react';
+import { MoreHorizontal, Play, Pause, FastForward, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { dbService, type Novel, type Chapter } from '../services/db.service';
 import { audioService } from '../services/audio.service';
 import type { TTSSegment } from '../services/ttsEngine';
@@ -17,6 +17,7 @@ import { ChapterSidebar } from '../components/ChapterSidebar';
 
 export const Reader = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { novelId, chapterId } = useParams();
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const [chapter, setChapter] = useState<Chapter | null>(null);
@@ -24,6 +25,14 @@ export const Reader = () => {
     const [prevChapter, setPrevChapter] = useState<Chapter | null>(null);
     const [novel, setNovel] = useState<Novel | null>(null);
     const [loading, setLoading] = useState(true);
+
+    // Live browsing mode
+    const isLiveMode = !!location.state?.liveMode;
+    const liveChapters = (location.state?.chapters || []) as { title: string; url: string }[];
+    const liveCurrentIndex = (location.state?.currentIndex ?? 0) as number;
+    const [liveError, setLiveError] = useState('');
+    const [isSavingOffline, setIsSavingOffline] = useState(false);
+    const [isChapterSaved, setIsChapterSaved] = useState(false);
 
     // Visual indicators state (Decoupled from core gesture logic)
     const [pullDistance, setPullDistance] = useState(0);
@@ -57,7 +66,10 @@ export const Reader = () => {
     const fontSize = settings.fontSize;
 
     useEffect(() => {
-        if (novelId && chapterId) {
+        if (isLiveMode) {
+            setIsChapterSaved(false);
+            loadLiveData();
+        } else if (novelId && chapterId) {
             loadData(novelId, chapterId);
         }
 
@@ -77,7 +89,7 @@ export const Reader = () => {
             audioUnsub();
             settingsUnsub();
         };
-    }, [novelId, chapterId]);
+    }, [novelId, chapterId, location.state]);
 
     // TTS text highlighting effect - highlights current segment by wrapping it
     useEffect(() => {
@@ -174,29 +186,175 @@ export const Reader = () => {
             console.error("Failed to load data", error);
         } finally {
             setLoading(false);
-            // NOTE: Automatic scroll-to-top removed here.
-            // Scroll restoration is now handled by useChapterPullNavigation hook
-            // to support multi-directional (top/bottom) positioning.
+        }
+    };
+
+    // Live mode: fetch chapter content from web
+    const loadLiveData = async () => {
+        setLoading(true);
+        setLiveError('');
+        const chapterUrl = location.state?.chapterUrl || '';
+        const chapterTitle = location.state?.chapterTitle || 'Chapter';
+        const novelTitle = location.state?.novelTitle || 'Novel';
+        const novelCoverUrl = location.state?.novelCoverUrl || '';
+
+        try {
+            // Fetch live content
+            const content = await scraperService.fetchChapterContent(chapterUrl);
+
+            // Create mock chapter object for rendering
+            setChapter({
+                id: chapterUrl,
+                novelId: 'live',
+                title: chapterTitle,
+                content: content || '',
+                orderIndex: liveCurrentIndex,
+                audioPath: chapterUrl,
+            } as Chapter);
+
+            // Set novel info
+            setNovel({
+                id: 'live',
+                title: novelTitle,
+                author: '',
+                coverUrl: novelCoverUrl,
+                sourceUrl: '',
+                summary: '',
+                status: 'Ongoing',
+            } as Novel);
+
+            // Set next/prev from live chapters list
+            if (liveCurrentIndex < liveChapters.length - 1) {
+                const next = liveChapters[liveCurrentIndex + 1];
+                setNextChapter({
+                    id: next.url,
+                    novelId: 'live',
+                    title: next.title,
+                    orderIndex: liveCurrentIndex + 1,
+                } as Chapter);
+            } else {
+                setNextChapter(null);
+            }
+
+            if (liveCurrentIndex > 0) {
+                const prev = liveChapters[liveCurrentIndex - 1];
+                setPrevChapter({
+                    id: prev.url,
+                    novelId: 'live',
+                    title: prev.title,
+                    orderIndex: liveCurrentIndex - 1,
+                } as Chapter);
+            } else {
+                setPrevChapter(null);
+            }
+
+            // Build sidebar chapters list
+            setAllChapters(liveChapters.map((ch, idx) => ({
+                id: ch.url,
+                novelId: 'live',
+                title: ch.title,
+                orderIndex: idx,
+            } as Chapter)));
+
+        } catch (error) {
+            console.error('Failed to load live chapter:', error);
+            setLiveError('Failed to fetch chapter content. Please try again.');
+        } finally {
+            setLoading(false);
         }
     };
 
     const handleNextChapter = useCallback(() => {
-        if (nextChapter) {
+        if (isLiveMode && liveCurrentIndex < liveChapters.length - 1) {
+            const next = liveChapters[liveCurrentIndex + 1];
+            setNavigationDirection('next');
+            navigate(`/read/live/${encodeURIComponent(next.url)}`, {
+                state: {
+                    liveMode: true,
+                    chapterUrl: next.url,
+                    chapterTitle: next.title,
+                    novelTitle: location.state?.novelTitle,
+                    novelCoverUrl: location.state?.novelCoverUrl,
+                    chapters: liveChapters,
+                    currentIndex: liveCurrentIndex + 1,
+                },
+                replace: true
+            });
+            setShowSettings(false);
+        } else if (nextChapter) {
             setNavigationDirection('next');
             navigate(`/read/${novelId}/${nextChapter.id}`);
             setShowSettings(false);
         } else {
             setShowComingSoon(true);
         }
-    }, [nextChapter, novelId, navigate]);
+    }, [nextChapter, novelId, navigate, isLiveMode, liveCurrentIndex, liveChapters, location.state]);
 
     const handlePrevChapter = useCallback(() => {
-        if (prevChapter) {
+        if (isLiveMode && liveCurrentIndex > 0) {
+            const prev = liveChapters[liveCurrentIndex - 1];
+            setNavigationDirection('prev');
+            navigate(`/read/live/${encodeURIComponent(prev.url)}`, {
+                state: {
+                    liveMode: true,
+                    chapterUrl: prev.url,
+                    chapterTitle: prev.title,
+                    novelTitle: location.state?.novelTitle,
+                    novelCoverUrl: location.state?.novelCoverUrl,
+                    chapters: liveChapters,
+                    currentIndex: liveCurrentIndex - 1,
+                },
+                replace: true
+            });
+            setShowSettings(false);
+        } else if (prevChapter) {
             setNavigationDirection('prev');
             navigate(`/read/${novelId}/${prevChapter.id}`);
             setShowSettings(false);
         }
-    }, [prevChapter, novelId, navigate]);
+    }, [prevChapter, novelId, navigate, isLiveMode, liveCurrentIndex, liveChapters, location.state]);
+
+    // Save current live chapter to DB for offline reading
+    const handleSaveOffline = async () => {
+        if (!isLiveMode || !chapter || isSavingOffline || isChapterSaved) return;
+        setIsSavingOffline(true);
+        try {
+            const novelSourceUrl = novel?.sourceUrl || location.state?.novel?.sourceUrl || '';
+            // Generate stable ID from URL
+            const path = novelSourceUrl.replace(/https?:\/\/[^\/]+/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+            const novelDbId = `live-${path}`.slice(0, 80);
+
+            await dbService.initialize();
+            // Ensure novel exists in DB
+            await dbService.addNovel({
+                id: novelDbId,
+                title: location.state?.novelTitle || novel?.title || 'Unknown Novel',
+                author: '',
+                coverUrl: location.state?.novelCoverUrl || novel?.coverUrl || '',
+                sourceUrl: novelSourceUrl,
+                summary: '',
+                status: 'Ongoing',
+                source: 'NovelFire',
+                category: 'Novel',
+            } as any);
+
+            // Save current chapter
+            const chapterUrl = location.state?.chapterUrl || '';
+            await dbService.addChapter({
+                id: `${novelDbId}-ch-${liveCurrentIndex}`,
+                novelId: novelDbId,
+                title: chapter.title,
+                content: chapter.content || '',
+                orderIndex: liveCurrentIndex,
+                audioPath: chapterUrl,
+            });
+            setIsChapterSaved(true);
+        } catch (error) {
+            console.error('Failed to save chapter offline:', error);
+        } finally {
+            setIsSavingOffline(false);
+        }
+    };
 
     // STABLE GESTURE NAVIGATION SYSTEM (FSM + Async Locking)
     const { onTouchStart, onTouchMove, onTouchEnd } = useChapterPullNavigation({
@@ -224,7 +382,11 @@ export const Reader = () => {
     });
 
     const handleBackToIndex = () => {
-        navigate(`/novel/${novelId}`);
+        if (isLiveMode) {
+            navigate(-1);
+        } else {
+            navigate(`/novel/${novelId}`);
+        }
     };
 
     // Resync chapter content handler
@@ -362,6 +524,15 @@ export const Reader = () => {
     }
 
     if (!chapter) {
+        if (isLiveMode && liveError) {
+            return (
+                <div className="flex h-screen w-full items-center justify-center bg-background-light dark:bg-background-dark flex-col gap-4">
+                    <p className="text-sm text-red-500 dark:text-red-400 text-center px-8">{liveError}</p>
+                    <button onClick={() => loadLiveData()} className="text-primary font-bold">Retry</button>
+                    <button onClick={() => navigate(-1)} className="text-slate-400 font-medium text-sm">Go Back</button>
+                </div>
+            );
+        }
         return (
             <div className="flex h-screen w-full items-center justify-center bg-background-light dark:bg-background-dark flex-col gap-4">
                 <p className="text-xl font-bold opacity-50">Chapter not found</p>
@@ -377,7 +548,7 @@ export const Reader = () => {
             {/* Top App Bar using Global Header */}
             <Header
                 title={chapter.title}
-                subtitle={`Chapter ${chapter.orderIndex + 1}`}
+                subtitle={isLiveMode ? `Chapter ${liveCurrentIndex + 1}` : `Chapter ${chapter.orderIndex + 1}`}
                 showBack={true}
                 onBack={handleBackToIndex}
                 transparent
@@ -593,27 +764,54 @@ export const Reader = () => {
                                         <List size={20} />
                                         <span className="text-[10px]">Contents</span>
                                     </button>
-                                    <button
-                                        onClick={handleShowSummary}
-                                        className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800 transition-colors active:scale-95"
-                                    >
-                                        <Sparkles size={20} />
-                                        <span className="text-[10px]">Summary</span>
-                                    </button>
-                                    <button
-                                        onClick={handleResyncChapter}
-                                        disabled={isResyncing || !chapter?.audioPath}
-                                        className={clsx(
-                                            "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-bold transition-colors active:scale-95",
-                                            isResyncing
-                                                ? "bg-primary/20 text-primary border border-primary/50"
-                                                : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200",
-                                            !chapter?.audioPath && "opacity-30"
-                                        )}
-                                    >
-                                        <RefreshCw size={20} className={isResyncing ? "animate-spin" : ""} />
-                                        <span className="text-[10px]">{isResyncing ? 'Syncing...' : 'Resync'}</span>
-                                    </button>
+                                    {!isLiveMode && (
+                                        <button
+                                            onClick={handleShowSummary}
+                                            className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800 transition-colors active:scale-95"
+                                        >
+                                            <Sparkles size={20} />
+                                            <span className="text-[10px]">Summary</span>
+                                        </button>
+                                    )}
+                                    {!isLiveMode && (
+                                        <button
+                                            onClick={handleResyncChapter}
+                                            disabled={isResyncing || !chapter?.audioPath}
+                                            className={clsx(
+                                                "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-bold transition-colors active:scale-95",
+                                                isResyncing
+                                                    ? "bg-primary/20 text-primary border border-primary/50"
+                                                    : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200",
+                                                !chapter?.audioPath && "opacity-30"
+                                            )}
+                                        >
+                                            <RefreshCw size={20} className={isResyncing ? "animate-spin" : ""} />
+                                            <span className="text-[10px]">{isResyncing ? 'Syncing...' : 'Resync'}</span>
+                                        </button>
+                                    )}
+                                    {isLiveMode && (
+                                        <button
+                                            onClick={handleSaveOffline}
+                                            disabled={isSavingOffline || isChapterSaved}
+                                            className={clsx(
+                                                "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-bold transition-colors active:scale-95",
+                                                isChapterSaved
+                                                    ? "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800"
+                                                    : isSavingOffline
+                                                        ? "bg-primary/20 text-primary border border-primary/50"
+                                                        : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                                            )}
+                                        >
+                                            {isSavingOffline ? (
+                                                <Loader2 size={20} className="animate-spin" />
+                                            ) : isChapterSaved ? (
+                                                <Download size={20} />
+                                            ) : (
+                                                <Download size={20} />
+                                            )}
+                                            <span className="text-[10px]">{isChapterSaved ? 'Saved' : isSavingOffline ? 'Saving...' : 'Save'}</span>
+                                        </button>
+                                    )}
                                 </div>
 
                                 {/* Font Customization */}
@@ -712,10 +910,26 @@ export const Reader = () => {
                 isOpen={showChapterSidebar}
                 onClose={() => setShowChapterSidebar(false)}
                 chapters={allChapters}
-                currentChapterId={chapterId || ''}
+                currentChapterId={isLiveMode ? (location.state?.chapterUrl || '') : (chapterId || '')}
                 novelTitle={novel?.title || ''}
                 onSelectChapter={(ch) => {
-                    navigate(`/read/${novelId}/${ch.id}`);
+                    if (isLiveMode) {
+                        const idx = liveChapters.findIndex(lc => lc.url === ch.id);
+                        navigate(`/read/live/${encodeURIComponent(ch.id)}`, {
+                            state: {
+                                liveMode: true,
+                                chapterUrl: ch.id,
+                                chapterTitle: ch.title,
+                                novelTitle: location.state?.novelTitle,
+                                novelCoverUrl: location.state?.novelCoverUrl,
+                                chapters: liveChapters,
+                                currentIndex: idx >= 0 ? idx : 0,
+                            },
+                            replace: true
+                        });
+                    } else {
+                        navigate(`/read/${novelId}/${ch.id}`);
+                    }
                 }}
             />
         </div >

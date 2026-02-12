@@ -11,12 +11,14 @@ export interface NovelMetadata {
     summary?: string;
     status?: string;
     category?: string;
-    chapters: { title: string; url: string; date?: string }[];
+    chapters: ScrapedChapter[];
     publishers?: string[];
     selectedPublisher?: string;
     sourceUrl?: string; // For search results to link back to source
     sourceId?: string; // Original ID from source
 }
+
+export type ScrapedChapter = { title: string; url: string; date?: string };
 
 export interface HomeData {
     recommended: NovelMetadata[];
@@ -79,8 +81,8 @@ export class ScraperService {
         // Rule: Internal indexing is the only source of truth (index + 1)
         cleaned = cleaned.replace(/^\d+[\s\.\-]+/g, '');
 
-        // 2. Remove timestamps (e.g., "1 day ago", "2 hours ago")
-        const timestampRegex = /\b\d+\s*(minute|hour|day|week|month)s?\s*ago\b/gi;
+        // 2. Remove timestamps (e.g., "1 day ago", "3 years ago")
+        const timestampRegex = /\b\d+\s*(minute|hour|day|week|month|year)s?\s*ago\b/gi;
         cleaned = cleaned.replace(timestampRegex, '');
 
         // 3. Remove common UI labels/artifacts
@@ -131,8 +133,8 @@ export class ScraperService {
         }));
     }
 
-    private extractChaptersFromPage($: cheerio.CheerioAPI, baseUrl: string) {
-        const chapters: { title: string; url: string }[] = [];
+    private extractChaptersFromPage($: cheerio.CheerioAPI, baseUrl: string): ScrapedChapter[] {
+        const chapters: ScrapedChapter[] = [];
         const seenLinks = new Set<string>();
         const seenTitles = new Set<string>();
 
@@ -155,12 +157,21 @@ export class ScraperService {
                     const link = anchor.attr('href');
 
                     if (rawTitle && link) {
+                        // Extract date if present (e.g., "Chapter 1 - Test 3 years ago" -> "3 years ago")
+                        const timestampRegex = /\b\d+\s*(minute|hour|day|week|month|year)s?\s*ago\b/gi;
+                        const dateMatch = rawTitle.match(timestampRegex);
+                        const chapterDate = dateMatch ? dateMatch[0] : undefined;
+
                         const cleanTitle = this.cleanChapterTitle(rawTitle);
                         const fullUrl = this.resolveUrl(baseUrl, link);
                         const normalizedTitle = cleanTitle.toLowerCase().replace(/\s+/g, '');
 
                         if (this.isValidChapterTitle(cleanTitle) && !seenLinks.has(fullUrl) && !seenTitles.has(normalizedTitle)) {
-                            chapters.push({ title: cleanTitle, url: fullUrl });
+                            chapters.push({
+                                title: cleanTitle,
+                                url: fullUrl,
+                                date: chapterDate
+                            });
                             seenLinks.add(fullUrl);
                             seenTitles.add(normalizedTitle);
                         }
@@ -433,6 +444,165 @@ export class ScraperService {
             this.notifyListeners();
             await new Promise(resolve => setTimeout(resolve, 500));
         }
+    }
+
+    /**
+     * Optimized novel fetcher for live browsing (NovelDetail page).
+     * Key optimizations over fetchNovel:
+     *  - Locks in the first working proxy and reuses it for all pages
+     *  - No artificial delays between chapter pages
+     *  - Supports onProgress callback for incremental UI updates
+     */
+    async fetchNovelFast(
+        url: string,
+        onProgress?: (chapters: { title: string; url: string; date?: string }[], page: number, metadata?: Partial<NovelMetadata>) => void
+    ): Promise<NovelMetadata> {
+        const infoUrl = url.replace(/\/chapters\/?(\\?.*)?$/, '');
+        let listUrl = url;
+        const userProvidedChapters = /\/chapters\/?(\\?.*)?$/.test(url);
+
+        let title = '', author = '', coverUrl = '', summary = '', status = 'Ongoing';
+        let workingProxy: string | undefined;
+
+        // 1. Fetch Metadata — find a working proxy and lock it in
+        for (const proxyUrl of this.getProxies()) {
+            try {
+                const html = await this.fetchHtml(infoUrl, proxyUrl);
+                if (!html || html.length < 500) continue;
+                if (html.includes('you have been blocked') ||
+                    html.includes('Checking your browser') ||
+                    html.includes('Just a moment') ||
+                    html.includes('cf-browser-verification')) continue;
+
+                const $ = cheerio.load(html);
+                const getMeta = (selectors: string[]) => {
+                    for (const sel of selectors) {
+                        const txt = $(sel).text().trim();
+                        if (txt) return txt;
+                    } return '';
+                };
+                const getAttr = (selectors: string[], attrs: string[]) => {
+                    for (const sel of selectors) {
+                        for (const attr of attrs) {
+                            const val = $(sel).attr(attr);
+                            if (val && !val.startsWith('data:image')) return val;
+                        }
+                    } return '';
+                };
+
+                const extractedTitle = getMeta([
+                    '.novel-info .novel-title', '.title', 'h1', 'h2.title',
+                    '.book-name', '.truyen-title', 'meta[property="og:title"]'
+                ]).split(' Novel - Read')[0].trim();
+
+                if (extractedTitle) {
+                    title = extractedTitle;
+                    author = getMeta(['.author', '.info-author', '.book-author', 'span[itemprop="author"]', '.txt-author']).replace('Author:', '').trim() || 'Unknown';
+                    summary = getMeta(['.summary__content', '.description', '#editdescription', '.book-info-desc', '.content', 'meta[name="description"]']).trim();
+                    status = getMeta(['.status', '.info-status', '.book-status', '.post-content_item:contains("Status") .summary-content']).trim() || 'Ongoing';
+
+                    let extractedCover = getAttr([
+                        '.novel-cover img', '.book img', '.book-cover img', '.img-cover',
+                        'meta[property="og:image"]', '.summary_image img', '.book-info-cover img'
+                    ], ['data-src', 'data-lazy-src', 'data-original', 'src', 'content']);
+
+                    if (extractedCover && !extractedCover.startsWith('http')) {
+                        if (extractedCover.startsWith('//')) extractedCover = `https:${extractedCover}`;
+                        else { if (!extractedCover.startsWith('/')) extractedCover = '/' + extractedCover; extractedCover = `https://novelfire.net${extractedCover}`; }
+                    }
+                    coverUrl = extractedCover;
+
+                    // Yield metadata early so Synopsis/Summary shows up
+                    onProgress?.([], 0, {
+                        title,
+                        author,
+                        summary,
+                        status,
+                        coverUrl
+                    });
+
+                    if (!userProvidedChapters) {
+                        const chaptersLink = $('a[href*="/chapters"]').first().attr('href');
+                        if (chaptersLink) {
+                            const origin = new URL(infoUrl).origin;
+                            listUrl = chaptersLink.startsWith('http') ? chaptersLink : `${origin}${chaptersLink.startsWith('/') ? '' : '/'}${chaptersLink}`;
+                        }
+                    }
+
+                    workingProxy = proxyUrl; // Lock in this proxy
+                    break;
+                }
+            } catch (e) {
+                console.warn(`[Scraper:Fast] Metadata fetch failed with proxy`, e);
+            }
+        }
+
+        // 2. Scrape Chapters — reuse locked proxy, no delays
+        const allChapters: { title: string; url: string }[] = [];
+        const visitedUrls = new Set<string>();
+        let pageCount = 0;
+        const MAX_PAGES = 50;
+        let currentUrl = listUrl;
+
+        // Build a short proxy list: working proxy first, then fallbacks
+        const proxyOrder = workingProxy
+            ? [workingProxy, ...this.getProxies().filter(p => p !== workingProxy)]
+            : this.getProxies();
+
+        while (currentUrl && !visitedUrls.has(currentUrl) && pageCount < MAX_PAGES) {
+            visitedUrls.add(currentUrl);
+            pageCount++;
+            let pageFound = false;
+
+            for (const proxyUrl of proxyOrder) {
+                try {
+                    const html = await this.fetchHtml(currentUrl, proxyUrl);
+                    if (!html || html.length < 500) continue;
+                    if (html.includes('you have been blocked') || html.includes('Checking your browser') ||
+                        html.includes('Just a moment') || html.includes('cf-browser-verification')) continue;
+
+                    const $ = cheerio.load(html);
+                    const newChapters = this.extractChaptersFromPage($, currentUrl);
+
+                    for (const ch of newChapters) {
+                        if (!allChapters.some(c => c.url === ch.url)) {
+                            allChapters.push(ch);
+                        }
+                    }
+
+                    // Notify UI of incremental progress
+                    onProgress?.(allChapters, pageCount, {
+                        title,
+                        author,
+                        summary,
+                        status,
+                        coverUrl
+                    });
+
+                    const nextPage = this.findNextPage($, currentUrl);
+                    currentUrl = nextPage && !visitedUrls.has(nextPage) ? nextPage : '';
+                    pageFound = true;
+
+                    // If this proxy worked, promote it for next iteration
+                    if (proxyUrl !== proxyOrder[0]) {
+                        workingProxy = proxyUrl;
+                    }
+                    break; // Got data, move to next page
+                } catch (e) {
+                    console.warn(`[Scraper:Fast] Chapter page ${pageCount} failed with proxy`, e);
+                }
+            }
+
+            if (!pageFound) break;
+            // No artificial delay — speed is priority for live browsing
+        }
+
+        return {
+            title: title || 'Unknown Title',
+            author: author || 'Unknown Author',
+            coverUrl, summary, status,
+            chapters: allChapters
+        };
     }
 
     async fetchNovel(url: string): Promise<NovelMetadata> {
@@ -1037,6 +1207,49 @@ export class ScraperService {
                 }
             } catch (e) {
                 console.error(`[Scraper] Completed fetch failed for page ${page}`, e);
+            }
+        }
+        return [];
+    }
+
+    async searchNovels(query: string): Promise<NovelMetadata[]> {
+        const url = `https://novelfire.net/search?keyword=${encodeURIComponent(query)}`;
+        console.log(`[Scraper] Searching novels: ${url}`);
+
+        for (const proxyUrl of this.getProxies()) {
+            try {
+                const html = await this.fetchHtml(url, proxyUrl);
+                if (!html || html.length < 500) continue;
+
+                if (html.includes('you have been blocked') ||
+                    html.includes('Checking your browser') ||
+                    html.includes('Just a moment') ||
+                    html.includes('cf-browser-verification')) {
+                    console.warn(`[Scraper] Search blocked via ${proxyUrl}`);
+                    continue;
+                }
+
+                const $ = cheerio.load(html);
+
+                // Try multiple selectors for search results
+                let novels = this.parseNovelsList($, '.novel-list .novel-item, .novel-list .item, .novel-item');
+                if (novels.length === 0) {
+                    novels = this.parseNovelsList($, '.novel-list');
+                }
+                if (novels.length === 0) {
+                    novels = this.parseNovelsList($, '.list-novel');
+                }
+                if (novels.length === 0) {
+                    // Broadest fallback
+                    novels = this.parseNovelsList($, '.content-list, .search-list, .result-list, main');
+                }
+
+                if (novels.length > 0) {
+                    console.log(`[Scraper] Search found ${novels.length} novels via ${proxyUrl}`);
+                    return novels;
+                }
+            } catch (e) {
+                console.error(`[Scraper] Search failed with proxy ${proxyUrl}`, e);
             }
         }
         return [];

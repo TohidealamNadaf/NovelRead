@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, Bolt, BookOpen, Filter, RefreshCcw, Minimize2 } from 'lucide-react';
-import { scraperService, type ScraperProgress } from '../services/scraper.service';
+import { Search, Bolt, BookOpen, Filter, RefreshCcw, Minimize2, Loader2, X } from 'lucide-react';
+import { scraperService, type ScraperProgress, type NovelMetadata } from '../services/scraper.service';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { App as CapacitorApp } from '@capacitor/app';
 import { FooterNavigation } from '../components/FooterNavigation';
@@ -22,6 +22,9 @@ export const Discover = () => {
     const [mode, setMode] = useState<'novels' | 'manhwa'>('novels');
     const [manhwaData, setManhwaData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
     const [isLoadingManhwa, setIsLoadingManhwa] = useState(false);
+    const [novelSearchResults, setNovelSearchResults] = useState<NovelMetadata[]>([]);
+    const [isSearchingNovels, setIsSearchingNovels] = useState(false);
+    const [searchPerformed, setSearchPerformed] = useState(false);
 
     useEffect(() => {
         loadHomeData();
@@ -112,7 +115,18 @@ export const Discover = () => {
                 if (mode === 'manhwa') {
                     navigate('/import', { state: { initialQuery: searchQuery } });
                 } else {
-                    alert(`Searching for: ${searchQuery}`);
+                    // Search novels on NovelFire
+                    setIsSearchingNovels(true);
+                    setSearchPerformed(true);
+                    setNovelSearchResults([]);
+                    try {
+                        const results = await scraperService.searchNovels(searchQuery);
+                        setNovelSearchResults(results);
+                    } catch (e) {
+                        console.error('Novel search failed:', e);
+                    } finally {
+                        setIsSearchingNovels(false);
+                    }
                 }
             }
         }
@@ -269,8 +283,66 @@ export const Discover = () => {
                 <div className="flex flex-col gap-6">
                     {mode === 'novels' ? (
                         <>
+                            {/* Novel Search Results */}
+                            {(isSearchingNovels || searchPerformed) && (
+                                <div className="flex flex-col gap-3 px-4">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-lg font-bold tracking-tight">Search Results</h3>
+                                        <button
+                                            onClick={() => { setSearchPerformed(false); setNovelSearchResults([]); setSearchQuery(''); }}
+                                            className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"
+                                        >
+                                            <X size={18} className="text-slate-400" />
+                                        </button>
+                                    </div>
+
+                                    {isSearchingNovels && (
+                                        <div className="flex items-center justify-center py-12 gap-3">
+                                            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                                            <p className="text-sm text-slate-400">Searching NovelFire...</p>
+                                        </div>
+                                    )}
+
+                                    {!isSearchingNovels && novelSearchResults.length === 0 && searchPerformed && (
+                                        <div className="flex flex-col items-center justify-center py-12 opacity-60">
+                                            <Search size={32} className="text-slate-300 dark:text-slate-600 mb-2" />
+                                            <p className="text-sm text-slate-500">No novels found for "{searchQuery}"</p>
+                                        </div>
+                                    )}
+
+                                    {!isSearchingNovels && novelSearchResults.length > 0 && (
+                                        <div className="flex flex-col gap-3">
+                                            {novelSearchResults.map((novel: any, idx: number) => (
+                                                <div
+                                                    key={idx}
+                                                    className="flex gap-3 p-3 rounded-xl bg-slate-100/60 dark:bg-[#1d1c27] border border-slate-200/60 dark:border-white/5 cursor-pointer active:scale-[0.98] transition-transform"
+                                                    onClick={() => navigate(`/novel/live-${encodeURIComponent(novel.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`, { state: { liveMode: true, novel } })}
+                                                >
+                                                    <div className="w-16 h-22 shrink-0 rounded-lg overflow-hidden shadow-md">
+                                                        {novel.coverUrl ? (
+                                                            <img src={novel.coverUrl} className="w-full h-full object-cover" alt={novel.title} />
+                                                        ) : (
+                                                            <div className="w-full h-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center">
+                                                                <BookOpen size={20} className="text-slate-400" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 flex flex-col justify-center min-w-0">
+                                                        <p className="font-bold text-sm text-slate-900 dark:text-white line-clamp-2 leading-tight">{novel.title}</p>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{novel.author || 'Unknown Author'}</p>
+                                                        {novel.status && (
+                                                            <span className="text-[10px] text-primary font-bold mt-1">{novel.status}</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Recommended - if empty show nothing or skeleton */}
-                            {!homeData && (
+                            {!homeData && !searchPerformed && (
                                 <div className="flex flex-col items-center justify-center py-10 opacity-50">
                                     <RefreshCcw className="animate-spin mb-2" size={24} />
                                     <p className="text-sm font-medium">Fetching dynamic content...</p>
