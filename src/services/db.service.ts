@@ -24,6 +24,7 @@ export interface Chapter {
     orderIndex: number;
     audioPath?: string;
     isRead?: number;
+    date?: string;
 }
 
 class DatabaseService {
@@ -100,6 +101,10 @@ class DatabaseService {
                 { name: 'status', type: 'TEXT' }
             ];
 
+            const chapterColumnsToAdd = [
+                { name: 'date', type: 'TEXT' }
+            ];
+
             for (const col of columnsToAdd) {
                 try {
                     // Check if column exists
@@ -109,6 +114,21 @@ class DatabaseService {
                     if (!exists) {
                         console.log(`Migration: Adding column ${col.name} to novels table`);
                         await this.db.execute(`ALTER TABLE novels ADD COLUMN ${col.name} ${col.type}`);
+                    }
+                } catch (e) {
+                    console.error(`Failed to migrate column ${col.name}`, e);
+                }
+            }
+
+            for (const col of chapterColumnsToAdd) {
+                try {
+                    // Check if column exists
+                    const tableInfo = await this.db.query(`PRAGMA table_info(chapters)`);
+                    const exists = tableInfo.values?.some((c: { name: string }) => c.name === col.name);
+
+                    if (!exists) {
+                        console.log(`Migration: Adding column ${col.name} to chapters table`);
+                        await this.db.execute(`ALTER TABLE chapters ADD COLUMN ${col.name} ${col.type}`);
                     }
                 } catch (e) {
                     console.error(`Failed to migrate column ${col.name}`, e);
@@ -155,10 +175,18 @@ class DatabaseService {
         const db = await this.getDB();
         if (!db) return;
         const query = `
-            INSERT OR REPLACE INTO chapters (id, novelId, title, content, orderIndex, audioPath, isRead)
-            VALUES (?, ?, ?, ?, ?, ?, 0);
+            INSERT OR REPLACE INTO chapters (id, novelId, title, content, orderIndex, audioPath, isRead, date)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?);
         `;
-        await db.run(query, [chapter.id, chapter.novelId, chapter.title, chapter.content, chapter.orderIndex, chapter.audioPath || null]);
+        await db.run(query, [
+            chapter.id,
+            chapter.novelId,
+            chapter.title,
+            chapter.content,
+            chapter.orderIndex,
+            chapter.audioPath || null,
+            chapter.date || null
+        ]);
         await this.save();
     }
 

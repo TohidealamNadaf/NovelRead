@@ -11,7 +11,7 @@ export interface NovelMetadata {
     summary?: string;
     status?: string;
     category?: string;
-    chapters: { title: string; url: string }[];
+    chapters: { title: string; url: string; date?: string }[];
     publishers?: string[];
     selectedPublisher?: string;
     sourceUrl?: string; // For search results to link back to source

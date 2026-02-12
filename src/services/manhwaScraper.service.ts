@@ -617,7 +617,8 @@ export class ManhwaScraperService {
                     title: ch.title,
                     content: '', // EMPTY for now (Lazy Load)
                     orderIndex: i,
-                    audioPath: ch.url // Store URL in audioPath for reference 
+                    audioPath: ch.url, // Store URL in audioPath for reference 
+                    date: ch.date
                 });
             }
 

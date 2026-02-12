@@ -27,6 +27,7 @@ interface MangaDexChapter {
         title: string;
         chapter: string;
         pages: number;
+        publishAt: string;
     };
     relationships: {
         type: string;
@@ -71,7 +72,7 @@ export class MangaDexService {
         }
     }
 
-    async fetchChapters(mangaId: string): Promise<{ title: string; url: string }[]> {
+    async fetchChapters(mangaId: string): Promise<{ title: string; url: string; date?: string }[]> {
         // Fetch all English chapters, sorted ascending
         const url = `${BASE_URL}/manga/${mangaId}/feed?translatedLanguage[]=en&order[chapter]=asc&limit=500&includes[]=scanlation_group`;
 
@@ -87,9 +88,15 @@ export class MangaDexService {
                 const group = ch.relationships.find(r => r.type === 'scanlation_group')?.attributes?.name;
                 const groupSuffix = group ? ` [${group}]` : '';
 
+                // Format date
+                const date = ch.attributes.publishAt
+                    ? new Date(ch.attributes.publishAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+                    : undefined;
+
                 return {
                     title: `Ch. ${chapNum}${title}${groupSuffix}`,
-                    url: `https://mangadex.org/chapter/${ch.id}`
+                    url: `https://mangadex.org/chapter/${ch.id}`,
+                    date
                 };
             });
         } catch (error) {

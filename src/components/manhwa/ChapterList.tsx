@@ -115,6 +115,11 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                                         )}>
                                             {chapter.title}
                                         </span>
+                                        {chapter.date && (
+                                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                                                {chapter.date}
+                                            </span>
+                                        )}
                                         {!!chapter.isRead && (
                                             <span className="text-[10px] text-green-600 dark:text-green-500 font-medium whitespace-nowrap">Read</span>
                                         )}

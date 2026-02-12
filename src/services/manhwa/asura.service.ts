@@ -483,8 +483,9 @@ export class AsuraScraperService {
                     chapTitle = chapTitle.replace(/\s+/g, ' ').trim();
 
                     chapters.push({
-                        title: chapTitle + (dateLabel ? ` (${dateLabel})` : ''),
-                        url: chapterUrl
+                        title: chapTitle,
+                        url: chapterUrl,
+                        date: dateLabel // Store date separately
                     });
                 }
             }
