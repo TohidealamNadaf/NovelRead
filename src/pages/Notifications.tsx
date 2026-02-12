@@ -99,7 +99,11 @@ export const Notifications = () => {
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                if (n.payload?.novelId) navigate(`/novel/${n.payload.novelId}`);
+                                if (n.payload?.novelId) {
+                                    const category = (n.payload as any).category;
+                                    const baseRoute = category === 'Manhwa' ? '/manhwa' : '/novel';
+                                    navigate(`${baseRoute}/${n.payload.novelId}`);
+                                }
                             }}
                             className="w-fit mt-3 px-4 py-1.5 bg-primary text-white text-[12px] font-bold rounded-full shadow-lg shadow-primary/20 active:scale-95 transition-transform"
                         >

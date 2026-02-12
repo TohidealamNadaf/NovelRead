@@ -25,6 +25,10 @@ export class AsuraScraperService {
             // Ensure absolute URL and deduplicate
             const sourceUrl = href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`;
             if (seenUrls.has(sourceUrl)) return;
+
+            // Skip genres or other non-series links (like direct chapter links)
+            if (sourceUrl.includes('?genre=') || sourceUrl.includes('/chapter/')) return;
+
             seenUrls.add(sourceUrl);
 
             // Title detection: 
@@ -37,7 +41,12 @@ export class AsuraScraperService {
                 a.find('.font-bold').first().text().trim() ||
                 a.find('.text-white').first().text().trim();
 
-            if (!title) {
+            const isNoise = (t: string) => {
+                const upper = t.toUpperCase();
+                return !t || upper.includes('BETA SITE') || upper.includes('READ ON OUR') || upper === 'MANHWA' || upper === 'POSTER';
+            };
+
+            if (isNoise(title)) {
                 // Remove common UI elements and get pure text
                 const tempA = a.clone();
                 tempA.find('span.status, .status, .type, .px-1, .absolute, .hidden').remove();
@@ -46,10 +55,11 @@ export class AsuraScraperService {
             }
 
             // Final fallback to anchor text if still empty
-            if (!title) title = a.text().trim();
+            if (isNoise(title)) title = a.text().trim();
 
-            // Cleanup title (remove extra spaces/newlines)
-            title = title.replace(/\s+/g, ' ').replace('Chapter', '').trim();
+            // Cleanup title (remove extra spaces/newlines, and noisy labels)
+            title = title.replace(/\s+/g, ' ').replace('Chapter', '').replace('MANHWA', '').replace('Poster', '').trim();
+            if (isNoise(title)) return;
 
             // Image detection: check multiple sources for lazy loading
             const img = a.find('img');
@@ -99,20 +109,21 @@ export class AsuraScraperService {
             const href = a.attr('href');
             if (!href) return;
 
-            const title = slide.find('.ellipsis a').text().trim() || a.find('span.font-bold').text().trim();
-            const coverUrl = slide.find('img[alt="poster"]').attr('src') || '';
-            const status = slide.find('span.status, .status').text().trim() || 'Ongoing';
+            if (href && !href.includes('recruitment') && !href.includes('beta-site')) {
+                let title = slide.find('.ellipsis a').text().trim() || slide.find('span.font-bold').text().trim();
+                title = title.replace(/\s+/g, ' ').replace('MANHWA', '').trim();
 
-            if (title) {
-                trending.push({
-                    title,
-                    author: slide.find('.info-left .release-year').text().trim() || 'Asura Scans',
-                    coverUrl,
-                    chapters: [],
-                    sourceUrl: href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`,
-                    status,
-                    category: 'Manhwa'
-                });
+                if (title && !this.isNoiseTitle(title)) {
+                    trending.push({
+                        title,
+                        author: slide.find('.info-left .release-year').text().trim() || 'Asura Scans',
+                        coverUrl: slide.find('img[alt="poster"]').attr('src') || '',
+                        chapters: [],
+                        sourceUrl: href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`,
+                        status: slide.find('span.status, .status').text().trim() || 'Ongoing',
+                        category: 'Manhwa'
+                    });
+                }
             }
         });
 
@@ -134,15 +145,15 @@ export class AsuraScraperService {
 
                     let sourceUrl = href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`;
 
-                    // Skip genres or other non-series links
-                    if (sourceUrl.includes('?genre=')) return;
+                    // Skip genres, recruitment, or other non-series links
+                    if (sourceUrl.includes('?genre=') || sourceUrl.includes('/chapter/') || sourceUrl.includes('recruitment') || sourceUrl.includes('beta-site')) return;
 
                     // We allow some duplicates if the second link provides a better title/cover
                     const titleRaw = a.find('span.font-bold').text().trim() || a.find('h3').text().trim() || a.text().trim();
-                    const title = titleRaw.replace(/\s+/g, ' ').replace('MANHWA', '').trim();
-                    const coverUrl = a.find('img').attr('src') || a.find('img').attr('data-src') || '';
+                    const title = titleRaw.replace(/\s+/g, ' ').replace('MANHWA', '').replace('Poster', '').trim();
+                    const coverUrl = a.find('img').attr('src') || a.find('img').attr('data-src') || a.find('img').attr('data-lazy-src') || '';
 
-                    if (title || coverUrl) {
+                    if ((title && !this.isNoiseTitle(title)) || coverUrl) {
                         // If we already have this URL but found a better title or cover, merge it
                         const targetList = isPopular ? popular : latest;
                         const existing = targetList.find(item => item.sourceUrl === sourceUrl);
@@ -200,7 +211,9 @@ export class AsuraScraperService {
         const seenUrls = new Set<string>();
 
         // Find all items in the series list grid
-        $('a[href*="series/"]').each((_, el) => {
+        // Refined selector targets the main series grid specifically
+        const gridSelector = 'div.grid.grid-cols-2.md\\:grid-cols-5';
+        $(gridSelector).find('a[href*="series/"]').each((_, el) => {
             const a = $(el);
             const href = a.attr('href');
             if (!href) return;
@@ -208,19 +221,43 @@ export class AsuraScraperService {
             // Ensure absolute URL and deduplicate
             const sourceUrl = href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`;
             if (seenUrls.has(sourceUrl)) return;
+
+            // Skip genres or other non-series links (like direct chapter links)
+            if (sourceUrl.includes('?genre=') || sourceUrl.includes('/chapter/')) return;
+
             seenUrls.add(sourceUrl);
 
-            // Structure detection based on asura_series_raw.html analysis
-            const titleRaw = a.find('span.font-bold').first().text().trim() ||
-                a.find('h3').first().text().trim() ||
-                a.text().trim();
+            let title = a.find('span.font-bold').text().trim() ||
+                a.find('span.text-white').text().trim() ||
+                a.find('h3').text().trim() ||
+                a.find('.font-bold').first().text().trim() ||
+                a.find('.text-white').first().text().trim();
 
-            const title = titleRaw.replace(/\s+/g, ' ').replace('MANHWA', '').trim();
+            const isNoise = (t: string) => this.isNoiseTitle(t);
 
-            const coverUrl = a.find('img').attr('src') ||
-                a.find('img').attr('data-src') || '';
+            if (isNoise(title)) {
+                // Try to find a better title inside the anchor by removing noise elements
+                const tempA = a.clone();
+                tempA.find('span.status, .status, .type, .px-1, .absolute, .hidden, .text-xs, img').remove();
+                title = tempA.text().trim();
+                if (title.includes('\n')) title = title.split('\n')[0].trim();
+            }
+
+            // Cleanup title (remove extra spaces/newlines, and noisy labels)
+            title = title.replace(/\s+/g, ' ')
+                .replace(/\[.*?\]/g, '') // Remove [Chapter X] tags
+                .replace('Chapter', '')
+                .replace('MANHWA', '')
+                .replace('Poster', '')
+                .trim();
 
             const status = a.find('span.status, .status').text().trim() || 'Ongoing';
+
+            // Final check: if it's still noise or empty, skip this entire entry
+            if (isNoise(title) || sourceUrl.includes('recruitment') || sourceUrl.includes('beta-site')) return;
+
+            const coverUrl = a.find('img').attr('src') ||
+                a.find('img').attr('data-src') || a.find('img').attr('data-lazy-src') || '';
 
             if (title && !title.toLowerCase().includes('chapter') && !title.toLowerCase().includes('previous') && !title.toLowerCase().includes('next')) {
                 results.push({
@@ -235,8 +272,22 @@ export class AsuraScraperService {
                 });
             }
         });
-
         return results;
+    }
+
+    private isNoiseTitle(t: string): boolean {
+        // Aggressive normalization: remove all non-alphanumeric characters
+        const upper = (t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        return !t ||
+            upper.includes('BETASITE') ||
+            upper.includes('READONOUR') ||
+            upper.includes('RECRUITMENT') ||
+            upper.includes('JOINOUR') ||
+            upper.includes('DISCORD') ||
+            upper === 'MANHWA' ||
+            upper === 'POSTER' ||
+            t.length < 2 ||
+            t === 'Unknown Title';
     }
 
     async fetchMangaDetails(url: string): Promise<NovelMetadata | null> {
@@ -245,29 +296,134 @@ export class AsuraScraperService {
 
         const $ = cheerio.load(html);
 
-        const title = $('span.text-xl.font-bold').first().text().trim();
-        const coverUrl = $('img[alt="poster"]').attr('src') || '';
+        // Help deduplicate repeating text like "ONGOINGONGOING" or "Ongoing Ongoing"
+        const dedupeString = (str: string): string => {
+            if (!str || str.length < 3) return str;
+            // Remove hidden characters and normalize whitespace
+            const normalized = str.replace(/[^\x20-\x7E\t\n\r]/g, '').trim().replace(/\s+/g, ' ');
+
+            if (normalized.length < 3) return normalized;
+
+            // Check for space-separated word repetitions e.g. "Ongoing Ongoing"
+            const words = normalized.split(' ');
+            if (words.length > 1 && words.every(w => w.toLowerCase() === words[0].toLowerCase())) {
+                return words[0];
+            }
+
+            // Check for joined word repetitions e.g. "ONGOINGONGOING" or "OngoingOngoing"
+            // We search for a repeating prefix
+            const lower = normalized.toLowerCase();
+            for (let i = 1; i <= Math.floor(normalized.length / 2); i++) {
+                const sub = lower.substring(0, i);
+                let isRepeating = true;
+                for (let j = i; j < lower.length; j += i) {
+                    const nextPart = lower.substring(j, j + i);
+                    if (!sub.startsWith(nextPart) && !nextPart.startsWith(sub)) {
+                        isRepeating = false;
+                        break;
+                    }
+                }
+                if (isRepeating) {
+                    return normalized.substring(0, i);
+                }
+            }
+
+            return normalized;
+        };
+
+        const isNoise = (t: string) => this.isNoiseTitle(t);
+
+        // Multi-layered Title extraction
+        // 1. Meta tags (most reliable)
+        let title = $('meta[property="og:title"]').attr('content') ||
+            $('meta[property="twitter:title"]').attr('content') ||
+            $('meta[name="title"]').attr('content') ||
+            $('title').text();
+
+        if (title) {
+            // Split by common separators and find the first part that isn't noise
+            const parts = title.split(/ - | \| | – /).map(p => p.trim());
+            const bestPart = parts.find(p => !isNoise(p));
+            if (bestPart) {
+                title = bestPart;
+            } else {
+                title = parts[0]; // Fallback to first part if somehow all are noise
+            }
+
+            if (title.toUpperCase().startsWith('READ ')) {
+                const possible = title.substring(5).trim();
+                if (!isNoise(possible)) title = possible;
+            }
+            if (title.toUpperCase().endsWith(' MANHWA')) title = title.substring(0, title.length - 7).trim();
+        }
+
+        // 2. DOM extraction if meta is noise or missing
+        if (isNoise(title || '')) {
+            title = $('h1').filter((_, el) => !isNoise($(el).text())).first().text().trim() ||
+                $('span.text-xl.font-bold').filter((_, el) => !isNoise($(el).text())).first().text().trim() ||
+                $('span.text-2xl.font-bold').filter((_, el) => !isNoise($(el).text())).first().text().trim() ||
+                $('.text-white.font-bold').filter((_, el) => !isNoise($(el).text())).first().text().trim();
+        }
+
+        if (!title || isNoise(title)) {
+            // Hard fallback: Try to get it from the URL slug if all else fails
+            try {
+                const slug = url.split('/').filter(Boolean).pop();
+                if (slug && !slug.includes('beta-site')) {
+                    title = slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                }
+            } catch (e) { }
+        }
+
+        if (!title || isNoise(title)) title = 'Unknown Title';
+
+        let coverUrl = '';
+        // Prioritize the actual poster image and avoid banners
+        $('img[alt="poster"]').each((_, el) => {
+            const src = $(el).attr('src');
+            if (src && !src.includes('banner') && !src.includes('logo')) {
+                coverUrl = src;
+                return false;
+            }
+        });
 
         let author = 'Unknown';
         let status = 'Unknown';
 
         // Loop through the grid-cols-2 items for Status and Type, or other metadata
         // Status is explicitly labeled
-        $('div.bg-\\[\\#343434\\]').each((_, el) => {
-            const label = $(el).find('h3').first().text().trim();
-            const value = $(el).find('h3').last().text().trim();
-            if (label.includes('Status')) status = value;
+        $('div.bg-\\[\\#343434\\], div.bg-\\[\\#222222\\], .grid div').each((_, el) => {
+            const h3s = $(el).find('h3');
+            if (h3s.length >= 2) {
+                const label = h3s.first().text().trim();
+                let value = h3s.last().text().trim();
+
+                value = dedupeString(value);
+
+                if (label.includes('Status')) status = value;
+                if (label.includes('Author') && (author === 'Unknown' || !author)) author = value;
+            }
         });
 
-        // Author is in the grid below synopsis
-        // Structure: div > h3 (Author) + h3 (Value)
-        $('.grid div').each((_, el) => {
-            const label = $(el).find('h3').first().text().trim();
-            const value = $(el).find('h3').last().text().trim();
-            if (label.includes('Author')) author = value;
-        });
+        // Fallback author search
+        if (author === 'Unknown') {
+            $('.grid div').each((_, el) => {
+                const h3s = $(el).find('h3');
+                if (h3s.length >= 2) {
+                    const label = h3s.first().text().trim();
+                    const value = dedupeString(h3s.last().text().trim());
+                    if (label.includes('Author')) author = value;
+                }
+            });
+        }
 
-        const summary = $('span.font-medium.text-sm p').text().trim();
+        let summary = $('span.font-medium.text-sm p').text().trim();
+        if (!summary) {
+            summary = $('div.text-sm.font-medium.opacity-80').text().trim();
+        }
+        if (!summary) {
+            summary = $('span.font-medium.text-sm').first().text().trim();
+        }
 
         const chapters: { title: string; url: string }[] = [];
 
@@ -275,31 +431,74 @@ export class AsuraScraperService {
         // Selector: div.overflow-y-auto a
         $('div.overflow-y-auto a').each((_, el) => {
             const link = $(el).attr('href');
-            let chapTitle = $(el).find('h3.text-sm').text().trim();
-            // Clean up title (remove excess whitespace, "MANHWA" labels if any)
-            chapTitle = chapTitle.replace(/\s+/g, ' ').replace('MANHWA', '').trim();
-            const date = $(el).find('h3.text-xs').text().trim();
+            const h3s = $(el).find('h3');
 
-            if (link) {
-                // The href is like "solo-leveling-a4b483cd/chapter/200".
-                // We need to construct the full URL. 
-                // Since 'url' passed to this function is "https://asuracomic.net/series/solo-leveling-a4b483cd"
-                // And the link seems to be relative to "/series/" parent? 
-                // Let's assume absolute path construction for safety.
-                // If link doesn't start with http, append it to BASE_URL + /series/ + ...?
-                // Actually, if we look at the href "solo-leveling-a4b483cd/chapter/200", it includes the slug.
-                // So BASE_URL + /series/ + link seems correct.
+            if (h3s.length > 0) {
+                // Asura might have: h3(Name), h3(Chapter #), h3(Date)
+                // Filter out labels like "MANHWA"
+                const texts = h3s.map((_, h) => $(h).text().trim().replace('MANHWA', '')).get().filter(Boolean);
 
-                const chapterUrl = link.startsWith('http') ? link : `${BASE_URL}/series/${link}`;
+                let chapTitle = texts[0] || 'Unknown Chapter';
+                let subLabel = texts.length > 1 ? texts[1] : '';
+                let dateLabel = texts.length > 2 ? texts[2] : '';
 
-                // Clean up title
-                chapTitle = chapTitle.replace(/\s+/g, ' ').trim();
+                // 1. Aggressive Clean for "First Chapter" and "New Chapter"
+                // Handle cases like "First ChapterChapter 1" or just "New Chapter"
+                if (chapTitle.match(/^(First|New)\s*Chapter/i)) {
+                    // Try to strip the prefix
+                    const cleaned = chapTitle.replace(/^(First|New)\s*Chapter/i, '').trim();
+                    // If result starts with "Chapter", use it. If empty, try subLabel.
+                    if (cleaned.toLowerCase().startsWith('chapter') || cleaned.match(/^\d/)) {
+                        chapTitle = cleaned;
+                    } else if (subLabel && subLabel.toLowerCase().includes('chapter')) {
+                        // Fallback to subLabel if main title was just "First Chapter"
+                        chapTitle = subLabel;
+                        subLabel = '';
+                    }
+                    // Force fix for "ChapterChapter" concatenation artifact if it happened
+                    chapTitle = chapTitle.replace(/ChapterChapter/i, 'Chapter');
+                }
 
-                chapters.push({
-                    title: chapTitle + (date ? ` (${date})` : ''),
-                    url: chapterUrl
-                });
+                // 2. Identify Date
+                // If subLabel is actually a date (starts with month/number), and dateLabel is empty
+                if (subLabel && !dateLabel && (subLabel.match(/^[A-Za-z]+ \d+/) || subLabel.match(/^\d+/))) {
+                    dateLabel = subLabel;
+                    subLabel = '';
+                }
+
+                // 3. Merge Intelligent
+                // If subLabel is not empty and not just a date, append it
+                if (subLabel) {
+                    if (subLabel.toLowerCase().includes('chapter') && !chapTitle.toLowerCase().includes('chapter')) {
+                        chapTitle = `${subLabel}: ${chapTitle}`;
+                    } else if (!chapTitle.includes(subLabel)) {
+                        chapTitle = `${chapTitle} ${subLabel}`;
+                    }
+                }
+
+                if (link) {
+                    const chapterUrl = link.startsWith('http') ? link : `${BASE_URL}/series/${link}`;
+
+                    // Clean up title
+                    chapTitle = chapTitle.replace(/\s+/g, ' ').trim();
+
+                    chapters.push({
+                        title: chapTitle + (dateLabel ? ` (${dateLabel})` : ''),
+                        url: chapterUrl
+                    });
+                }
             }
+        });
+
+        // Robust Numeric Sort
+        // Extracts the first number found in the title for sorting
+        chapters.sort((a, b) => {
+            const getNum = (t: string) => {
+                // Match any number (int or float)
+                const match = t.match(/(\d+(\.\d+)?)/);
+                return match ? parseFloat(match[1]) : 0;
+            };
+            return getNum(a.title) - getNum(b.title);
         });
 
         return {
@@ -309,7 +508,7 @@ export class AsuraScraperService {
             status,
             summary,
             category: 'Manhwa',
-            chapters: chapters.reverse(), // Reversing to ensure oldest chapters (Chapter 1) are at index 0
+            chapters: chapters, // Already sorted Oldest -> Newest
             sourceUrl: url,
             sourceId: url
         };

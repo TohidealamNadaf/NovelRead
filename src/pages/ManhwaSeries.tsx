@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../services/db.service';
 import type { Novel, Chapter } from '../services/db.service';
+import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { Header } from '../components/Header';
 import { SeriesHero } from '../components/manhwa/SeriesHero';
 import { ChapterList } from '../components/manhwa/ChapterList';
@@ -33,6 +34,39 @@ export const ManhwaSeries = () => {
 
         loadData();
     }, [novelId]);
+
+    // Background refresh for metadata if title is noisy
+    useEffect(() => {
+        const refreshMetadata = async () => {
+            if (!novelId || !novel || !novel.sourceUrl || isLoading) return;
+
+            const isNoisy = (t: string) => {
+                const u = t.toUpperCase();
+                return u === 'UNKNOWN TITLE' || u.includes('BETA SITE') || u.includes('READ ON OUR');
+            };
+
+            if (isNoisy(novel.title)) {
+                try {
+                    console.log(`[ManhwaSeries] Refreshing noisy title: ${novel.title}`);
+                    const freshData = await manhwaScraperService.fetchNovel(novel.sourceUrl);
+                    if (freshData && !isNoisy(freshData.title)) {
+                        await dbService.updateNovelMetadata(novelId, {
+                            title: freshData.title,
+                            author: freshData.author,
+                            coverUrl: freshData.coverUrl,
+                            status: freshData.status,
+                            summary: freshData.summary
+                        });
+                        setNovel(prev => prev ? { ...prev, ...freshData } : null);
+                    }
+                } catch (e) {
+                    console.error("Failed to background refresh metadata", e);
+                }
+            }
+        };
+
+        refreshMetadata();
+    }, [isLoading, novel?.id, novel?.title, novelId]);
 
     const handleChapterSelect = (chapter: Chapter) => {
         if (!novelId) return;

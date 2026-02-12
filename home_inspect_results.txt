@@ -1,0 +1,44 @@
+--- Inspecting Home Page ---
+
+Found Section: Latest Updates
+[0] Href: /series/genius-prismatic-mage-59340bb0, Text: "", FontBold: "", HasImg: true
+[1] Href: /series/genius-prismatic-mage-59340bb0, Text: "Genius Prismatic Mage", FontBold: "", HasImg: false
+[2] Href: /series/genius-prismatic-mage-59340bb0/chapter/62, Text: "Chapter 62", FontBold: "", HasImg: false
+[3] Href: /series/genius-prismatic-mage-59340bb0/chapter/61, Text: "Chapter 61 - S2 STAR...", FontBold: "", HasImg: false
+[4] Href: /series/genius-prismatic-mage-59340bb0/chapter/61, Text: "Chapter 61 - S2 ...", FontBold: "", HasImg: false
+[5] Href: /series/genius-prismatic-mage-59340bb0/chapter/60, Text: "Chapter 60 - [S1 End...", FontBold: "", HasImg: false
+[6] Href: /series/genius-prismatic-mage-59340bb0/chapter/60, Text: "Chapter 60 - [S1...", FontBold: "", HasImg: false
+[7] Href: /series/boundless-necromancer-9eeafdbc, Text: "", FontBold: "", HasImg: true
+[8] Href: /series/boundless-necromancer-9eeafdbc, Text: "Boundless Necromancer", FontBold: "", HasImg: false
+[9] Href: /series/boundless-necromancer-9eeafdbc/chapter/175, Text: "Chapter 175", FontBold: "", HasImg: false
+[10] Href: /series/boundless-necromancer-9eeafdbc/chapter/174, Text: "Chapter 174", FontBold: "", HasImg: false
+[11] Href: /series/boundless-necromancer-9eeafdbc/chapter/173, Text: "Chapter 173", FontBold: "", HasImg: false
+[12] Href: /series/breakers-e9a1da77, Text: "", FontBold: "", HasImg: true
+[13] Href: /series/breakers-e9a1da77, Text: "Breakers", FontBold: "", HasImg: false
+[14] Href: /series/breakers-e9a1da77/chapter/56, Text: "Chapter 56 - Omen #2...", FontBold: "", HasImg: false
+[15] Href: /series/breakers-e9a1da77/chapter/56, Text: "Chapter 56 - Ome...", FontBold: "", HasImg: false
+[16] Href: /series/breakers-e9a1da77/chapter/55, Text: "Chapter 55 - Omen #1...", FontBold: "", HasImg: false
+[17] Href: /series/breakers-e9a1da77/chapter/55, Text: "Chapter 55 - Ome...", FontBold: "", HasImg: false
+[18] Href: /series/breakers-e9a1da77/chapter/54, Text: "Chapter 54 - Flame #...", FontBold: "", HasImg: false
+[19] Href: /series/breakers-e9a1da77/chapter/54, Text: "Chapter 54 - Fla...", FontBold: "", HasImg: false
+[20] Href: /series/the-wandering-knights-survival-manual-ae97ea08, Text: "", FontBold: "", HasImg: true
+[21] Href: /series/the-wandering-knights-survival-manual-ae97ea08, Text: "The Wandering Knight’s Surviva...", FontBold: "", HasImg: false
+[22] Href: /series/the-wandering-knights-survival-manual-ae97ea08/chapter/24, Text: "Chapter 24 - That Ye...", FontBold: "", HasImg: false
+[23] Href: /series/the-wandering-knights-survival-manual-ae97ea08/chapter/24, Text: "Chapter 24 - Tha...", FontBold: "", HasImg: false
+[24] Href: /series/the-wandering-knights-survival-manual-ae97ea08/chapter/23, Text: "Chapter 23 - That Ye...", FontBold: "", HasImg: false
+[25] Href: /series/the-wandering-knights-survival-manual-ae97ea08/chapter/23, Text: "Chapter 23 - Tha...", FontBold: "", HasImg: false
+[26] Href: /series/the-wandering-knights-survival-manual-ae97ea08/chapter/22, Text: "Chapter 22 - That Ye...", FontBold: "", HasImg: false
+[27] Href: /series/the-wandering-knights-survival-manual-ae97ea08/chapter/22, Text: "Chapter 22 - Tha...", FontBold: "", HasImg: false
+[28] Href: /series/i-became-the-first-prince-legend-of-swords-song-d9563fef, Text: "", FontBold: "", HasImg: true
+[29] Href: /series/i-became-the-first-prince-legend-of-swords-song-d9563fef, Text: "I Became the First Prince: Leg...", FontBold: "", HasImg: false
+[30] Href: /series/i-became-the-first-prince-legend-of-swords-song-d9563fef/chapter/22, Text: "Chapter 22", FontBold: "", HasImg: false
+[31] Href: /series/i-became-the-first-prince-legend-of-swords-song-d9563fef/chapter/21, Text: "Chapter 21", FontBold: "", HasImg: false
+[32] Href: /series/i-became-the-first-prince-legend-of-swords-song-d9563fef/chapter/20, Text: "Chapter 20", FontBold: "", HasImg: false
+[33] Href: /series/return-of-the-sss-class-ranker-3badacfe, Text: "", FontBold: "", HasImg: true
+[34] Href: /series/return-of-the-sss-class-ranker-3badacfe, Text: "Return of the SSS-Class Ranker", FontBold: "", HasImg: false
+[35] Href: /series/return-of-the-sss-class-ranker-3badacfe/chapter/178, Text: "Chapter 178", FontBold: "", HasImg: false
+[36] Href: /series/return-of-the-sss-class-ranker-3badacfe/chapter/177, Text: "Chapter 177", FontBold: "", HasImg: false
+[37] Href: /series/return-of-the-sss-class-ranker-3badacfe/chapter/176, Text: "Chapter 176", FontBold: "", HasImg: false
+[38] Href: /series/omniscient-readers-viewpoint-afe97ab5, Text: "", FontBold: "", HasImg: true
+[39] Href: /series/omniscient-readers-viewpoint-afe97ab5, Text: "Omniscient Reader’s Viewpoint", FontBold: "", HasImg: false
+[40] Href: /series/omniscient-readers-viewpoint-afe97ab5/chapter/300, Text: "Chapter 300 - “Dokja...", FontBold: "", HasImg: false

@@ -250,7 +250,10 @@ export class ScraperService {
             body: customMessage || (success ? `Successfully imported ${novelTitle}` : `Failed to import ${novelTitle}`),
             type: 'scrape',
             imageUrl: this.activeNovel?.coverUrl,
-            payload: { novelId: novelId || this.activeNovel?.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) }
+            payload: {
+                novelId: novelId || this.activeNovel?.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24),
+                category: 'Novel'
+            }
         });
     }
 

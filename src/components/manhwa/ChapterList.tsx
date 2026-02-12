@@ -115,8 +115,8 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                                         )}>
                                             {chapter.title}
                                         </span>
-                                        {chapter.isRead && (
-                                            <span className="text-[10px] text-green-600 dark:text-green-500 font-medium">Read</span>
+                                        {!!chapter.isRead && (
+                                            <span className="text-[10px] text-green-600 dark:text-green-500 font-medium whitespace-nowrap">Read</span>
                                         )}
                                     </div>
                                 </div>

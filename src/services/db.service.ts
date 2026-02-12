@@ -196,6 +196,34 @@ class DatabaseService {
         const result = await db.query('SELECT * FROM chapters WHERE novelId = ? AND id = ?', [novelId, chapterId]);
         return result.values && result.values.length > 0 ? (result.values[0] as Chapter) : null;
     }
+    async updateNovelMetadata(id: string, metadata: Partial<Novel>) {
+        const db = await this.getDB();
+        if (!db) return;
+
+        try {
+            const fields = [];
+            const values = [];
+
+            if (metadata.title) { fields.push('title = ?'); values.push(metadata.title); }
+            if (metadata.author) { fields.push('author = ?'); values.push(metadata.author); }
+            if (metadata.coverUrl) { fields.push('coverUrl = ?'); values.push(metadata.coverUrl); }
+            if (metadata.summary) { fields.push('summary = ?'); values.push(metadata.summary); }
+            if (metadata.status) { fields.push('status = ?'); values.push(metadata.status); }
+            if (metadata.category) { fields.push('category = ?'); values.push(metadata.category); }
+
+            if (fields.length === 0) return;
+
+            const query = `UPDATE novels SET ${fields.join(', ')} WHERE id = ?`;
+            values.push(id);
+
+            await db.run(query, values);
+            await this.save();
+        } catch (e) {
+            console.error("Failed to update novel metadata", e);
+            throw e;
+        }
+    }
+
     async deleteNovel(id: string) {
         const db = await this.getDB();
         if (!db) return;

@@ -1,0 +1,33 @@
+Fetching https://asuracomic.net/series/magic-academys-genius-blinker-d5de0c62 with Mobile UA...
+
+--- Chapter Links Structure (Mobile) ---
+
+Link 1:
+Outer HTML: <a href="magic-academys-genius-blinker-d5de0c63/chapter/86"><div class="w-[5px] h-full bg-[#8E3FDD] absolute top-0 left-0 rounded block"></div><h3 class="text-sm text-white font-medium flex flex-row">Chapter <!-- -->86<span class="pl-1"></span><span class="pl-1"></span></h3><h3 class="text-xs text-[#A2A2A2]">February 8th 2026</h3></a>
+  h3[0]: "Chapter 86" | Class: "text-sm text-white font-medium flex flex-row"
+  h3[1]: "February 8th 2026" | Class: "text-xs text-[#A2A2A2]"
+  Top-level Text: ""
+
+Link 2:
+Outer HTML: <a href="magic-academys-genius-blinker-d5de0c63/chapter/85"><div class="w-[5px] h-full bg-[#8E3FDD] absolute top-0 left-0 rounded block"></div><h3 class="text-sm text-white font-medium flex flex-row">Chapter <!-- -->85<span class="pl-1"></span><span class="pl-1"></span></h3><h3 class="text-xs text-[#A2A2A2]">February 2nd 2026</h3></a>
+  h3[0]: "Chapter 85" | Class: "text-sm text-white font-medium flex flex-row"
+  h3[1]: "February 2nd 2026" | Class: "text-xs text-[#A2A2A2]"
+  Top-level Text: ""
+
+Link 3:
+Outer HTML: <a href="magic-academys-genius-blinker-d5de0c63/chapter/84"><div class="w-[5px] h-full bg-[#8E3FDD] absolute top-0 left-0 rounded block"></div><h3 class="text-sm text-white font-medium flex flex-row">Chapter <!-- -->84<span class="pl-1"></span><span class="pl-1"></span></h3><h3 class="text-xs text-[#A2A2A2]">January 19th 2026</h3></a>
+  h3[0]: "Chapter 84" | Class: "text-sm text-white font-medium flex flex-row"
+  h3[1]: "January 19th 2026" | Class: "text-xs text-[#A2A2A2]"
+  Top-level Text: ""
+
+Link 4:
+Outer HTML: <a href="magic-academys-genius-blinker-d5de0c63/chapter/83"><div class="w-[5px] h-full bg-[#8E3FDD] absolute top-0 left-0 rounded block"></div><h3 class="text-sm text-white font-medium flex flex-row">Chapter <!-- -->83<span class="pl-1"></span><span class="pl-1"></span></h3><h3 class="text-xs text-[#A2A2A2]">January 12th 2026</h3></a>
+  h3[0]: "Chapter 83" | Class: "text-sm text-white font-medium flex flex-row"
+  h3[1]: "January 12th 2026" | Class: "text-xs text-[#A2A2A2]"
+  Top-level Text: ""
+
+Link 5:
+Outer HTML: <a href="magic-academys-genius-blinker-d5de0c63/chapter/82"><div class="w-[5px] h-full bg-[#8E3FDD] absolute top-0 left-0 rounded block"></div><h3 class="text-sm text-white font-medium flex flex-row">Chapter <!-- -->82<span class="pl-1"></span><span class="pl-1"></span></h3><h3 class="text-xs text-[#A2A2A2]">January 4th 2026</h3></a>
+  h3[0]: "Chapter 82" | Class: "text-sm text-white font-medium flex flex-row"
+  h3[1]: "January 4th 2026" | Class: "text-xs text-[#A2A2A2]"
+  Top-level Text: ""

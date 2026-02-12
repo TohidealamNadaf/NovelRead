@@ -557,7 +557,31 @@ export class ManhwaScraperService {
         this.currentProgress = { current: 0, total: novel.chapters.length, currentTitle: 'Preparing...', logs: [] };
         this.notifyListeners();
 
-        const novelId = novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) + '-' + Math.random().toString(36).slice(2, 7);
+        // Generate a stable ID based on URL slug if possible
+        let slug = '';
+        try {
+            const urlObj = new URL(url);
+            const pathParts = urlObj.pathname.split('/').filter(Boolean);
+            // For Asura Scans: /series/slug
+            if (url.includes('asuracomic.net') && pathParts.length >= 2) {
+                slug = pathParts[1];
+            } else if (url.includes('mangadex.org') && pathParts.length >= 2) {
+                slug = pathParts[1];
+            } else {
+                slug = pathParts[pathParts.length - 1] || '';
+            }
+        } catch (e) {
+            console.warn('Failed to parse URL for slug', e);
+        }
+
+        // Filter slug to be safe, fallback to title if slug is empty
+        const idBase = (slug || novel.title)
+            .replace(/[^a-zA-Z0-9\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .toLowerCase()
+            .slice(0, 32);
+
+        const novelId = `${idBase}-${Math.random().toString(36).slice(2, 7)}`;
 
         try {
             await dbService.initialize();
@@ -691,7 +715,7 @@ export class ManhwaScraperService {
                 title: `Manhwa Imported: ${title}`,
                 body: body,
                 type: 'scrape',
-                payload: { novelId }
+                payload: { novelId, category: 'Manhwa' }
             });
         }
     }

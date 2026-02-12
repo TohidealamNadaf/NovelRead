@@ -1,0 +1,2 @@
+Test failed for https://asuracomic.net/series/magic-academys-genius-blinker-d5de0c62: Request failed with status code 403
+Test failed for https://asuracomic.net/series/sword-devouring-swordmaster-64c3b51d: Request failed with status code 403

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2, ChevronDown, Users, Search } from 'lucide-react';
 import { scraperService, type NovelMetadata, type ScraperProgress } from '../services/scraper.service';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
@@ -10,6 +10,7 @@ import clsx from 'clsx';
 
 export const Import = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const [url, setUrl] = useState('');
     const [loading, setLoading] = useState(false);
     const [novel, setNovel] = useState<NovelMetadata | null>(scraperService.activeNovelMetadata);
@@ -60,13 +61,17 @@ export const Import = () => {
             }
             wasScrapingManhwa = isScraping;
 
+            setScraping(isScraping);
             if (isScraping) {
                 setProgress(newProgress);
-                setScraping(isScraping);
                 if (manhwaScraperService.activeNovelMetadata) {
                     setNovel(manhwaScraperService.activeNovelMetadata);
                     setActiveTab('manhwa');
                 }
+            } else {
+                // If it was scraping and now it's not, ensure progress is at 100% display-wise
+                // although setIsImportComplete handles the success UI
+                setProgress(newProgress);
             }
         });
 
@@ -81,6 +86,27 @@ export const Import = () => {
             unsubManhwa();
         };
     }, []);
+
+    // Handle initial URL or Search Query from navigation state
+    useEffect(() => {
+        const state = location.state as { initialUrl?: string; initialQuery?: string };
+        if (state) {
+            if (state.initialUrl) {
+                setUrl(state.initialUrl);
+                setActiveTab('manhwa');
+                // Use a short delay or ensure handlePreview handles the updated url state
+                // handlePreview accepts an optional overrideUrl which is perfect here
+                handlePreview(state.initialUrl, true);
+            } else if (state.initialQuery) {
+                setSearchQuery(state.initialQuery);
+                setActiveTab('search');
+                // Trigger search after a tick to ensure state is updated
+                setTimeout(() => {
+                    handleSearch();
+                }, 100);
+            }
+        }
+    }, [location.state]);
 
     const resetImportState = () => {
         setUrl('');
@@ -112,14 +138,21 @@ export const Import = () => {
         }
     };
 
-    const handlePreview = async (overrideUrl?: string) => {
+    const handlePreview = async (overrideUrl?: string, forceManhwa?: boolean) => {
         const targetUrl = overrideUrl || url;
         if (!targetUrl) return;
         setLoading(true);
         setNovel(null);
         setSelectedPublisher('');
         try {
-            const service = activeTab === 'manhwa' || activeTab === 'search' ? manhwaScraperService : scraperService;
+            // Determine service:
+            // 1. If forced Manhwa (from Discover nav), use Manhwa service
+            // 2. If URL matches known Manhwa domains, use Manhwa service
+            // 3. Otherwise fallback to activeTab or default Scraper
+            const isManhwaUrl = targetUrl.includes('asuracomic') || targetUrl.includes('mangadex.org') || targetUrl.includes('comick.io');
+            const useManhwaService = forceManhwa || isManhwaUrl || activeTab === 'manhwa' || activeTab === 'search';
+
+            const service = useManhwaService ? manhwaScraperService : scraperService;
             const data = await service.fetchNovel(targetUrl);
             setNovel(data);
             // If comick.art with publishers, auto-show publisher selection

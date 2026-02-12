@@ -17,6 +17,30 @@ export const SeriesHero: React.FC<SeriesHeroProps> = ({
     inLibrary,
     chapterCount = 0
 }) => {
+    // Defensive deduplication for status (e.g. "ONGOINGONGOING")
+    const displayStatus = React.useMemo(() => {
+        if (!novel.status || novel.status.length < 3) return novel.status;
+        const s = novel.status.trim();
+        // Check for simple exact repetitions
+        for (let i = 1; i <= Math.floor(s.length / 2); i++) {
+            if (s.length % i === 0) {
+                const sub = s.substring(0, i);
+                if (sub.repeat(s.length / i) === s) return sub;
+            }
+        }
+        return s;
+    }, [novel.status]);
+
+    // Defensive title cleaning
+    const displayTitle = React.useMemo(() => {
+        const t = novel.title;
+        const upper = t.toUpperCase();
+        if (upper === 'UNKNOWN TITLE' || upper.includes('BETA SITE') || upper.includes('READ ON OUR')) {
+            return 'Refreshing Title...';
+        }
+        return t;
+    }, [novel.title]);
+
     return (
         <div className="relative w-full">
             {/* Cover Image & Gradient Overlay */}
@@ -31,9 +55,9 @@ export const SeriesHero: React.FC<SeriesHeroProps> = ({
                 {/* Content Overlay */}
                 <div className="absolute bottom-0 left-0 right-0 p-6 flex flex-col gap-4">
                     <div className="flex flex-wrap gap-2">
-                        {novel.status && (
+                        {displayStatus && (
                             <span className="px-2.5 py-1 rounded-md bg-primary text-white text-[10px] font-bold tracking-wider uppercase">
-                                {novel.status}
+                                {displayStatus}
                             </span>
                         )}
                         {novel.category && (
@@ -43,8 +67,8 @@ export const SeriesHero: React.FC<SeriesHeroProps> = ({
                         )}
                     </div>
 
-                    <h1 className="text-3xl font-black leading-tight drop-shadow-lg text-slate-900 dark:text-white">
-                        {novel.title}
+                    <h1 className="text-3xl font-black text-white leading-tight drop-shadow-lg">
+                        {displayTitle}
                     </h1>
 
                     <div className="flex items-center gap-4 text-sm text-slate-700 dark:text-slate-300">

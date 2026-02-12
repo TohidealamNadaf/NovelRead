@@ -1,0 +1,15 @@
+--- Testing Selectors ---
+Found 15 items using selector: div.grid.grid-cols-2.md\:grid-cols-5 a[href*="series/"]
+[0] RealTitle: "Genius Prismatic Mage", Tag: "MANHWA", Link: "series/genius-prismatic-mage-59340bb0", Img: "https://gg.asuracomic.net/storage/media/269524/con..."
+[1] RealTitle: "Boundless Necromancer", Tag: "MANHWA", Link: "series/boundless-necromancer-9eeafdbc", Img: "https://gg.asuracomic.net/storage/media/279987/con..."
+[2] RealTitle: "Breakers", Tag: "MANHWA", Link: "series/breakers-e9a1da77", Img: "https://gg.asuracomic.net/storage/media/352794/con..."
+[3] RealTitle: "The Wandering Knight’s Survival Manual", Tag: "MANHWA", Link: "series/the-wandering-knights-survival-manual-ae97ea08", Img: "https://gg.asuracomic.net/storage/media/388021/con..."
+[4] RealTitle: "I Became the First Prince: Legend of Swo...", Tag: "MANHWA", Link: "series/i-became-the-first-prince-legend-of-swords-song-d9563fef", Img: "https://gg.asuracomic.net/storage/media/412957/con..."
+[5] RealTitle: "Return of the SSS-Class Ranker", Tag: "MANHWA", Link: "series/return-of-the-sss-class-ranker-3badacfe", Img: "https://gg.asuracomic.net/storage/media/75/convers..."
+[6] RealTitle: "Omniscient Reader’s Viewpoint", Tag: "MANHWA", Link: "series/omniscient-readers-viewpoint-afe97ab5", Img: "https://gg.asuracomic.net/storage/media/105/conver..."
+[7] RealTitle: "Return of the Apocalypse-Class Death Kni...", Tag: "MANHWA", Link: "series/return-of-the-apocalypse-class-death-knight-4bd70f56", Img: "https://gg.asuracomic.net/storage/media/341804/con..."
+[8] RealTitle: "Star-Embracing Swordmaster", Tag: "MANHWA", Link: "series/star-embracing-swordmaster-de554036", Img: "https://gg.asuracomic.net/storage/media/392598/con..."
+[9] RealTitle: "Infinite Mage", Tag: "MANHWA", Link: "series/infinite-mage-ca8fad1b", Img: "https://gg.asuracomic.net/storage/media/103/conver..."
+[10] RealTitle: "My Wife is the Demonic Cult Leader", Tag: "MANHWA", Link: "series/my-wife-is-the-demonic-cult-leader-c2eef2f1", Img: "https://gg.asuracomic.net/storage/media/314785/con..."
+
+Broad selector found 35 items.

@@ -407,12 +407,6 @@ export const Discover = () => {
                                 <div className="flex flex-col gap-3">
                                     <div className="flex items-center justify-between px-4">
                                         <h3 className="text-lg font-bold tracking-tight">Trending Manhwa</h3>
-                                        <button
-                                            onClick={() => navigate('/discover/trending?mode=manhwa')}
-                                            className="text-primary text-sm font-medium"
-                                        >
-                                            See all
-                                        </button>
                                     </div>
                                     <div className="carousel-container flex overflow-x-auto gap-4 px-4 hide-scrollbar snap-x snap-mandatory">
                                         {manhwaData.trending.map((manga: any, idx: number) => (
@@ -439,12 +433,6 @@ export const Discover = () => {
                                 <div className="flex flex-col gap-3">
                                     <div className="flex items-center justify-between px-4">
                                         <h3 className="text-lg font-bold tracking-tight">Popular Today</h3>
-                                        <button
-                                            onClick={() => navigate('/discover/popular?mode=manhwa')}
-                                            className="text-primary text-sm font-medium"
-                                        >
-                                            See all
-                                        </button>
                                     </div>
                                     <div className="flex overflow-x-auto gap-4 px-4 hide-scrollbar">
                                         {manhwaData.popular.map((manga: any, idx: number) => (
