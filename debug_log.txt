@@ -1,0 +1,8 @@
+Fetching https://asuracomic.net/series/standard-of-reincarnation-0453f631/chapter/111...
+HTML Length: 205187
+No valid __NEXT_DATA__ content, using Regex Fallback...
+Found 29 images via Regex.
+[Filtered Accepted] https://gg.asuracomic.net/storage/media/141/conversions/7b123219-optimized.webp
+[Filtered Accepted] https://gg.asuracomic.net/storage/media/266925/conversions/01JJHN0Z42F9DNQHJVED1WBBZK-optimized.webp
+[Filtered Accepted] https://gg.asuracomic.net/storage/media/339849/conversions/01K0VQPRSRDB0AME774RXW41N2-optimized.webp
+Accepted 26 / 29 images after filtering.

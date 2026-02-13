@@ -637,11 +637,80 @@ export class ManhwaScraperService {
     }
 
     // --- Lazy Loading Images ---
+
+    /**
+     * Extract page number from an image URL filename for sorting.
+     * Returns the last number in the filename, or Infinity if none found.
+     */
+    private extractPageNumber(url: string): number {
+        const filename = url.split('/').pop() || '';
+        const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
+        const nums = nameWithoutExt.match(/\d+/g);
+        if (nums && nums.length > 0) {
+            return parseInt(nums[nums.length - 1], 10);
+        }
+        return Infinity;
+    }
+
+    /**
+     * Check if an image is likely a chapter page (content) or an ad/extra.
+     */
+    private isContentPage(url: string): boolean {
+        // Explicitly exclude GIFs
+        if (url.toLowerCase().includes('.gif')) return false;
+
+        const filename = url.split('/').pop() || '';
+        const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
+        const cleanName = nameWithoutExt.replace(/-optimized|_optimized/i, '');
+
+        if (/^\d+$/.test(cleanName)) return true;
+        if (/^[a-zA-Z0-9_-]{0,10}[-_]?\d+$/.test(cleanName)) return true;
+        return false;
+    }
+
+    /**
+     * Sort HTML <img> tags: Ads/Extras first, then Content pages sorted numerically.
+     */
+    private sortImageTagsByFilename(imgTags: string[]): string[] {
+        const contentPages: string[] = [];
+        const extras: string[] = [];
+
+        const getSrc = (tag: string) => {
+            const match = tag.match(/src="([^"]+)"/);
+            return match ? match[1] : '';
+        };
+
+        imgTags.forEach(tag => {
+            const src = getSrc(tag);
+            // Filter out empty URLs and GIFs
+            if (!src || src.toLowerCase().includes('.gif')) return;
+
+            if (this.isContentPage(src)) {
+                contentPages.push(tag);
+            } else {
+                extras.push(tag);
+            }
+        });
+
+        // Sort content pages purely by number
+        contentPages.sort((a, b) => {
+            const numA = this.extractPageNumber(getSrc(a));
+            const numB = this.extractPageNumber(getSrc(b));
+            return numA - numB;
+        });
+
+        // Sort extras alphabetically
+        extras.sort();
+
+        return [...extras, ...contentPages];
+    }
+
     async fetchChapterImages(url: string): Promise<string> {
         // ASURA SCANS
         if (url.includes('asuracomic.net') || url.includes('asuratoon.com')) {
             const images = await asuraScraperService.fetchChapterImages(url);
             if (images.length === 0) return '<p>No images found.</p>';
+            // Images from asura service are already sorted by filename number
             return images.map(src => `<img src="${src}" class="w-full object-contain" loading="lazy" />`).join('');
         }
 
@@ -651,6 +720,7 @@ export class ManhwaScraperService {
             if (id) {
                 const images = await mangaDexService.fetchChapterImages(id);
                 if (images.length === 0) return '<p>No images found in this chapter.</p>';
+                // MangaDex API returns images in correct order
                 return images.map(src => `<img src="${src}" class="w-full object-contain" loading="lazy" />`).join('');
             }
         }
@@ -702,8 +772,10 @@ export class ManhwaScraperService {
         }
 
         if (foundImages.length > 0) {
-            console.log(`[ManhwaScraper] Found ${foundImages.length} images for chapter`);
-            return foundImages.join('');
+            // Sort by filename page number for correct reading order
+            const sorted = this.sortImageTagsByFilename(foundImages);
+            console.log(`[ManhwaScraper] Found ${sorted.length} images for chapter (sorted by filename)`);
+            return sorted.join('');
         }
 
         return '<p>No images found for this chapter.</p>';

@@ -515,22 +515,185 @@ export class AsuraScraperService {
         };
     }
 
+    /**
+     * Extract the page number from an image filename for sorting.
+     * Handles patterns like: 01.webp, page_02.jpg, image-003.png
+     * AND Asura's new ULID patterns: 01K99EBHMABQEN2E3Q5FZ4D29E (Lexicographically sortable - effectively numeric)
+     */
+    private extractPageNumber(url: string): number {
+        const filename = url.split('/').pop() || '';
+        const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
+        const cleanName = nameWithoutExt.replace(/-optimized|_optimized/i, '');
+
+        const allNumbers = cleanName.match(/\d+/g);
+        if (allNumbers && allNumbers.length > 0) {
+            return parseInt(allNumbers[allNumbers.length - 1], 10);
+        }
+
+        return -1; // No number found
+    }
+
+    /**
+     * Check if an image is likely a chapter page (content) or an ad/extra.
+     * Content pages usually have simple numeric filenames like "01.webp".
+     * Ads usually have huge random UUIDs (though Asura now uses ULIDs for content too).
+     */
+    private isContentPage(url: string): boolean {
+        // Explicitly exclude GIFs
+        if (url.toLowerCase().includes('.gif')) return false;
+
+        const filename = url.split('/').pop() || '';
+        const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
+        const cleanName = nameWithoutExt.replace(/-optimized|_optimized/i, '');
+
+        // Pattern 1: Purely numeric
+        if (/^\d+$/.test(cleanName)) return true;
+
+        // Pattern 2: Simple prefix + number
+        if (/^[a-zA-Z0-9_-]{0,15}[-_]?\d+$/.test(cleanName)) return true;
+
+        // Pattern 3: ULID (Asura's new format) -> 26 chars, starts with 0-7
+        if (/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(cleanName)) return true;
+
+        // Pattern 4: 8-char hex (short hash) - legitimate images often have this
+        if (/^[a-f0-9]{8}$/i.test(cleanName)) return true;
+
+        return false;
+    }
+
+    /**
+     * Sort image URLs: EXTRACT ONLY CONTENT IMAGES.
+     * Filters out ads/extras (long UUIDs, GIFs).
+     */
+    private sortImagesByFilename(images: string[]): string[] {
+        const contentPages: string[] = [];
+
+        images.forEach(img => {
+            if (!img) return;
+            // Strict filtering: Only keep images identified as content
+            if (this.isContentPage(img)) {
+                contentPages.push(img);
+            }
+        });
+
+        // Use a smarter sort that handles both Numbers and ULIDs/Strings
+        contentPages.sort((a, b) => {
+            const getCleanName = (url: string) => {
+                const f = url.split('/').pop() || '';
+                return f.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '').replace(/-optimized|_optimized/i, '');
+            };
+
+            const numA = this.extractPageNumber(a);
+            const numB = this.extractPageNumber(b);
+
+            // If both are numeric, sort by number
+            if (numA !== -1 && numB !== -1) {
+                return numA - numB;
+            }
+
+            // Fallback to string comparison for ULIDs or mixed types
+            return getCleanName(a).localeCompare(getCleanName(b));
+        });
+
+        return contentPages;
+    }
+
     async fetchChapterImages(url: string): Promise<string[]> {
         const html = await this.fetchHtml(url);
         if (!html) return [];
 
-        // Images are not in the DOM but in Next.js hydration scripts.
-        // We'll extract them using Regex on the raw HTML.
+        // Strategy 1: Parse __NEXT_DATA__ JSON
+        try {
+            const nextDataMatch = html.match(/<script\s+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+            if (nextDataMatch && nextDataMatch[1]) {
+                const nextData = JSON.parse(nextDataMatch[1]);
+                const pageProps = nextData?.props?.pageProps;
+
+                if (pageProps) {
+                    // Try to find chapter data in common locations
+                    const chapterData = pageProps.chapter || pageProps.data || pageProps;
+
+                    // 1. Direct 'images' array (Best case)
+                    if (chapterData?.images && Array.isArray(chapterData.images)) {
+                        return chapterData.images
+                            .filter((img: string) => img && !img.toLowerCase().includes('.gif') && !img.includes('logo.webp'))
+                            .map((img: string) => img.startsWith('http') ? img : `https://gg.asuracomic.net/storage/media/${img}`);
+                    }
+
+                    // 2. 'pages' array
+                    let pages: any[] | null = null;
+                    if (Array.isArray(chapterData.pages)) pages = chapterData.pages;
+                    else if (Array.isArray(chapterData.chapter?.pages)) pages = chapterData.chapter.pages;
+
+                    if (pages && pages.length > 0) {
+                        const orderedImages: string[] = [];
+                        // Sort if they have order/index properties
+                        const sortedPages = [...pages].sort((a, b) => {
+                            const orderA = typeof a === 'object' ? (a.order ?? a.index ?? a.page ?? 0) : 0;
+                            const orderB = typeof b === 'object' ? (b.order ?? b.index ?? b.page ?? 0) : 0;
+                            return orderA - orderB;
+                        });
+
+                        for (const page of sortedPages) {
+                            let imgUrl = '';
+                            if (typeof page === 'string') imgUrl = page;
+                            else if (typeof page === 'object' && page !== null) {
+                                imgUrl = page.url || page.src || page.image || page.img || '';
+                            }
+                            if (imgUrl && !imgUrl.includes('logo') && !imgUrl.includes('icon') &&
+                                !imgUrl.includes('avatar') && !imgUrl.includes('thumb')) {
+                                orderedImages.push(imgUrl);
+                            }
+                        }
+
+                        if (orderedImages.length > 0) {
+                            return this.sortImagesByFilename(orderedImages);
+                        }
+                    }
+
+                    // 3. Deep search in JSON if direct paths failed
+                    const findImageArrays = (obj: any, depth = 0): string[] => {
+                        if (depth > 8 || !obj) return [];
+                        if (Array.isArray(obj)) {
+                            const urls = obj
+                                .map((item: any) => {
+                                    if (typeof item === 'string' && /\.(jpg|jpeg|png|webp|avif)/i.test(item)) return item;
+                                    if (typeof item === 'object' && item !== null) {
+                                        return item.url || item.src || item.image || item.img || '';
+                                    }
+                                    return '';
+                                })
+                                .filter((u: string) => u && /\.(jpg|jpeg|png|webp|avif)/i.test(u) &&
+                                    !u.includes('logo') && !u.includes('icon') && !u.includes('avatar'));
+
+                            if (urls.length >= 3) return urls;
+                        }
+                        if (typeof obj === 'object' && obj !== null) {
+                            for (const key of Object.keys(obj)) {
+                                const result = findImageArrays(obj[key], depth + 1);
+                                if (result.length >= 3) return result;
+                            }
+                        }
+                        return [];
+                    };
+
+                    const deepImages = findImageArrays(pageProps);
+                    if (deepImages.length > 0) {
+                        return this.sortImagesByFilename(deepImages);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Error parsing ASURA NEXT_DATA:', e);
+        }
+
+        // Strategy 2: Regex extraction (Fallback)
+        console.log('[Asura] Using regex fallback for image extraction');
         const urlRegex = /https?:\/\/[^"'\s\\]+\.(?:jpg|jpeg|png|webp|avif)/gi;
         const matches = html.match(urlRegex) || [];
 
-        // Filter and deduplicate
         const uniqueImages = new Set<string>();
-
         matches.forEach(imageUrl => {
-            // Asura chapter images are usually hosted on gg.asuracomic.net (or similar)
-            // and often have a path like /storage/media/
-            // We exclude common UI elements.
             if (imageUrl.includes('gg.asuracomic.net') &&
                 !imageUrl.includes('logo') &&
                 !imageUrl.includes('icon') &&
@@ -541,7 +704,7 @@ export class AsuraScraperService {
             }
         });
 
-        return Array.from(uniqueImages);
+        return this.sortImagesByFilename(Array.from(uniqueImages));
     }
 
     private isValidHtml(html: string): boolean {
