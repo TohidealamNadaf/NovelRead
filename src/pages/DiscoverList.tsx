@@ -204,7 +204,8 @@ export const DiscoverList = () => {
                                                 src={item.coverUrl}
                                                 className="absolute inset-0 w-full h-full object-cover"
                                                 alt={item.title}
-                                                loading="eager"
+                                                loading={index < 8 ? "eager" : "lazy"}
+                                                decoding="async"
                                                 onError={(e) => {
                                                     const target = e.target as HTMLImageElement;
                                                     target.style.display = 'none';

@@ -7,8 +7,10 @@ import type { AppSettings } from '../services/settings.service';
 import { settingsService } from '../services/settings.service';
 import { updateService } from '../services/update.service';
 import type { UpdateState } from '../services/update.service';
-import { ChevronRight, Palette, Globe, MoveVertical, BookOpen, Trash2, FolderOpen, Shield, Cloud, RefreshCw, Download, CheckCircle2 } from 'lucide-react';
+import { cacheService } from '../services/cache.service';
+import { ChevronRight, Palette, Globe, MoveVertical, BookOpen, Trash2, FolderOpen, Shield, Cloud, RefreshCw, Download, CheckCircle2, AlertTriangle, RotateCcw } from 'lucide-react';
 import clsx from 'clsx';
+import { Preferences } from '@capacitor/preferences';
 
 // Helper to render toggle switch
 const Toggle = ({ active }: { active: boolean }) => (
@@ -20,12 +22,17 @@ const Toggle = ({ active }: { active: boolean }) => (
 export const Settings = () => {
     const [settings, setSettings] = useState<AppSettings>(settingsService.getSettings());
     const [cacheSize, setCacheSize] = useState("Calculating...");
+    const [profileImage, setProfileImage] = useState<string>("https://img.freepik.com/free-psd/3d-illustration-person-with-sunglasses_23-2149436188.jpg");
     const [updateState, setUpdateState] = useState<UpdateState>({
         status: 'idle',
-        currentVersion: '1.1.0',
-        latestVersion: '1.1.0',
+        currentVersion: '1.2.0', // Updated build version
+        latestVersion: '1.2.0',
         progress: 0
     });
+
+    // Dialog States
+    const [showClearCacheConfirm, setShowClearCacheConfirm] = useState(false);
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     useEffect(() => {
         const settingsUnsub = settingsService.subscribe((newSettings) => {
@@ -36,14 +43,27 @@ export const Settings = () => {
             setUpdateState(state);
         });
 
-        // Mock cache size calculation
-        setTimeout(() => setCacheSize("1.2 GB"), 1000);
+        loadProfileImage();
+        calculateCache();
 
         return () => {
             settingsUnsub();
             updateUnsub();
         };
     }, []);
+
+    const loadProfileImage = async () => {
+        const { value } = await Preferences.get({ key: 'profileImage' });
+        if (value) {
+            setProfileImage(value);
+        }
+    };
+
+    const calculateCache = async () => {
+        setCacheSize("Calculating...");
+        const size = await cacheService.getCacheSize();
+        setCacheSize(size);
+    };
 
     const toggleSetting = (key: keyof AppSettings) => {
         if (typeof settings[key] === 'boolean') {
@@ -52,21 +72,35 @@ export const Settings = () => {
     };
 
     const cycleTheme = () => {
-        const nextTheme = settings.theme === 'light' ? 'dark' : 'light';
+        // Cycle: light -> dark -> sepia -> light
+        // For production simplicity, maybe just light/dark for now or keep sepia if implemented
+        const themes: AppSettings['theme'][] = ['light', 'dark', 'sepia'];
+        const currentIndex = themes.indexOf(settings.theme);
+        const nextTheme = themes[(currentIndex + 1) % themes.length];
         settingsService.updateSettings({ theme: nextTheme });
-        // Apply dark class to document
-        if (nextTheme === 'dark') {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
     };
 
     const handleClearCache = async () => {
-        if (confirm("Are you sure you want to clear the cache? related data will be re-downloaded.")) {
-            setCacheSize("Clearing...");
-            setTimeout(() => setCacheSize("0 MB"), 1500);
+        setCacheSize("Clearing...");
+        const success = await cacheService.clearCache();
+        if (success) {
+            await calculateCache();
+            setShowClearCacheConfirm(false);
+        } else {
+            setCacheSize("Error");
         }
+    };
+
+    const handleResetSettings = async () => {
+        await settingsService.updateSettings({
+            theme: 'dark',
+            fontSize: 1.125,
+            autoScroll: true,
+            pageFlipAnimation: false,
+            // Reset other defaults if needed
+        });
+        setShowResetConfirm(false);
+        window.location.reload(); // Force reload to ensure everything applies cleanly
     };
 
     const handleUpdateAction = () => {
@@ -80,14 +114,14 @@ export const Settings = () => {
     };
 
     return (
-        <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white h-screen flex flex-col overflow-hidden">
+        <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white h-screen flex flex-col overflow-hidden font-display">
             {/* Sticky Header */}
             <Header
                 title="Settings"
                 leftContent={
                     <Link to="/profile" className="flex items-center justify-center p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
                         <div className="flex size-9 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20">
-                            <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${localStorage.getItem('profileImage') || 'https://img.freepik.com/free-psd/3d-illustration-person-with-sunglasses_23-2149436188.jpg'}")` }}></div>
+                            <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${profileImage}")` }}></div>
                         </div>
                     </Link>
                 }
@@ -95,8 +129,8 @@ export const Settings = () => {
             />
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto">
-                <div className="pb-40">
+            <div className="flex-1 overflow-y-auto w-full">
+                <div className="pb-40 pt-2">
                     <h2 className="ios-section-title">General</h2>
                     <div className="bg-white dark:bg-[#1c1c1e] border-y border-slate-200 dark:border-white/5">
                         <div className="ios-list-item cursor-pointer" onClick={cycleTheme}>
@@ -141,46 +175,53 @@ export const Settings = () => {
 
                     <h2 className="ios-section-title">Storage</h2>
                     <div className="bg-white dark:bg-[#1c1c1e] border-y border-slate-200 dark:border-white/5">
-                        <div className="ios-list-item cursor-pointer" onClick={handleClearCache}>
+                        <div className="ios-list-item cursor-pointer" onClick={() => setShowClearCacheConfirm(true)}>
                             <div className="flex size-8 items-center justify-center rounded-lg bg-green-500 text-white">
                                 <Trash2 size={18} />
                             </div>
-                            <div className="flex-1 text-[15px] font-medium">Cache management</div>
+                            <div className="flex-1 text-[15px] font-medium">Clear Cache</div>
                             <div className="flex items-center gap-1 text-slate-500 text-[14px]">
                                 {cacheSize}
                                 <ChevronRight size={18} />
                             </div>
                         </div>
-                        <div className="ios-list-item cursor-pointer">
+                        <div className="ios-list-item cursor-pointer opacity-50">
                             <div className="flex size-8 items-center justify-center rounded-lg bg-green-500 text-white">
                                 <FolderOpen size={18} />
                             </div>
                             <div className="flex-1 text-[15px] font-medium">Download location</div>
                             <div className="flex items-center gap-1 text-slate-500 text-[14px]">
-                                {settings.downloadLocation === 'internal' ? 'Internal Storage' : 'SD Card'}
-                                <ChevronRight size={18} />
+                                Internal
+                                <span className="text-[10px] ml-1 border border-slate-300 dark:border-slate-600 px-1 rounded">PRO</span>
                             </div>
                         </div>
                     </div>
 
                     <h2 className="ios-section-title">Advanced</h2>
                     <div className="bg-white dark:bg-[#1c1c1e] border-y border-slate-200 dark:border-white/5">
-                        <div className="ios-list-item cursor-pointer">
+                        <div className="ios-list-item cursor-pointer opacity-50">
                             <div className="flex size-8 items-center justify-center rounded-lg bg-orange-500 text-white">
                                 <Shield size={18} />
                             </div>
                             <div className="flex-1 text-[15px] font-medium">Scraper proxies</div>
                             <div className="flex items-center gap-1 text-slate-500 text-[14px]">
-                                {settings.scraperProxy ? 'Configured' : 'None'}
-                                <ChevronRight size={18} />
+                                None
                             </div>
                         </div>
-                        <div className="ios-list-item cursor-pointer" onClick={() => toggleSetting('cloudSync')}>
+                        <div className="ios-list-item cursor-pointer opacity-50">
                             <div className="flex size-8 items-center justify-center rounded-lg bg-cyan-500 text-white">
                                 <Cloud size={18} />
                             </div>
                             <div className="flex-1 text-[15px] font-medium">Cloud sync</div>
-                            <Toggle active={settings.cloudSync} />
+                            <div className="flex items-center gap-1 text-slate-500 text-[14px]">
+                                Disabled
+                            </div>
+                        </div>
+                        <div className="ios-list-item cursor-pointer text-red-500" onClick={() => setShowResetConfirm(true)}>
+                            <div className="flex size-8 items-center justify-center rounded-lg bg-red-500/10 text-red-500">
+                                <RotateCcw size={18} />
+                            </div>
+                            <div className="flex-1 text-[15px] font-medium">Reset All Settings</div>
                         </div>
                     </div>
 
@@ -260,11 +301,73 @@ export const Settings = () => {
                             )}
                         </div>
                         <p className="text-center mt-6 text-[12px] text-slate-500 dark:text-slate-500 font-medium">
-                            Current Version: {updateState.currentVersion} (Build 82)
+                            Current Version: {updateState.currentVersion} (Build 83)
                         </p>
                     </div>
                 </div>
             </div>
+
+            {/* Clear Cache Confirmation */}
+            {showClearCacheConfirm && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
+                    <div className="bg-white dark:bg-[#1e1e24] w-full max-w-sm rounded-2xl p-6 shadow-2xl border border-white/10 scale-100 animate-in zoom-in-95 duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="size-12 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4">
+                                <AlertTriangle size={24} />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Clear Cache?</h3>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                                This will remove cached images and temporary files. Reading logs and library updates will be safe.
+                            </p>
+                            <div className="grid grid-cols-2 gap-3 w-full">
+                                <button
+                                    onClick={() => setShowClearCacheConfirm(false)}
+                                    className="px-4 py-2.5 rounded-xl font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleClearCache}
+                                    className="px-4 py-2.5 rounded-xl font-semibold bg-amber-500 text-white hover:bg-amber-600 transition-colors shadow-lg shadow-amber-500/20"
+                                >
+                                    Yes, Clear
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Reset Settings Confirmation */}
+            {showResetConfirm && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
+                    <div className="bg-white dark:bg-[#1e1e24] w-full max-w-sm rounded-2xl p-6 shadow-2xl border border-white/10 scale-100 animate-in zoom-in-95 duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="size-12 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mb-4">
+                                <RotateCcw size={24} />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Reset Settings?</h3>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                                This will revert all your preferences (theme, font size, etc.) to default. Your library and reading progress will NOT be deleted.
+                            </p>
+                            <div className="grid grid-cols-2 gap-3 w-full">
+                                <button
+                                    onClick={() => setShowResetConfirm(false)}
+                                    className="px-4 py-2.5 rounded-xl font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleResetSettings}
+                                    className="px-4 py-2.5 rounded-xl font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                                >
+                                    Reset
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <FooterNavigation />
         </div>

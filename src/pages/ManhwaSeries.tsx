@@ -16,6 +16,8 @@ export const ManhwaSeries = () => {
     const [chapters, setChapters] = useState<Chapter[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showFixedButton, setShowFixedButton] = useState(false);
+    const [downloadingChapterIds, setDownloadingChapterIds] = useState<Set<string>>(new Set());
+    const [failedChapterIds, setFailedChapterIds] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         const handleScroll = () => {
@@ -60,7 +62,55 @@ export const ManhwaSeries = () => {
                 return u === 'UNKNOWN TITLE' || u.includes('BETA SITE') || u.includes('READ ON OUR');
             };
 
-            if (isNoisy(novel.title)) {
+            // Check for new chapters (Live Sync)
+            const checkForUpdates = async () => {
+                if (!novel.sourceUrl || !navigator.onLine) return;
+
+                try {
+                    console.log(`[ManhwaSeries] Checking for updates: ${novel.title}`);
+                    const freshData = await manhwaScraperService.fetchNovel(novel.sourceUrl);
+
+                    if (freshData && freshData.chapters.length > chapters.length) {
+                        console.log(`[ManhwaSeries] Found ${freshData.chapters.length - chapters.length} new chapters!`);
+
+                        // Find new chapters
+                        const existingUrls = new Set(chapters.map(c => c.audioPath));
+                        const newChapters = freshData.chapters.filter(c => !existingUrls.has(c.url));
+
+                        if (newChapters.length > 0) {
+                            // Add to DB
+                            const startOrderIndex = chapters.length;
+                            const newChapterObjects: Chapter[] = [];
+
+                            for (let i = 0; i < newChapters.length; i++) {
+                                const ch = newChapters[i];
+                                const chapterObj: Chapter = {
+                                    id: `${novelId}-ch-${startOrderIndex + i + 1}`, // Generate ID
+                                    novelId,
+                                    title: ch.title,
+                                    content: '',
+                                    orderIndex: startOrderIndex + i,
+                                    audioPath: ch.url,
+                                    date: new Date().toISOString().split('T')[0], // Today's date for new sync
+                                    isRead: 0
+                                };
+                                await dbService.addChapter(chapterObj);
+                                newChapterObjects.push(chapterObj);
+                            }
+
+                            // Update State
+                            setChapters(prev => [...prev, ...newChapterObjects]);
+                            console.log(`[ManhwaSeries] Synced ${newChapters.length} new chapters.`);
+                        }
+                    }
+                } catch (e) {
+                    console.error("[ManhwaSeries] Failed to check for updates", e);
+                }
+            };
+
+            checkForUpdates();
+
+            if (isNoisy(novel.title) && navigator.onLine) {
                 try {
                     console.log(`[ManhwaSeries] Refreshing noisy title: ${novel.title}`);
                     const freshData = await manhwaScraperService.fetchNovel(novel.sourceUrl);
@@ -103,6 +153,13 @@ export const ManhwaSeries = () => {
     const handleDownload = async (chapter: Chapter) => {
         if (!novel || !novelId) return;
 
+        setDownloadingChapterIds(prev => new Set(prev).add(chapter.id));
+        setFailedChapterIds(prev => {
+            const next = new Set(prev);
+            next.delete(chapter.id); // Clear previous failure if retrying
+            return next;
+        });
+
         try {
             console.log(`[ManhwaSeries] Downloading chapter: ${chapter.title}`);
             // audioPath stores the source URL for manhwa chapters
@@ -116,27 +173,38 @@ export const ManhwaSeries = () => {
                     c.id === chapter.id ? { ...c, content } : c
                 ));
                 console.log(`[ManhwaSeries] ✓ Downloaded ${chapter.title}`);
+            } else {
+                throw new Error("Empty content received");
             }
         } catch (error) {
             console.error(`[ManhwaSeries] Failed to download chapter ${chapter.title}`, error);
+            setFailedChapterIds(prev => new Set(prev).add(chapter.id));
+        } finally {
+            setDownloadingChapterIds(prev => {
+                const next = new Set(prev);
+                next.delete(chapter.id);
+                return next;
+            });
         }
     };
 
     const handleMassDownload = async () => {
         if (!novel || chapters.length === 0) return;
 
-        const undownloaded = chapters.filter(c => !c.content);
-        if (undownloaded.length === 0) {
+        const undownloaded = chapters.filter(c => !c.content && !c.isRead); // Optional: Skip read chapters? Keeping simple for now
+        const targetChapters = undownloaded.length > 0 ? undownloaded : chapters;
+
+        if (targetChapters.length === 0) {
             console.log("[ManhwaSeries] All chapters already downloaded.");
             return;
         }
 
-        console.log(`[ManhwaSeries] Starting mass download of ${undownloaded.length} chapters...`);
+        console.log(`[ManhwaSeries] Starting mass download of ${targetChapters.length} chapters...`);
 
         // Process in small batches to avoid overwhelming the system/network
         const batchSize = 3;
-        for (let i = 0; i < undownloaded.length; i += batchSize) {
-            const batch = undownloaded.slice(i, i + batchSize);
+        for (let i = 0; i < targetChapters.length; i += batchSize) {
+            const batch = targetChapters.slice(i, i + batchSize);
             await Promise.all(batch.map(ch => handleDownload(ch)));
         }
 
@@ -193,6 +261,8 @@ export const ManhwaSeries = () => {
                     onDownload={handleDownload}
                     onMassDownload={handleMassDownload}
                     currentChapterId={novel.lastReadChapterId}
+                    downloadingChapterIds={downloadingChapterIds}
+                    failedChapterIds={failedChapterIds}
                 />
             </div>
 

@@ -13,7 +13,10 @@ export interface Novel {
     status?: string;
     source?: string;
     lastReadChapterId?: string;
+    lastReadAt?: number;
     createdAt?: number;
+    totalChapters?: number;
+    readChapters?: number;
 }
 
 export interface Chapter {
@@ -94,6 +97,16 @@ class DatabaseService {
             `;
             await this.db.execute(summaryTableSchema);
 
+            // Migration: Ensure discovery_cache table exists
+            const cacheTableSchema = `
+                CREATE TABLE IF NOT EXISTS discovery_cache (
+                    key TEXT PRIMARY KEY,
+                    data TEXT NOT NULL,
+                    timestamp INTEGER DEFAULT (strftime('%s', 'now'))
+                );
+            `;
+            await this.db.execute(cacheTableSchema);
+
             // Migration: Ensure new columns exist for older databases
             const columnsToAdd = [
                 { name: 'summary', type: 'TEXT' },
@@ -149,6 +162,45 @@ class DatabaseService {
             await this.sqlite.saveToStore('novel_db');
         }
     }
+
+    // --- Cache Methods ---
+    async getCache(key: string): Promise<any | null> {
+        const db = await this.getDB();
+        if (!db) return null;
+        try {
+            const result = await db.query('SELECT data FROM discovery_cache WHERE key = ?', [key]);
+            if (result.values && result.values.length > 0) {
+                return JSON.parse(result.values[0].data);
+            }
+            return null;
+        } catch (e) {
+            console.error(`Failed to get cache for ${key}`, e);
+            return null;
+        }
+    }
+
+    async setCache(key: string, data: any) {
+        const db = await this.getDB();
+        if (!db) return;
+        try {
+            const json = JSON.stringify(data);
+            await db.run(
+                'INSERT OR REPLACE INTO discovery_cache (key, data, timestamp) VALUES (?, ?, strftime(\'%s\', \'now\'))',
+                [key, json]
+            );
+            await this.save();
+        } catch (e) {
+            console.error(`Failed to set cache for ${key}`, e);
+        }
+    }
+
+    async clearCache(key: string) {
+        const db = await this.getDB();
+        if (!db) return;
+        await db.run('DELETE FROM discovery_cache WHERE key = ?', [key]);
+        await this.save();
+    }
+    // ---------------------
 
     async addNovel(novel: Novel) {
         const db = await this.getDB();
@@ -215,10 +267,42 @@ class DatabaseService {
         await this.save();
     }
 
+    async getStats(): Promise<{ chaptersRead: number, novelsCount: number }> {
+        const db = await this.getDB();
+        if (!db) return { chaptersRead: 0, novelsCount: 0 };
+
+        try {
+            const chaptersResult = await db.query('SELECT COUNT(*) as count FROM chapters WHERE isRead = 1');
+            const novelsResult = await db.query('SELECT COUNT(*) as count FROM novels');
+
+            return {
+                chaptersRead: chaptersResult.values && chaptersResult.values.length > 0 ? chaptersResult.values[0].count : 0,
+                novelsCount: novelsResult.values && novelsResult.values.length > 0 ? novelsResult.values[0].count : 0
+            };
+        } catch (e) {
+            console.error("Failed to get stats", e);
+            return { chaptersRead: 0, novelsCount: 0 };
+        }
+    }
+
     async getNovels(): Promise<Novel[]> {
         const db = await this.getDB();
         if (!db) return [];
-        const result = await db.query('SELECT * FROM novels ORDER BY createdAt DESC');
+
+        // Query to get novels with chapter counts
+        // We use a LEFT JOIN on chapters to count
+        const query = `
+SELECT
+n.*,
+    COUNT(c.id) as totalChapters,
+    SUM(CASE WHEN c.isRead = 1 THEN 1 ELSE 0 END) as readChapters
+            FROM novels n
+            LEFT JOIN chapters c ON n.id = c.novelId
+            GROUP BY n.id
+            ORDER BY n.lastReadAt DESC, n.createdAt DESC;
+`;
+
+        const result = await db.query(query);
         return (result.values as Novel[]) || [];
     }
 
@@ -266,7 +350,7 @@ class DatabaseService {
 
             if (fields.length === 0) return;
 
-            const query = `UPDATE novels SET ${fields.join(', ')} WHERE id = ?`;
+            const query = `UPDATE novels SET ${fields.join(', ')} WHERE id = ? `;
             values.push(id);
 
             await db.run(query, values);
@@ -316,8 +400,8 @@ class DatabaseService {
         if (!db) return;
 
         try {
-            // Update novel's lastReadChapterId
-            await db.run('UPDATE novels SET lastReadChapterId = ? WHERE id = ?', [chapterId, novelId]);
+            // Update novel's lastReadChapterId and timestamp
+            await db.run('UPDATE novels SET lastReadChapterId = ?, lastReadAt = ? WHERE id = ?', [chapterId, Date.now(), novelId]);
             // Mark chapter as read
             await db.run('UPDATE chapters SET isRead = 1 WHERE id = ?', [chapterId]);
             await this.save();

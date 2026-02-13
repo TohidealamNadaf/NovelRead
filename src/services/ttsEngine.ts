@@ -21,6 +21,7 @@
 
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
 
 // Segment types for emotion mapping
 export type SegmentType = 'narration' | 'dialogue' | 'inner' | 'action';
@@ -57,6 +58,7 @@ export class TTSEngine {
     private isPaused: boolean = false;
     private shouldStop: boolean = false;
     private isNative: boolean = false;
+    private language: string = 'en-US';
 
     // User settings
     private baseRate: number = 1.0;
@@ -71,6 +73,34 @@ export class TTSEngine {
 
     constructor() {
         this.isNative = Capacitor.isNativePlatform();
+        this.setupEventListeners();
+        this.detectLanguage();
+    }
+
+    private detectLanguage() {
+        if (typeof navigator !== 'undefined' && navigator.language) {
+            this.language = navigator.language;
+        }
+    }
+
+    private setupEventListeners() {
+        // Pause on background
+        App.addListener('appStateChange', ({ isActive }) => {
+            if (!isActive && this.isPlaying && !this.isPaused) {
+                console.log('[TTS] App backgrounded, pausing...');
+                this.pause();
+            }
+        });
+
+        // Pause on screen lock / visibility change
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden && this.isPlaying && !this.isPaused) {
+                    console.log('[TTS] Document hidden, pausing...');
+                    this.pause();
+                }
+            });
+        }
     }
 
     /**
@@ -100,15 +130,21 @@ export class TTSEngine {
      * Segment text into speech chunks with emotion parameters
      */
     segmentText(htmlContent: string): TTSSegment[] {
-        // Strip HTML tags
-        const text = htmlContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        // Use DOMParser for safer text extraction
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlContent, 'text/html');
+        const text = doc.body.textContent || '';
+
+        // Clean up whitespace but preserve paragraph breaks if needed (though we just take textContent here)
+        // For better experience, we might want to process block elements separately, but sticking to text extraction for now
+        const cleanText = text.replace(/\s+/g, ' ').trim();
 
         const segments: TTSSegment[] = [];
         let id = 0;
         let currentPos = 0;
 
         // Split into sentences/phrases for natural pauses
-        const chunks = this.splitIntoChunks(text);
+        const chunks = this.splitIntoChunks(cleanText);
 
         for (const chunk of chunks) {
             if (!chunk.trim()) continue;
@@ -116,7 +152,10 @@ export class TTSEngine {
             const type = this.detectSegmentType(chunk);
             const emotion = EMOTION_MAP[type];
 
-            const startIndex = text.indexOf(chunk, currentPos);
+            // Note: indexOf might match earlier occurrences. 
+            // For rigorous highlighting, we'd need to track position more carefully or use unique IDs in DOM.
+            // This is a "good enough" heuristic for now given the constraints.
+            const startIndex = cleanText.indexOf(chunk, currentPos);
             const endIndex = startIndex + chunk.length;
 
             segments.push({
@@ -137,27 +176,50 @@ export class TTSEngine {
 
     /**
      * Split text into speakable chunks (sentences or dialogue blocks)
+     * Supports smart quotes for better dialogue detection
      */
     private splitIntoChunks(text: string): string[] {
         const chunks: string[] = [];
         let remaining = text;
 
+        // Smart quote pairs: "" “” ‘’
+        const quoteRegex = /^["“'‘]([^"”'’]+)["”'’]/;
+
         while (remaining.length > 0) {
+            remaining = remaining.trim();
+            if (!remaining) break;
+
             // Check for quoted dialogue first
-            const dialogueMatch = remaining.match(/^["""]([^"""]+)["""]/);
+            const dialogueMatch = remaining.match(quoteRegex);
             if (dialogueMatch) {
-                chunks.push(`"${dialogueMatch[1]}"`);
-                remaining = remaining.slice(dialogueMatch[0].length).trim();
+                chunks.push(dialogueMatch[0]);
+                remaining = remaining.slice(dialogueMatch[0].length);
                 continue;
             }
 
-            // Find sentence boundaries
-            const sentenceEnd = remaining.search(/[.!?]+(\s|$)/);
-            if (sentenceEnd !== -1) {
-                const endPos = sentenceEnd + 1;
-                chunks.push(remaining.slice(0, endPos).trim());
-                remaining = remaining.slice(endPos).trim();
-            } else if (remaining.length > 0) {
+            // Find sentence boundaries: . ! ? followed by whitespace or end of string
+            // We also want to stop at start of quotes to keep dialogue separate
+            const sentenceEndMatch = remaining.match(/([.!?]+)(\s|$)|(["“'‘])/);
+
+            if (sentenceEndMatch) {
+                if (sentenceEndMatch[3]) {
+                    // Found a quote start before end of sentence -> split before quote
+                    const splitIndex = sentenceEndMatch.index!;
+                    if (splitIndex === 0) {
+                        // Should be caught by dialogue match, but safe fallback
+                        chunks.push(remaining[0]);
+                        remaining = remaining.slice(1);
+                    } else {
+                        chunks.push(remaining.slice(0, splitIndex).trim());
+                        remaining = remaining.slice(splitIndex);
+                    }
+                } else {
+                    // Normal sentence end
+                    const endPos = sentenceEndMatch.index! + sentenceEndMatch[0].length;
+                    chunks.push(remaining.slice(0, endPos).trim());
+                    remaining = remaining.slice(endPos);
+                }
+            } else {
                 // No sentence end found, take remaining
                 chunks.push(remaining.trim());
                 break;
@@ -172,9 +234,13 @@ export class TTSEngine {
      */
     private detectSegmentType(text: string): SegmentType {
         const lowerText = text.toLowerCase();
+        const trimmed = text.trim();
 
-        // Check for dialogue (quoted text)
-        if (/^["""]/.test(text) || /["""]$/.test(text)) {
+        // Check for dialogue (quoted text with smart quotes)
+        if (
+            (/^["“'‘]/.test(trimmed) && /["”'’]$/.test(trimmed)) || // Standard wrapped quotes
+            (/^["“]/.test(trimmed) && !/["”]/.test(trimmed)) // Open quote (continuation) - debatable
+        ) {
             return 'dialogue';
         }
 
@@ -216,36 +282,84 @@ export class TTSEngine {
     }
 
     /**
-     * Main speech loop - speaks segments sequentially
+     * Main speech loop - speaks segments sequentially with batching
      */
     private async speakLoop(): Promise<void> {
+        const BATCH_SIZE = 4; // Target batch size (3-6)
+
         while (this.currentIndex < this.segments.length && !this.shouldStop) {
             if (this.isPaused) {
-                // Wait for resume or stop
-                await this.sleep(100);
+                await this.sleep(200);
                 continue;
             }
 
-            const segment = this.segments[this.currentIndex];
+            // Create a batch starting from current index
+            const batchStartIndex = this.currentIndex;
+            const batchSegments: TTSSegment[] = [];
+            let charCount = 0;
 
-            // Notify UI of current segment for highlighting
-            this.onSegmentChange?.(segment, this.currentIndex);
+            // Collect segments for this batch
+            // Logic: Group up to BATCH_SIZE segments, but stop if total length is too long (>500 chars) to avoid huge delays
+            for (let i = 0; i < BATCH_SIZE; i++) {
+                const idx = batchStartIndex + i;
+                if (idx >= this.segments.length) break;
+
+                const segment = this.segments[idx];
+                batchSegments.push(segment);
+                charCount += segment.text.length;
+
+                if (charCount > 400) break; // Hard limit to prevent long blocking
+            }
+
+            // Processing the batch
+            if (batchSegments.length === 0) break;
+
+            // Notify UI we are processing this block (highlight first segment)
+            // Note: In batched mode, granular highlighting is lost for the duration of the batch
+            // We highlight the first one, then maybe estimate updates? 
+            // For now, simpler optimization: Notify start of batch
+            this.onSegmentChange?.(batchSegments[0], batchStartIndex);
 
             try {
-                await this.speakSegment(segment);
+                if (this.isNative) {
+                    // Combine text for native batch call
+                    // We use some punctuation hack to ensure pauses between joined segments if needed
+                    // Or just join with space if they are sentences
+                    const combinedText = batchSegments.map(s => s.text).join(' ');
+
+                    // Use parameters from the first/dominant segment or average?
+                    // User req: "Batch 3-6 segments... One native TextToSpeech.speak call"
+                    // We'll use the first segment's emotion as the driver for simplicity and consistency within a small block
+                    await this.speakNativeBatch(combinedText, batchSegments[0]);
+                } else {
+                    // Web fallback - speak individually for better control
+                    for (const segment of batchSegments) {
+                        if (this.shouldStop || this.isPaused) break;
+                        this.onSegmentChange?.(segment, segment.id); // Detailed highlighting for web
+                        await this.speakWeb(segment.text, segment.rate * this.baseRate, segment.pitch * this.basePitch);
+                        await this.sleep(this.getPauseDuration(segment));
+                    }
+                }
             } catch (e) {
-                console.error('[TTS] Segment speak failed:', e);
+                console.error('[TTS] Batch speak failed:', e);
             }
 
-            // Small pause between segments for natural rhythm
-            if (!this.shouldStop && !this.isPaused) {
-                await this.sleep(this.getPauseDuration(segment));
-            }
+            // Update index
+            this.currentIndex += batchSegments.length;
 
-            this.currentIndex++;
+            // Small pause between batches if needed
+            if (!this.shouldStop && !this.isPaused && this.isNative) {
+                // Pause based on the last segment of the batch
+                const lastSeg = batchSegments[batchSegments.length - 1];
+                await this.sleep(this.getPauseDuration(lastSeg));
+            }
         }
 
         // Completed or stopped
+        this.cleanup();
+    }
+
+    private cleanup() {
         this.isPlaying = false;
         this.isPaused = false;
         this.onSegmentChange?.(null, -1);
@@ -254,31 +368,30 @@ export class TTSEngine {
         if (!this.shouldStop) {
             this.onComplete?.();
         }
+
+        // Memory cleanup
+        if (this.shouldStop) {
+            this.segments = []; // Clear segments to free memory
+        }
     }
 
     /**
-     * Speak a single segment with emotion parameters
+     * Speak a batch of text natively
      */
-    private async speakSegment(segment: TTSSegment): Promise<void> {
+    private async speakNativeBatch(text: string, referenceSegment: TTSSegment): Promise<void> {
         // Apply user settings on top of emotion settings
-        const rate = segment.rate * this.baseRate;
-        const pitch = segment.pitch * this.basePitch;
+        const rate = referenceSegment.rate * this.baseRate;
+        const pitch = referenceSegment.pitch * this.basePitch;
 
-        if (this.isNative) {
-            // Use Capacitor TTS for native
-            await TextToSpeech.speak({
-                text: segment.text,
-                lang: 'en-US',
-                rate: Math.max(0.5, Math.min(2.0, rate)),
-                pitch: Math.max(0.5, Math.min(2.0, pitch)),
-                volume: 1.0,
-                category: 'playback',
-                voice: this.voiceIndex >= 0 ? this.voiceIndex : undefined,
-            });
-        } else {
-            // Web Speech API fallback
-            await this.speakWeb(segment.text, rate, pitch);
-        }
+        await TextToSpeech.speak({
+            text: text,
+            lang: this.language, // Dynamic language
+            rate: Math.max(0.5, Math.min(2.0, rate)),
+            pitch: Math.max(0.5, Math.min(2.0, pitch)),
+            volume: 1.0,
+            category: 'playback',
+            voice: this.voiceIndex >= 0 ? this.voiceIndex : undefined,
+        });
     }
 
     /**
@@ -310,10 +423,21 @@ export class TTSEngine {
      */
     private getPauseDuration(segment: TTSSegment): number {
         // Longer pause after dialogue, shorter after action
-        if (segment.type === 'dialogue') return 400;
-        if (segment.type === 'action') return 150;
-        if (segment.type === 'inner') return 350;
-        return 250; // Narration
+        // Heuristic: Check last character for punctuation strength
+        const text = segment.text.trim();
+        const lastChar = text[text.length - 1];
+
+        let basePause = 250;
+
+        if (segment.type === 'dialogue') basePause = 350;
+        else if (segment.type === 'action') basePause = 150;
+        else if (segment.type === 'inner') basePause = 300;
+
+        // Punctuation modifiers
+        if (['.', '!', '?'].includes(lastChar)) return basePause + 100; // Full stop
+        if ([',', ';', ':'].includes(lastChar)) return basePause - 50;  // Comma/clause
+
+        return basePause;
     }
 
     /**
@@ -366,8 +490,7 @@ export class TTSEngine {
             window.speechSynthesis.cancel();
         }
 
-        this.onSegmentChange?.(null, -1);
-        this.notifyStateChange();
+        this.cleanup();
     }
 
     /**

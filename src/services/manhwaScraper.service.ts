@@ -81,6 +81,11 @@ export class ManhwaScraperService {
     }
 
     async fetchHtml(url: string, proxyUrl?: string): Promise<string> {
+        if (!navigator.onLine) {
+            console.warn('[ManhwaScraper] Device is offline, skipping fetchHtml');
+            return '';
+        }
+
         let finalUrl = url;
         if (proxyUrl) {
             if (proxyUrl.includes('corsproxy.io')) {

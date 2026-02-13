@@ -55,22 +55,23 @@ export class AudioService {
         currentSegment: null
     };
 
+    private sleepTimerId: any = null;
+
     constructor() {
         this.isNative = Capacitor.isNativePlatform();
-
         if (!this.isNative) {
-            // Fallback to Web Speech API for web/browser
             this.synthesis = typeof window !== 'undefined' ? window.speechSynthesis : null;
         }
 
-        // Load persisted settings
         const settings = settingsService.getSettings();
         this.pitch = settings.ttsPitch;
         this.rate = settings.ttsRate;
         this.ambienceTrack = settings.ambience;
         this.selectedVoiceName = settings.ttsVoice || null;
 
-        // Load native voices if on native platform
+        // Initial volumes
+        if (this.bgmAudio) this.bgmAudio.volume = (settings.bgmVolume / 100) * 0.5; // Max 0.5 for BGM
+
         if (this.isNative) {
             this.loadVoices();
         }
@@ -273,78 +274,6 @@ export class AudioService {
         }
     }
 
-    async speak(text: string, title?: string, subtitle?: string, coverUrl?: string) {
-        // Update state first
-        this.state.currentTrack = {
-            title: title || 'TTS Reading',
-            subtitle: subtitle || 'Chapter content',
-            coverUrl: coverUrl,
-            isPlaying: true,
-            type: 'tts'
-        };
-        this.state.isTtsPlaying = true;
-        this.state.isTtsPaused = false;
-        this.notify();
-
-        // Configure ttsEngine with current settings
-        const voiceIndex = this.selectedVoiceName
-            ? this.nativeVoices.findIndex(v => v.name === this.selectedVoiceName)
-            : -1;
-
-        ttsEngine.setSettings({
-            rate: this.rate,
-            pitch: this.pitch,
-            voiceIndex: voiceIndex,
-            voice: this.selectedVoice
-        });
-
-        // Set callbacks for UI updates
-        ttsEngine.setCallbacks({
-            onSegmentChange: (segment, _index) => {
-                this.state.currentSegment = segment;
-                this.notify();
-            },
-            onStateChange: (isPlaying, isPaused) => {
-                this.state.isTtsPlaying = isPlaying;
-                this.state.isTtsPaused = isPaused;
-                if (this.state.currentTrack) {
-                    this.state.currentTrack.isPlaying = isPlaying && !isPaused;
-                }
-                this.notify();
-            },
-            onComplete: () => {
-                this.state.isTtsPlaying = false;
-                this.state.isTtsPaused = false;
-                this.state.currentSegment = null;
-                if (this.state.currentTrack) {
-                    this.state.currentTrack.isPlaying = false;
-                }
-                this.notify();
-            }
-        });
-
-        // Start speaking using segment-based engine
-        await ttsEngine.speak(text);
-    }
-
-    pauseSpeaking() {
-        ttsEngine.pause();
-        this.state.isTtsPaused = true;
-        if (this.state.currentTrack) {
-            this.state.currentTrack.isPlaying = false;
-        }
-        this.notify();
-    }
-
-    async resumeSpeaking() {
-        await ttsEngine.resume();
-        this.state.isTtsPaused = false;
-        if (this.state.currentTrack) {
-            this.state.currentTrack.isPlaying = true;
-        }
-        this.notify();
-    }
-
     isSpeaking(): boolean {
         const state = ttsEngine.getState();
         return state.isPlaying;
@@ -353,24 +282,6 @@ export class AudioService {
     isPaused(): boolean {
         const state = ttsEngine.getState();
         return state.isPaused;
-    }
-
-    async stopSpeaking(clearState = true) {
-        await ttsEngine.stop();
-
-        this.state.isTtsPlaying = false;
-        this.state.isTtsPaused = false;
-        this.state.currentSegment = null;
-
-        if (clearState) {
-            this.state.currentTrack = null;
-            this.notify();
-        } else {
-            if (this.state.currentTrack) {
-                this.state.currentTrack.isPlaying = false;
-            }
-            this.notify();
-        }
     }
 
     getBestVoice(gender: 'male' | 'female'): VoiceInfo | null {
@@ -424,16 +335,187 @@ export class AudioService {
         return englishVoice || pool[0];
     }
 
+    /**
+     * Preview the current voice settings
+     */
+    async previewVoice() {
+        const text = "This is a preview of the selected voice.";
+        if (this.isNative) {
+            await TextToSpeech.speak({
+                text,
+                lang: 'en-US', // Should be dynamic
+                rate: this.rate,
+                pitch: this.pitch,
+                volume: 1.0,
+                voice: this.nativeVoices.findIndex(v => v.name === this.selectedVoiceName)
+            });
+        } else if (this.synthesis) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = this.rate;
+            utterance.pitch = this.pitch;
+            if (this.selectedVoice) utterance.voice = this.selectedVoice;
+            this.synthesis.speak(utterance);
+        }
+    }
+
+    setVoiceVolume(volume: number) {
+        settingsService.updateSettings({ voiceVolume: volume });
+        // Native TTS usually controls system volume stream, but some plugins allow per-speak volume
+        // Web Speech API has volume property (0-1)
+    }
+
+    setBgmVolume(volume: number) {
+        settingsService.updateSettings({ bgmVolume: volume });
+        if (this.bgmAudio) {
+            // Apply ducking if TTS is active? 
+            // Better: Base volume is (volume/100). Ducked is 50% of that.
+            const baseVol = Math.min(1.0, volume / 100);
+            this.bgmAudio.volume = this.state.isTtsPlaying ? baseVol * 0.4 : baseVol;
+        }
+    }
+
+    startSleepTimer(minutes: number) {
+        this.cancelSleepTimer();
+        if (minutes <= 0) {
+            settingsService.updateSettings({ sleepTimer: 0 });
+            return;
+        }
+
+        console.log(`[Audio] Sleep timer set for ${minutes} minutes`);
+        settingsService.updateSettings({ sleepTimer: minutes });
+
+        this.sleepTimerId = setTimeout(() => {
+            console.log('[Audio] Sleep timer triggered. Stopping all audio.');
+            this.stopSpeaking();
+            this.stopBGM();
+            this.cancelSleepTimer(); // Cleanup
+            settingsService.updateSettings({ sleepTimer: 0 }); // Reset persistence
+        }, minutes * 60 * 1000);
+    }
+
+    cancelSleepTimer() {
+        if (this.sleepTimerId) {
+            clearTimeout(this.sleepTimerId);
+            this.sleepTimerId = null;
+        }
+    }
+
+    // Update Ducking logic in speak start/stop
+    async speak(text: string, title?: string, subtitle?: string, coverUrl?: string) {
+        // Duck BGM
+        if (this.bgmAudio) {
+            const settings = settingsService.getSettings();
+            const baseVol = Math.min(1.0, settings.bgmVolume / 100);
+            this.bgmAudio.volume = baseVol * 0.4;
+        }
+
+        // ... rest of speak logic ...
+        // Update state first
+        this.state.currentTrack = {
+            title: title || 'TTS Reading',
+            subtitle: subtitle || 'Chapter content',
+            coverUrl: coverUrl,
+            isPlaying: true,
+            type: 'tts'
+        };
+        this.state.isTtsPlaying = true;
+        this.state.isTtsPaused = false;
+        this.notify();
+
+        const voiceIndex = this.selectedVoiceName
+            ? this.nativeVoices.findIndex(v => v.name === this.selectedVoiceName)
+            : -1;
+
+        ttsEngine.setSettings({
+            rate: this.rate,
+            pitch: this.pitch,
+            voiceIndex: voiceIndex,
+            voice: this.selectedVoice
+        });
+
+        ttsEngine.setCallbacks({
+            onSegmentChange: (segment, _index) => {
+                this.state.currentSegment = segment;
+                this.notify();
+            },
+            onStateChange: (isPlaying, isPaused) => {
+                this.state.isTtsPlaying = isPlaying;
+                this.state.isTtsPaused = isPaused;
+                if (this.state.currentTrack) {
+                    this.state.currentTrack.isPlaying = isPlaying && !isPaused;
+                }
+
+                // Manage BGM Ducking on pause/resume
+                if (this.bgmAudio) {
+                    const settings = settingsService.getSettings();
+                    const baseVol = Math.min(1.0, settings.bgmVolume / 100);
+                    // If playing and NOT paused -> duck. Else restore.
+                    this.bgmAudio.volume = (isPlaying && !isPaused) ? baseVol * 0.4 : baseVol;
+                }
+
+                this.notify();
+            },
+            onComplete: () => {
+                this.state.isTtsPlaying = false;
+                this.state.isTtsPaused = false;
+                this.state.currentSegment = null;
+                if (this.state.currentTrack) {
+                    this.state.currentTrack.isPlaying = false;
+                }
+
+                // Restore BGM volume
+                if (this.bgmAudio) {
+                    const settings = settingsService.getSettings();
+                    this.bgmAudio.volume = Math.min(1.0, settings.bgmVolume / 100);
+                }
+
+                // Auto-next chapter logic
+                if (settingsService.getSettings().autoNextChapter) {
+                    // Logic to trigger next chapter would ideally be here or via callback to Reader
+                    // Since AudioService is global, we might need an event or observer pattern 
+                    // For now, Reader.tsx should observe isTtsPlaying and handle completion if auto-next is on
+                }
+
+                this.notify();
+            }
+        });
+
+        await ttsEngine.speak(text);
+    }
+
+    // ... stopSpeaking changes for ducking ...
+    async stopSpeaking(clearState = true) {
+        await ttsEngine.stop();
+
+        this.state.isTtsPlaying = false;
+        this.state.isTtsPaused = false;
+        this.state.currentSegment = null;
+
+        // Restore BGM volume
+        if (this.bgmAudio) {
+            const settings = settingsService.getSettings();
+            this.bgmAudio.volume = Math.min(1.0, settings.bgmVolume / 100);
+        }
+
+        if (clearState) {
+            this.state.currentTrack = null;
+            this.notify();
+        } else {
+            if (this.state.currentTrack) {
+                this.state.currentTrack.isPlaying = false;
+            }
+            this.notify();
+        }
+    }
+
     applyNaturalPreset() {
-        this.rate = 1.0; // Slower is more natural
-        this.pitch = 1.0; // Neutral pitch
+        this.rate = 1.0;
+        this.pitch = 1.0;
         settingsService.updateSettings({ ttsRate: 1.0, ttsPitch: 1.0 });
 
-        // Find best voices
         const female = this.getBestVoice('female');
         const male = this.getBestVoice('male');
 
-        // Prefer female voice generally for better TTS quality usually
         if (female) {
             this.setSettings({ voice: undefined, voiceName: female.name, rate: 1.0, pitch: 1.0 });
         } else if (male) {
@@ -441,6 +523,32 @@ export class AudioService {
         }
 
         return { rate: 1.0, pitch: 1.0, voice: female || male };
+    }
+
+    pause() {
+        if (this.state.isTtsPlaying) {
+            ttsEngine.pause();
+            this.state.isTtsPaused = true;
+            this.notify();
+        } else if (this.bgmAudio) {
+            this.bgmAudio.pause();
+            this.updateState(null);
+        }
+    }
+
+    resume() {
+        if (this.state.isTtsPaused) {
+            ttsEngine.resume();
+            this.state.isTtsPaused = false;
+            this.notify();
+        } else if (this.bgmAudio && this.bgmAudio.paused) {
+            this.bgmAudio.play();
+            this.updateState(null);
+        }
+    }
+
+    get currentState() {
+        return this.state;
     }
 }
 

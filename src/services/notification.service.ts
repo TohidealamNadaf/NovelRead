@@ -50,6 +50,8 @@ export class NotificationService {
         if (saved) {
             try {
                 this.notifications = JSON.parse(saved);
+                // Ensure sorted by timestamp desc
+                this.notifications.sort((a, b) => b.timestamp - a.timestamp);
             } catch (e) {
                 console.error('Failed to parse notifications', e);
                 this.notifications = [];
@@ -84,9 +86,9 @@ export class NotificationService {
 
         this.notifications.unshift(newNotification);
 
-        // Keep only last 50 notifications
-        if (this.notifications.length > 50) {
-            this.notifications = this.notifications.slice(0, 50);
+        // Keep only last 200 notifications
+        if (this.notifications.length > 200) {
+            this.notifications = this.notifications.slice(0, 200);
         }
 
         this.saveNotifications();

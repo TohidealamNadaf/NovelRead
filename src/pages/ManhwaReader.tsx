@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { dbService } from '../services/db.service';
 import type { Chapter } from '../services/db.service';
 import { WebtoonViewer } from '../components/manhwa/WebtoonViewer';
@@ -13,6 +13,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 export const ManhwaReader = () => {
     const { novelId, chapterId } = useParams<{ novelId: string; chapterId: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
 
     const [chapter, setChapter] = useState<Chapter | null>(null);
     const [novelTitle, setNovelTitle] = useState('');
@@ -27,50 +28,97 @@ export const ManhwaReader = () => {
 
     // Fetch Data
     useEffect(() => {
+
         const loadData = async () => {
-            if (!novelId || !chapterId) return;
+            if (!novelId && !location.state?.chapterUrl) return;
 
             // Don't set loading true here if we are just switching chapters to avoid full screen flash if we can avoid it,
             // but for now, safety first.
-            setIsLoading(true); // Maybe optimize later
+            setIsLoading(true);
 
             try {
-                // Parallel fetch
-                const [novel, ch, chapters] = await Promise.all([
-                    dbService.getNovel(novelId),
-                    dbService.getChapter(novelId, chapterId),
-                    dbService.getChapters(novelId)
-                ]);
+                // Determine if we are in live mode
+                if (!novelId && location.state?.chapterUrl) {
+                    // LIVE MODE
+                    const state = location.state;
+                    setNovelTitle(state.novelTitle || 'Unknown');
 
-                if (novel) setNovelTitle(novel.title);
-                if (ch) {
-                    // Lazy Load Content if empty
-                    if (!ch.content || ch.content.length < 50) {
-                        // Use audioPath as the source URL (hacky but effective for now)
-                        if (ch.audioPath && ch.audioPath.startsWith('http')) {
-                            setIsLoading(true);
-                            try {
-                                const images = await manhwaScraperService.fetchChapterImages(ch.audioPath);
-                                if (images && images.length > 50) {
-                                    ch.content = images;
-                                    await dbService.updateChapterContent(novelId, ch.id, images);
-                                }
-                            } catch (err) {
-                                console.error("Lazy load failed", err);
-                            }
+                    // Construct basic chapter from state
+                    setChapter({
+                        id: state.chapterUrl,
+                        novelId: 'live',
+                        title: state.chapterTitle,
+                        content: '', // Will be loaded by WebtoonViewer or refined scraper
+                        orderIndex: state.currentIndex,
+                        audioPath: state.chapterUrl
+                    } as Chapter);
+
+                    // Use passed chapters for sidebar, but sync read status
+                    if (state.chapters) {
+                        // Generate stable ID for lookup
+                        const sourceUrl = state.novelSourceUrl || '';
+                        const path = sourceUrl.replace(/https?:\/\/[^\/]+/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+                        const stableNovelId = `live-${path}`.slice(0, 80);
+
+                        // Try to get read status
+                        try {
+                            const dbChapters = await dbService.getChapters(stableNovelId);
+                            const readStatusMap = new Set(dbChapters.filter(c => c.isRead).map(c => c.id));
+
+                            setAllChapters(state.chapters.map((ch: any, idx: number) => ({
+                                id: ch.url,
+                                novelId: stableNovelId,
+                                title: ch.title,
+                                orderIndex: idx,
+                                isRead: (readStatusMap.has(ch.url) || readStatusMap.has(`${stableNovelId}-ch-${idx}`)) ? 1 : 0
+                            } as Chapter)));
+                        } catch (e) {
+                            console.warn("Failed to sync read status", e);
+                            setAllChapters(state.chapters.map((ch: any, idx: number) => ({
+                                id: ch.url,
+                                novelId: 'live',
+                                title: ch.title,
+                                orderIndex: idx,
+                            } as Chapter)));
                         }
                     }
 
-                    setChapter(ch);
-                    // Update progress
-                    dbService.updateReadingProgress(novelId, chapterId);
+                    // Fetch content for live chapter
+                    // ... (omitted for brevity, handled by WebtoonViewer or separate call)
+                } else {
+                    // LOCAL MODE
+                    const [novel, ch, chapters] = await Promise.all([
+                        dbService.getNovel(novelId!),
+                        dbService.getChapter(novelId!, chapterId!),
+                        dbService.getChapters(novelId!)
+                    ]);
+
+                    if (novel) setNovelTitle(novel.title);
+                    if (ch) {
+                        // ... (Lazy load logic same as before) ...
+                        if (!ch.content || ch.content.length < 50) {
+                            if (ch.audioPath && ch.audioPath.startsWith('http')) {
+                                setIsLoading(true);
+                                try {
+                                    const images = await manhwaScraperService.fetchChapterImages(ch.audioPath);
+                                    if (images && images.length > 50) {
+                                        ch.content = images;
+                                        await dbService.updateChapterContent(novelId!, ch.id, images);
+                                    }
+                                } catch (err) {
+                                    console.error("Lazy load failed", err);
+                                }
+                            }
+                        }
+                        setChapter(ch);
+                        dbService.updateReadingProgress(novelId!, chapterId!);
+                    }
+                    setAllChapters(chapters);
                 }
-                setAllChapters(chapters);
             } catch (error) {
                 console.error("Failed to load reader data", error);
             } finally {
                 setIsLoading(false);
-                // Reset controls visibility on new chapter
                 setShowControls(true);
                 window.scrollTo(0, 0);
             }

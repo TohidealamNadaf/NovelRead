@@ -65,6 +65,12 @@ export const Reader = () => {
     const font = settings.fontFamily;
     const fontSize = settings.fontSize;
 
+    // Reset summary when chapter changes
+    useEffect(() => {
+        setSummaryData(null);
+        setShowSummary(false);
+    }, [chapterId, location.state?.chapterUrl]);
+
     useEffect(() => {
         if (isLiveMode) {
             setIsChapterSaved(false);
@@ -314,13 +320,34 @@ export const Reader = () => {
                 setPrevChapter(null);
             }
 
-            // Build sidebar chapters list
-            setAllChapters(liveChapters.map((ch, idx) => ({
-                id: ch.url,
-                novelId: stableNovelId,
-                title: ch.title,
-                orderIndex: idx,
-            } as Chapter)));
+            // Build sidebar chapters list with read status from DB
+            try {
+                const dbChapters = await dbService.getChapters(stableNovelId);
+                const readStatusMap = new Set(dbChapters.filter(c => c.isRead).map(c => c.id));
+
+                setAllChapters(liveChapters.map((ch, idx) => {
+                    // Hybrid ID matching: try both URL and stable ID format
+                    const stableId = `${stableNovelId}-ch-${idx}`;
+                    const isRead = readStatusMap.has(stableId) || readStatusMap.has(ch.url);
+
+                    return {
+                        id: ch.url,
+                        novelId: stableNovelId,
+                        title: ch.title,
+                        orderIndex: idx,
+                        isRead: isRead ? 1 : 0
+                    } as Chapter;
+                }));
+            } catch (e) {
+                console.warn("[Reader] Failed to sync read status for sidebar", e);
+                // Fallback to simple list
+                setAllChapters(liveChapters.map((ch, idx) => ({
+                    id: ch.url,
+                    novelId: stableNovelId,
+                    title: ch.title,
+                    orderIndex: idx,
+                } as Chapter)));
+            }
 
             // 3. Mark as read / update history if novel is in library
             const novelInDB = await dbService.getNovel(stableNovelId);
@@ -521,10 +548,10 @@ export const Reader = () => {
 
     const toggleTTS = () => {
         if (isSpeaking) {
-            audioService.pauseSpeaking();
+            audioService.pause();
         } else {
-            if (audioService.isSpeaking()) {
-                audioService.resumeSpeaking();
+            if (audioService.currentState.isTtsPaused) {
+                audioService.resume();
             } else if (chapter?.content) {
                 // Ensure content is loaded and strip minimal HTML if needed, though audioService handles it
                 audioService.speak(chapter.content, chapter.title, novel?.title || 'Unknown Novel', novel?.coverUrl);
@@ -690,7 +717,7 @@ export const Reader = () => {
                     }
 
                     handleDoubleTap(e);
-                    onTouchEnd(e);
+                    onTouchEnd();
                 }}
                 onClick={handleDoubleTap}
                 onScroll={(e) => {
@@ -873,15 +900,13 @@ export const Reader = () => {
                                         <List size={20} />
                                         <span className="text-[10px]">Contents</span>
                                     </button>
-                                    {!isLiveMode && (
-                                        <button
-                                            onClick={handleShowSummary}
-                                            className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800 transition-colors active:scale-95"
-                                        >
-                                            <Sparkles size={20} />
-                                            <span className="text-[10px]">Summary</span>
-                                        </button>
-                                    )}
+                                    <button
+                                        onClick={handleShowSummary}
+                                        className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800 transition-colors active:scale-95"
+                                    >
+                                        <Sparkles size={20} />
+                                        <span className="text-[10px]">Summary</span>
+                                    </button>
                                     {!isLiveMode && (
                                         <button
                                             onClick={handleResyncChapter}

@@ -9,7 +9,6 @@ import { settingsService } from '../services/settings.service';
 
 export const AudioSettings = () => {
     // const navigate = useNavigate(); // Unused now
-    const [voice, setVoice] = useState<'female' | 'male'>('female');
     const [rate, setRate] = useState(settingsService.getSettings().ttsRate);
     const [ambience, setAmbience] = useState<'rainy' | 'fireplace' | 'forest' | null>(settingsService.getSettings().ambience);
     const [bgmEnabled, setBgmEnabled] = useState(settingsService.getSettings().isMusicEnabled);
@@ -35,10 +34,7 @@ export const AudioSettings = () => {
                 let selected = voices.find(v => v.name === savedVoiceName);
 
                 if (!selected) {
-                    selected = voices.find(v =>
-                        voice === 'female' ? v.name.includes('Female') || v.name.includes('Sira') || v.name.includes('Zira') || v.name.includes('Google')
-                            : v.name.includes('Male') || v.name.includes('David')
-                    ) || voices[0];
+                    selected = voices[0];
                 }
 
                 audioService.setSettings({
@@ -60,7 +56,7 @@ export const AudioSettings = () => {
                 clearTimeout(timer);
             };
         }
-    }, [rate, pitch, voice]);
+    }, [rate, pitch]);
 
     const toggleAmbience = (track: 'rainy' | 'fireplace' | 'forest') => {
         if (ambience === track) {
@@ -82,7 +78,9 @@ export const AudioSettings = () => {
                 leftContent={
                     <Link to="/profile" className="flex items-center justify-center p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
                         <div className="flex size-9 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20">
-                            <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${localStorage.getItem('profileImage') || 'https://img.freepik.com/free-psd/3d-illustration-person-with-sunglasses_23-2149436188.jpg'}")` }}></div>
+                            <div className="bg-center bg-no-repeat aspect-square bg-cover size-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
+                                <span className="text-lg">👤</span>
+                            </div>
                         </div>
                     </Link>
                 }
@@ -90,78 +88,39 @@ export const AudioSettings = () => {
             />
 
             <div className="flex-1 overflow-y-auto px-4 pb-40">
-                <div className="mt-4 mb-8">
-                    <h3 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">Voice Selector</h3>
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                        <button
-                            onClick={() => setVoice('male')}
-                            className={clsx(
-                                "relative flex flex-col items-center gap-3 p-4 rounded-2xl border-2 transition-all",
-                                voice === 'male' ? "bg-primary/10 border-primary/40 ring-2 ring-primary/20" : "bg-slate-100 dark:bg-[#2b2839] border-transparent hover:border-slate-200 dark:hover:border-white/10"
-                            )}
-                        >
-                            <div className="size-14 rounded-full bg-slate-700 flex items-center justify-center">
-                                <span className="text-3xl">👨</span>
-                            </div>
-                            <div className="text-center">
-                                <p className="font-bold text-sm">Male Voices</p>
-                                <p className="text-[10px] text-slate-400">Deep & Resonance</p>
-                            </div>
-                            {voice === 'male' && (
-                                <div className="absolute top-2 right-2 text-primary">
-                                    <div className="size-4 bg-primary rounded-full"></div>
-                                </div>
-                            )}
-                        </button>
-                        <button
-                            onClick={() => setVoice('female')}
-                            className={clsx(
-                                "relative flex flex-col items-center gap-3 p-4 rounded-2xl border-2 transition-all",
-                                voice === 'female' ? "bg-primary/10 border-primary/40 ring-2 ring-primary/20" : "bg-slate-100 dark:bg-[#2b2839] border-transparent hover:border-slate-200 dark:hover:border-white/10"
-                            )}
-                        >
-                            <div className="size-14 rounded-full bg-slate-700 flex items-center justify-center">
-                                <span className="text-3xl">👩</span>
-                            </div>
-                            <div className="text-center">
-                                <p className="font-bold text-sm">Female Voices</p>
-                                <p className="text-[10px] text-slate-400">Soft & Clear</p>
-                            </div>
-                            {voice === 'female' && (
-                                <div className="absolute top-2 right-2 text-primary">
-                                    <div className="size-4 bg-primary rounded-full"></div>
-                                </div>
-                            )}
-                        </button>
-                    </div>
-
-                    {/* Natural Tone Preset */}
+                {/* Actions Grid */}
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                    <button
+                        onClick={() => audioService.previewVoice()}
+                        className="flex items-center justify-center gap-2 py-3 bg-slate-100 dark:bg-[#2b2839] border border-slate-200 dark:border-white/5 rounded-xl font-bold text-sm active:scale-95 transition-transform"
+                    >
+                        <Mic size={18} className="text-primary" />
+                        Preview Voice
+                    </button>
                     <button
                         onClick={() => {
                             const result = audioService.applyNaturalPreset();
                             setRate(result.rate);
                             setPitch(result.pitch);
-                            if (result.voice) {
-                                setVoice(result.voice.name.toLowerCase().includes('male') && !result.voice.name.toLowerCase().includes('female') ? 'male' : 'female');
-                            }
-                            // Show feedback
                             const btn = document.getElementById('natural-btn');
                             if (btn) {
-                                const originalText = btn.innerText;
                                 btn.innerText = "Applied! ✅";
-                                setTimeout(() => btn.innerText = originalText, 1500);
+                                setTimeout(() => btn.innerText = "Create Natural", 1500);
                             }
                         }}
                         id="natural-btn"
-                        className="w-full mb-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                        className="flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
                     >
                         <Zap size={18} className="fill-white" />
-                        Apply Natural Tone Preset
+                        Natural Preset
                     </button>
+                </div>
+
+                <div className="mt-4 mb-8">
+                    <h3 className="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wider">Voice Selection</h3>
 
                     {/* Specific Voice Dropdown */}
                     <div className="w-full">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 block">Specific Voice</label>
                         <select
                             className="w-full bg-slate-100 dark:bg-[#2b2839] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-lg p-3 outline-none focus:border-primary/50 text-sm"
                             onChange={(e) => {
@@ -171,33 +130,11 @@ export const AudioSettings = () => {
                                 }
                             }}
                             value={settingsService.getSettings().ttsVoice || ''}
-                            // Add key to force re-render when availableVoices changes or selected voice changes
                             key={settingsService.getSettings().ttsVoice}
                         >
                             {availableVoices
-                                .filter(v => {
-                                    // Filter for English voices only
-                                    if (!v.lang.startsWith('en')) return false;
-
-                                    const name = v.name.toLowerCase();
-                                    // Keywords for female voices
-                                    const femaleKeywords = ['female', 'zira', 'sira', 'susan', 'catherine', 'linda', 'heather', 'hazel', 'heera'];
-                                    // Keywords for male voices
-                                    const maleKeywords = ['male', 'david', 'james', 'mark', 'richard', 'george', 'ravi', 'sean'];
-
-                                    const isExplicitlyFemale = femaleKeywords.some(k => name.includes(k));
-                                    const isExplicitlyMale = maleKeywords.some(k => name.includes(k));
-
-                                    if (voice === 'female') {
-                                        // Show if explicitly female OR (not explicitly male AND not a known male name)
-                                        return isExplicitlyFemale || !isExplicitlyMale;
-                                    } else {
-                                        // Show if explicitly male OR (not explicitly female AND not a known female name)
-                                        return isExplicitlyMale || !isExplicitlyFemale;
-                                    }
-                                })
+                                .filter(v => v.lang.startsWith(navigator.language.split('-')[0]) || v.lang.startsWith('en')) // Dynamic language filter (system lang + English)
                                 .sort((a, b) => {
-                                    // Prioritize Natural / Google voices
                                     const aPriority = a.name.includes('Natural') || a.name.includes('Google');
                                     const bPriority = b.name.includes('Natural') || b.name.includes('Google');
                                     if (aPriority && !bPriority) return -1;
@@ -205,7 +142,7 @@ export const AudioSettings = () => {
                                     return a.name.localeCompare(b.name);
                                 })
                                 .map(v => (
-                                    <option key={v.name} value={v.name}>{v.name}</option>
+                                    <option key={v.name} value={v.name}>{v.name} ({v.lang})</option>
                                 ))}
                         </select>
                     </div>
@@ -283,7 +220,12 @@ export const AudioSettings = () => {
                             <Mic className="opacity-50" />
                             <input
                                 type="range" min="0" max="100" value={voiceVolume}
-                                onChange={(e) => setVoiceVolume(parseInt(e.target.value))}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    setVoiceVolume(val);
+                                    // Debounce or direct? Direct for volume feels better usually
+                                    audioService.setVoiceVolume(val);
+                                }}
                                 className="flex-1 h-2 bg-gray-200 dark:bg-white/20 rounded-lg appearance-none cursor-pointer accent-primary"
                             />
                             <span className="text-xs font-mono w-8 text-right">{voiceVolume}%</span>
@@ -292,10 +234,66 @@ export const AudioSettings = () => {
                             <Music className="opacity-50" />
                             <input
                                 type="range" min="0" max="100" value={bgmVolume}
-                                onChange={(e) => setBgmVolume(parseInt(e.target.value))}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    setBgmVolume(val);
+                                    audioService.setBgmVolume(val);
+                                }}
                                 className="flex-1 h-2 bg-gray-200 dark:bg-white/20 rounded-lg appearance-none cursor-pointer accent-primary"
                             />
                             <span className="text-xs font-mono w-8 text-right">{bgmVolume}%</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Sleep Timer & Auto-Next */}
+                <div className="space-y-4 mb-8">
+                    <div className="bg-slate-100 dark:bg-[#2b2839] rounded-2xl p-5 border border-slate-200 dark:border-white/5 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="size-10 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                                <span className="font-bold text-lg">💤</span>
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold">Sleep Timer</p>
+                                <p className="text-[10px] text-slate-400">Stop audio after set time</p>
+                            </div>
+                        </div>
+                        <div className="flex gap-1 bg-slate-200 dark:bg-black/20 p-1 rounded-lg">
+                            {[0, 15, 30, 60].map(mins => (
+                                <button
+                                    key={mins}
+                                    onClick={() => {
+                                        audioService.startSleepTimer(mins);
+                                        // Force update UI (optional since we don't track timer state in UI strictly here, but could add state)
+                                    }}
+                                    className={clsx(
+                                        "px-3 py-1.5 rounded-md text-[10px] font-bold transition-all",
+                                        settingsService.getSettings().sleepTimer === mins
+                                            ? "bg-white dark:bg-slate-700 shadow-sm text-primary"
+                                            : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                                    )}
+                                >
+                                    {mins === 0 ? 'Off' : `${mins}m`}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-100 dark:bg-[#2b2839] rounded-2xl p-5 border border-slate-200 dark:border-white/5 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="size-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                                <span className="font-bold text-lg">⏭️</span>
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold">Auto-Next Chapter</p>
+                                <p className="text-[10px] text-slate-400">Continue reading automatically</p>
+                            </div>
+                        </div>
+                        <div
+                            onClick={() => settingsService.updateSettings({ autoNextChapter: !settingsService.getSettings().autoNextChapter })}
+                            className={clsx("w-12 h-6 rounded-full p-1 transition-colors cursor-pointer", settingsService.getSettings().autoNextChapter ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600")}
+                        >
+                            <div className={clsx("size-4 bg-white rounded-full shadow-sm transition-transform", settingsService.getSettings().autoNextChapter ? "translate-x-6" : "translate-x-0")} />
                         </div>
                     </div>
                 </div>
