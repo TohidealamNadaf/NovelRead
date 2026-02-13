@@ -1,21 +1,23 @@
-import type { ReactNode } from 'react';
+import { memo } from 'react';
+import type { ReactNode, HTMLAttributes } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 
-interface HeaderProps {
+export interface HeaderProps extends HTMLAttributes<HTMLElement> {
     title: string;
+    subtitle?: string;
     showBack?: boolean;
     onBack?: () => void;
     leftContent?: ReactNode;
     rightActions?: ReactNode;
-    className?: string;
     transparent?: boolean;
     withBorder?: boolean;
-    subtitle?: string;
+    titleClassName?: string;
+    backButtonLabel?: string;
 }
 
-export const Header = ({
+export const Header = memo(({
     title,
     subtitle,
     showBack = false,
@@ -24,7 +26,10 @@ export const Header = ({
     rightActions,
     className,
     transparent = false,
-    withBorder = false
+    withBorder = false,
+    titleClassName,
+    backButtonLabel = "Go back",
+    ...props
 }: HeaderProps) => {
     const navigate = useNavigate();
 
@@ -37,46 +42,67 @@ export const Header = ({
     };
 
     return (
-        <div
+        <header
+            {...props}
             className={clsx(
-                "sticky top-0 z-40 w-full flex items-center justify-between px-4 py-3 transition-colors duration-200 pt-[env(safe-area-inset-top)]",
-                !transparent && "bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md supports-[backdrop-filter]:bg-background-light/80 dark:supports-[backdrop-filter]:bg-background-dark/80",
-                withBorder && "border-b border-slate-200 dark:border-white/5",
+                // Layout & Position
+                "sticky top-0 z-50 w-full flex items-center justify-between",
+                // Spacing & Safe Area
+                "px-4 py-2 pt-[calc(0.5rem+env(safe-area-inset-top))]",
+                // Minimum height for touch targets and stability
+                "min-h-[56px] lg:min-h-[64px]",
+                // Transitions
+                "transition-all duration-300 ease-in-out",
+                // Visuals (Glassmorphism)
+                !transparent && "bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-xl supports-[backdrop-filter]:bg-background-light/80 dark:supports-[backdrop-filter]:bg-background-dark/80",
+                // Border/Shadow
+                withBorder && !transparent && "border-b border-slate-200/50 dark:border-white/10 shadow-sm",
                 className
             )}
         >
-            <div className="flex items-center gap-3 flex-1 min-w-0">
+            {/* Left Section (Back Button or Custom) */}
+            <div className="flex items-center gap-1 min-w-[40px] shrink-0">
                 {showBack ? (
                     <button
                         onClick={handleBack}
-                        className="flex items-center justify-center p-2 -ml-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors active:scale-95"
+                        aria-label={backButtonLabel}
+                        className={clsx(
+                            "flex items-center justify-center p-2 -ml-2 rounded-full",
+                            "text-slate-900 dark:text-white",
+                            "hover:bg-slate-100 dark:hover:bg-white/10",
+                            "active:scale-95 transition-transform duration-200",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        )}
                     >
-                        <ChevronLeft size={24} className="text-slate-900 dark:text-white" />
+                        <ChevronLeft size={24} strokeWidth={2.5} />
                     </button>
                 ) : leftContent ? (
-                    <div className="-ml-1">{leftContent}</div>
+                    <div className="-ml-1 flex items-center text-slate-900 dark:text-white">{leftContent}</div>
                 ) : null}
-
-                <div className={clsx("flex flex-col min-w-0", (!showBack && !leftContent) && "ml-0")}>
-                    <h1 className={clsx(
-                        "font-bold tracking-tight text-slate-900 dark:text-white truncate",
-                        subtitle ? "text-sm leading-tight" : "text-xl"
-                    )}>
-                        {title}
-                    </h1>
-                    {subtitle && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate font-medium">
-                            {subtitle}
-                        </p>
-                    )}
-                </div>
             </div>
 
-            {rightActions && (
-                <div className="flex items-center gap-2">
-                    {rightActions}
-                </div>
-            )}
-        </div>
+            {/* Center Section (Title) */}
+            <div className="flex-1 flex flex-col justify-center min-w-0 mx-3 text-left">
+                <h1 className={clsx(
+                    "font-bold tracking-tight text-slate-900 dark:text-white truncate",
+                    subtitle ? "text-[15px] leading-tight" : "text-[17px] md:text-lg",
+                    titleClassName
+                )}>
+                    {title}
+                </h1>
+                {subtitle && (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-medium mt-0.5">
+                        {subtitle}
+                    </p>
+                )}
+            </div>
+
+            {/* Right Section (Actions) */}
+            <div className="flex items-center justify-end gap-1 min-w-[40px] shrink-0 text-slate-900 dark:text-white">
+                {rightActions}
+            </div>
+        </header>
     );
-};
+});
+
+Header.displayName = 'Header';
