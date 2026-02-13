@@ -545,18 +545,21 @@ export class AsuraScraperService {
         const filename = url.split('/').pop() || '';
         const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
         const cleanName = nameWithoutExt.replace(/-optimized|_optimized/i, '');
+        const lowerName = cleanName.toLowerCase();
+
+        // **Strict Blacklist for Ads/Promos**
+        const blacklist = ['logo', 'banner', 'discord', 'promo', 'ad-', '_ad', 'patreon', 'ko-fi', 'credit', 'recruit', 'intro', 'outro'];
+        if (blacklist.some(term => lowerName.includes(term))) return false;
 
         // Pattern 1: Purely numeric
         if (/^\d+$/.test(cleanName)) return true;
 
-        // Pattern 2: Simple prefix + number
-        if (/^[a-zA-Z0-9_-]{0,15}[-_]?\d+$/.test(cleanName)) return true;
+        // Pattern 2: Prefix + number (Restrictive)
+        // Only allow 'page', 'img', 'image', 'p', 'i' or strict alphanumeric codes
+        if (/^(page|img|image|p|i)?[-_]?\d+$/i.test(cleanName)) return true;
 
         // Pattern 3: ULID (Asura's new format) -> 26 chars, starts with 0-7
         if (/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(cleanName)) return true;
-
-        // Pattern 4: 8-char hex (short hash) - legitimate images often have this
-        if (/^[a-f0-9]{8}$/i.test(cleanName)) return true;
 
         return false;
     }
@@ -602,7 +605,42 @@ export class AsuraScraperService {
         const html = await this.fetchHtml(url);
         if (!html) return [];
 
-        // Strategy 1: Parse __NEXT_DATA__ JSON
+        // Strategy 1: Parse self.__next_f (Next.js App Router) - High priority for modern Asura
+        try {
+            const nextFRegex = /self\.__next_f\.push\(\[1,"(.*?)"\]\)/g;
+            let match;
+            let fullData = "";
+            while ((match = nextFRegex.exec(html)) !== null) {
+                let content = match[1];
+                // Unescape generic JS string escapes (basic)
+                content = content.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                fullData += content;
+            }
+
+            if (fullData) {
+                // Look for "url":"..." patterns which are used for chapter pages in Asura's RSC data
+                // unrelated covers usually use "cover":"..." or "thumb":"..."
+                const urlRegex = /"url":"(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp|avif))"/g;
+                let urlMatch;
+                const nextFImages = new Set<string>();
+
+                while ((urlMatch = urlRegex.exec(fullData)) !== null) {
+                    const imgUrl = urlMatch[1];
+                    // Double check it's not a logo or generic asset
+                    if (!imgUrl.includes('logo') && !imgUrl.includes('icon')) {
+                        nextFImages.add(imgUrl);
+                    }
+                }
+
+                if (nextFImages.size > 0) {
+                    return this.sortImagesByFilename(Array.from(nextFImages));
+                }
+            }
+        } catch (e) {
+            console.error('Error parsing Asura __next_f:', e);
+        }
+
+        // Strategy 2: Parse __NEXT_DATA__ JSON (Legacy Next.js)
         try {
             const nextDataMatch = html.match(/<script\s+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
             if (nextDataMatch && nextDataMatch[1]) {
@@ -610,7 +648,6 @@ export class AsuraScraperService {
                 const pageProps = nextData?.props?.pageProps;
 
                 if (pageProps) {
-                    // Try to find chapter data in common locations
                     const chapterData = pageProps.chapter || pageProps.data || pageProps;
 
                     // 1. Direct 'images' array (Best case)

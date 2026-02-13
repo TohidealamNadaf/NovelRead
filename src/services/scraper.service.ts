@@ -391,84 +391,93 @@ export class ScraperService {
     }
 
     private async scrapeChapterLoop(novelId: string, chapters: { title: string; url: string; audioPath?: string }[], novelTitle: string, offset: number = 0, isManhwa: boolean = false) {
-        for (let i = 0; i < chapters.length; i++) {
-            const ch = chapters[i];
-            const currentIndex = offset + i + 1;
+        const BATCH_SIZE = 3;
 
-            // Safe Duplicate Check: Prevent re-saving existing chapters
-            // We use the URL as a unique identifier for the chapter source
-            const exists = await dbService.isChapterExists(novelId, ch.url);
-            if (exists) {
-                console.log(`[Scraper] Skipping existing chapter: ${ch.title}`);
-                // Still update progress to reflect we've processed this chapter
+        for (let i = 0; i < chapters.length; i += BATCH_SIZE) {
+            const batch = chapters.slice(i, i + BATCH_SIZE);
+
+            // Process batch in parallel
+            await Promise.all(batch.map(async (ch, batchIndex) => {
+                const globalIndex = i + batchIndex;
+                const currentIndex = offset + globalIndex + 1;
+
+                // Safe Duplicate Check: Prevent re-saving existing chapters
+                // We use the URL as a unique identifier for the chapter source
+                const exists = await dbService.isChapterExists(novelId, ch.url);
+                if (exists) {
+                    console.log(`[Scraper] Skipping existing chapter: ${ch.title}`);
+                    // Still update progress to reflect we've processed this chapter
+                    this.currentProgress = {
+                        ...this.currentProgress,
+                        current: currentIndex,
+                        currentTitle: `Skipping: ${ch.title}`
+                    };
+                    this.notifyListeners();
+                    return;
+                }
+
+                // Update progress immutably to trigger React re-renders
+                const newLogs = [`[${new Date().toLocaleTimeString()}] Fetching: ${ch.title}`, ...this.currentProgress.logs];
+                if (newLogs.length > 50) newLogs.pop();
+
                 this.currentProgress = {
                     ...this.currentProgress,
                     current: currentIndex,
-                    currentTitle: `Skipping: ${ch.title}`
+                    currentTitle: ch.title,
+                    logs: newLogs
                 };
                 this.notifyListeners();
-                continue;
-            }
+                await this.updateNotification(novelTitle);
 
-            // Update progress immutably to trigger React re-renders
-            const newLogs = [`[${new Date().toLocaleTimeString()}] Fetching: ${ch.title}`, ...this.currentProgress.logs];
-            if (newLogs.length > 50) newLogs.pop();
+                try {
+                    const content = isManhwa
+                        ? await this.fetchManhwaContent(ch.url)
+                        : await this.fetchChapterContent(ch.url);
 
-            this.currentProgress = {
-                ...this.currentProgress,
-                current: currentIndex,
-                currentTitle: ch.title,
-                logs: newLogs
-            };
-            this.notifyListeners();
-            await this.updateNotification(novelTitle);
+                    if (content && content.length > 50) { // Lower threshold for Manhwa (might be just img tags)
+                        const chapterData = {
+                            id: `${novelId}-ch-${currentIndex}`,
+                            novelId,
+                            title: ch.title,
+                            content,
+                            orderIndex: offset + globalIndex, // 0-based storage
+                            audioPath: ch.url
+                        };
+                        await dbService.addChapter(chapterData);
 
-            try {
-                const content = isManhwa
-                    ? await this.fetchManhwaContent(ch.url)
-                    : await this.fetchChapterContent(ch.url);
+                        // Update log for success
+                        const updatedLogs = [...this.currentProgress.logs];
+                        updatedLogs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: DONE`;
 
-                if (content && content.length > 50) { // Lower threshold for Manhwa (might be just img tags)
-                    const chapterData = {
-                        id: `${novelId}-ch-${currentIndex}`,
-                        novelId,
-                        title: ch.title,
-                        content,
-                        orderIndex: offset + i, // 0-based storage
-                        audioPath: ch.url
-                    };
-                    await dbService.addChapter(chapterData);
+                        this.currentProgress = {
+                            ...this.currentProgress,
+                            logs: updatedLogs
+                        };
+                    } else {
+                        const updatedLogs = [...this.currentProgress.logs];
+                        updatedLogs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: FAILED (Empty Content)`;
 
-                    // Update log for success
+                        this.currentProgress = {
+                            ...this.currentProgress,
+                            logs: updatedLogs
+                        };
+                    }
+                } catch (e) {
+                    console.error(`Failed to scrape ${ch.title}`, e);
                     const updatedLogs = [...this.currentProgress.logs];
-                    updatedLogs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: DONE`;
-
-                    this.currentProgress = {
-                        ...this.currentProgress,
-                        logs: updatedLogs
-                    };
-                } else {
-                    const updatedLogs = [...this.currentProgress.logs];
-                    updatedLogs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: FAILED (Empty Content)`;
+                    updatedLogs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: ERROR`;
 
                     this.currentProgress = {
                         ...this.currentProgress,
                         logs: updatedLogs
                     };
                 }
-            } catch (e) {
-                console.error(`Failed to scrape ${ch.title}`, e);
-                const updatedLogs = [...this.currentProgress.logs];
-                updatedLogs[0] = `[${new Date().toLocaleTimeString()}] ${ch.title}: ERROR`;
+                this.notifyListeners();
+            }));
 
-                this.currentProgress = {
-                    ...this.currentProgress,
-                    logs: updatedLogs
-                };
+            if (i + BATCH_SIZE < chapters.length) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
             }
-
-            this.notifyListeners();
-            await new Promise(resolve => setTimeout(resolve, 500));
         }
     }
 
