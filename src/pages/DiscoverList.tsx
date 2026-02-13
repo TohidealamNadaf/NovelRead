@@ -132,7 +132,7 @@ export const DiscoverList = () => {
         if (mode === 'manhwa') {
             navigate('/import', { state: { initialUrl: item.sourceUrl } });
         } else {
-            navigate(`/novel/${item.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel: item } });
+            navigate(`/novel/live-${encodeURIComponent(item.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`, { state: { liveMode: true, novel: item } });
         }
     };
 

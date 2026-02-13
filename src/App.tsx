@@ -14,6 +14,7 @@ import { Notifications } from './pages/Notifications';
 import { MiniPlayer } from './components/MiniPlayer';
 import { ManhwaSeries } from './pages/ManhwaSeries';
 import { ManhwaReader } from './pages/ManhwaReader';
+import { syncService } from './services/sync.service';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -24,14 +25,19 @@ function App() {
   const location = useLocation();
 
   useEffect(() => {
+    // Start Discovery sync service
+    syncService.start();
+
     let backButtonListener: any;
 
     const setupListener = async () => {
-      backButtonListener = await CapApp.addListener('backButton', () => {
+      backButtonListener = await CapApp.addListener('backButton', ({ canGoBack }) => {
         if (location.pathname === '/') {
           CapApp.exitApp();
-        } else {
+        } else if (canGoBack) {
           navigate(-1);
+        } else {
+          navigate('/', { replace: true });
         }
       });
     };

@@ -153,10 +153,11 @@ class DatabaseService {
     async addNovel(novel: Novel) {
         const db = await this.getDB();
         if (!db) return;
+        // Use INSERT OR IGNORE so we never overwrite an existing novel's progress
         const query = `
-            INSERT OR REPLACE INTO novels (id, title, author, coverUrl, sourceUrl, category, status, summary, lastReadChapterId)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-        `;
+        INSERT OR IGNORE INTO novels (id, title, author, coverUrl, sourceUrl, category, status, summary, lastReadChapterId)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+    `;
         await db.run(query, [
             novel.id,
             novel.title,
@@ -168,16 +169,39 @@ class DatabaseService {
             novel.summary || null,
             null
         ]);
+        // Update metadata fields (but NOT lastReadChapterId) for existing novels
+        await db.run(`
+        UPDATE novels SET
+            title = COALESCE(?, title),
+            author = COALESCE(?, author),
+            coverUrl = COALESCE(?, coverUrl),
+            sourceUrl = COALESCE(?, sourceUrl),
+            summary = COALESCE(?, summary),
+            status = COALESCE(?, status)
+        WHERE id = ?
+    `, [
+            novel.title || null,
+            novel.author || null,
+            novel.coverUrl || null,
+            novel.sourceUrl || null,
+            novel.summary || null,
+            novel.status || null,
+            novel.id
+        ]);
         await this.save();
     }
 
     async addChapter(chapter: Chapter) {
         const db = await this.getDB();
         if (!db) return;
+        // Preserve existing isRead status if the chapter already exists
+        const existingResult = await db.query('SELECT isRead FROM chapters WHERE id = ?', [chapter.id]);
+        const existing = existingResult.values && existingResult.values.length > 0 ? existingResult.values[0] : null;
+        const isRead = existing && existing.isRead !== undefined ? existing.isRead : 0;
         const query = `
-            INSERT OR REPLACE INTO chapters (id, novelId, title, content, orderIndex, audioPath, isRead, date)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?);
-        `;
+        INSERT OR REPLACE INTO chapters (id, novelId, title, content, orderIndex, audioPath, isRead, date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+    `;
         await db.run(query, [
             chapter.id,
             chapter.novelId,
@@ -185,6 +209,7 @@ class DatabaseService {
             chapter.content,
             chapter.orderIndex,
             chapter.audioPath || null,
+            isRead,
             chapter.date || null
         ]);
         await this.save();

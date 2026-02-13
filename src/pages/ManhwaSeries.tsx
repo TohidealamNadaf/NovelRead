@@ -119,12 +119,13 @@ export const ManhwaSeries = () => {
             exit={{ opacity: 0 }}
             className="min-h-screen bg-background-light dark:bg-background-dark pb-10"
         >
-            {/* Transparent Header */}
+            {/* Transparent Header with Gradient and Title */}
             <Header
-                title=""
+                title={novel?.title || ''}
+                subtitle={novel?.category || 'Manhwa'}
                 transparent
                 showBack
-                className="fixed top-0 left-0 right-0 z-50 text-white"
+                className="fixed top-0 left-0 right-0 z-50 text-white bg-gradient-to-b from-black/80 via-black/40 to-transparent"
             />
 
             <SeriesHero

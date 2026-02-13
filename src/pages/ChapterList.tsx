@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { dbService, type Novel, type Chapter } from '../services/db.service';
-import { scraperService, type ScraperProgress, type NovelMetadata } from '../services/scraper.service';
+import { scraperService, type ScraperProgress } from '../services/scraper.service';
 import { CompletionModal } from '../components/CompletionModal';
-import { MoreHorizontal, Search, Filter, Download, CheckCircle, DownloadCloud, PlayCircle, Trash2, Minimize2, Loader2, Save, BookmarkPlus, BookmarkCheck } from 'lucide-react';
+import { MoreHorizontal, Search, Filter, Download, CheckCircle, DownloadCloud, PlayCircle, Trash2, Minimize2, Loader2, Save, BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp } from 'lucide-react';
 import { Header } from '../components/Header';
 
 export const ChapterList = () => {
@@ -28,121 +28,99 @@ export const ChapterList = () => {
     const [scrapingProgress, setScrapingProgress] = useState<ScraperProgress>(scraperService.progress);
     const [isGlobalScraping, setIsGlobalScraping] = useState(scraperService.isScraping);
 
-    // Live browsing mode (detected from state or ID prefix)
+    // Live/Hybrid mode: true for any novel that can fetch chapters from the web
     const isLiveMode = !!location.state?.liveMode || novelId?.startsWith('live-');
-    const [liveChapters, setLiveChapters] = useState<{ title: string; url: string }[]>([]);
+    const [liveChapters, setLiveChapters] = useState<{ title: string; url: string; _index: number; date?: string }[]>([]);
     const [loadingPage, setLoadingPage] = useState(0);
     const [downloadedLiveChapters, setDownloadedLiveChapters] = useState<Set<string>>(new Set());
+    const [readLiveChapters, setReadLiveChapters] = useState<Set<string>>(new Set());
     const [downloadingLive, setDownloadingLive] = useState<Set<string>>(new Set());
     const [addedToLibrary, setAddedToLibrary] = useState(false);
+    const [isSynopsisExpanded, setIsSynopsisExpanded] = useState(false);
 
     const loadData = async () => {
         if (!novelId) return;
 
-        // Live mode: fetch chapters from web
-        if (isLiveMode) {
-            let liveNovel = location.state?.novel as NovelMetadata;
-
-            // If opened from library, fetch metadata from DB first to get sourceUrl
-            if (!liveNovel && novelId) {
-                try {
-                    await dbService.initialize();
-                    const dbNovel = await dbService.getNovel(novelId);
-                    if (dbNovel) {
-                        liveNovel = {
-                            title: dbNovel.title,
-                            author: dbNovel.author || 'Unknown',
-                            coverUrl: dbNovel.coverUrl || '',
-                            summary: dbNovel.summary || '',
-                            status: dbNovel.status || 'Ongoing',
-                            sourceUrl: dbNovel.sourceUrl || '',
-                            chapters: []
-                        } as any;
-                    }
-                } catch (e) {
-                    console.error("Failed to load live novel from DB", e);
-                }
-            }
-
-            if (liveNovel) {
-                setNovel({
-                    id: novelId || 'live-index',
-                    title: liveNovel.title,
-                    author: liveNovel.author || 'Unknown',
-                    coverUrl: liveNovel.coverUrl || '',
-                    summary: liveNovel.summary || '',
-                    status: liveNovel.status || 'Ongoing',
-                    sourceUrl: liveNovel.sourceUrl || '',
-                    source: 'NovelFire',
-                } as Novel);
-
-                if (liveNovel.sourceUrl) {
-                    try {
-                        const data = await scraperService.fetchNovelFast(liveNovel.sourceUrl, (chaptersFound, page, metadata) => {
-                            setLoadingPage(page);
-                            setLiveChapters([...chaptersFound]);
-
-                            if (metadata) {
-                                setNovel(prev => prev ? {
-                                    ...prev,
-                                    title: metadata.title || prev.title,
-                                    author: metadata.author || prev.author,
-                                    coverUrl: metadata.coverUrl || prev.coverUrl,
-                                    summary: metadata.summary || prev.summary,
-                                    status: metadata.status || prev.status,
-                                } : prev);
-                                // Hide loader as soon as metadata/synopsis is available
-                                if (loading) setLoading(false);
-                            }
-
-                            if (page === 1) setLoading(false);
-                        });
-                        if (data) {
-                            setLiveChapters(data.chapters);
-                            // Update novel metadata from fetched data
-                            setNovel(prev => prev ? {
-                                ...prev,
-                                title: data.title || prev.title,
-                                author: data.author || prev.author,
-                                coverUrl: data.coverUrl || prev.coverUrl,
-                                summary: data.summary || prev.summary,
-                                status: data.status || prev.status,
-                            } : prev);
-                        }
-                    } catch (e) {
-                        console.error("Failed to fetch live chapters", e);
-                    } finally {
-                        setLoading(false);
-                        setLoadingPage(0);
-                    }
-                } else {
-                    setLoading(false);
-                }
-                return;
-            }
-        }
-
-        // Standard DB mode
         try {
+            setLoading(true);
             await dbService.initialize();
-            const n = await dbService.getNovel(novelId);
-            if (n) {
-                setNovel(n);
-                const c = await dbService.getChapters(novelId);
-                setChapters(c);
+
+            // 1. ALWAYS try to load from DB first (Offline Mode / Library Support)
+            const dbNovel = await dbService.getNovel(novelId);
+            let currentNovel = dbNovel;
+
+            if (dbNovel) {
+                setNovel(dbNovel);
+                const dbChapters = await dbService.getChapters(novelId);
+                setChapters(dbChapters);
+                setAddedToLibrary(true);
                 setIsPreviewMode(false);
+
+                // Map DB state to Live trackers
+                const savedUrls = new Set(dbChapters.filter(c => c.content).map(c => c.audioPath).filter(Boolean) as string[]);
+                const readUrls = new Set(dbChapters.filter(c => c.isRead).map(c => c.audioPath).filter(Boolean) as string[]);
+                setDownloadedLiveChapters(savedUrls);
+                setReadLiveChapters(readUrls);
+
+                // If it's a library novel with no sourceUrl in DB but we have it in state, update it
+                if (!dbNovel.sourceUrl && location.state?.novel?.sourceUrl) {
+                    dbNovel.sourceUrl = location.state.novel.sourceUrl;
+                }
             } else if (location.state?.novel) {
-                setNovel({
+                // Not in DB, use state as preview
+                currentNovel = {
                     ...location.state.novel,
                     id: novelId,
                     summary: location.state.novel.summary || ''
-                });
+                } as Novel;
+                setNovel(currentNovel);
                 setIsPreviewMode(true);
+                setAddedToLibrary(false);
             }
+
+            // 2. If it has a sourceUrl, trigger Live Sync (Hybrid Mode)
+            const sourceUrl = currentNovel?.sourceUrl || location.state?.novel?.sourceUrl;
+            if (sourceUrl) {
+                console.log(`[ChapterList] Triggering Live Sync for ${novelId} via ${sourceUrl}`);
+                try {
+                    const data = await scraperService.fetchNovelFast(sourceUrl, (chaptersFound, page, metadata) => {
+                        setLoadingPage(page);
+                        // Add index for easy reference
+                        const indexedChapters = chaptersFound.map((ch, idx) => ({ ...ch, _index: idx }));
+                        setLiveChapters(indexedChapters);
+
+                        if (metadata) {
+                            setNovel(prev => prev ? {
+                                ...prev,
+                                title: metadata.title || prev.title,
+                                author: metadata.author || prev.author,
+                                coverUrl: metadata.coverUrl || prev.coverUrl,
+                                summary: metadata.summary || prev.summary,
+                                status: metadata.status || prev.status,
+                                sourceUrl: sourceUrl, // Ensure sourceUrl persists
+                            } : prev);
+                            if (loading) setLoading(false);
+                        }
+                        if (page === 1) setLoading(false);
+                    });
+
+                    if (data) {
+                        const indexedChapters = data.chapters.map((ch, idx) => ({ ...ch, _index: idx }));
+                        setLiveChapters(indexedChapters);
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch live chapters", e);
+                }
+            } else {
+                // No sourceUrl, just use whatever we loaded from DB
+                setLoading(false);
+            }
+
         } catch (e) {
             console.error("Failed to load novel data", e);
-        } finally {
             setLoading(false);
+        } finally {
+            setLoadingPage(0);
         }
     };
 
@@ -371,7 +349,8 @@ export const ChapterList = () => {
         : [];
     if (sortOrder === 'desc' && isLiveMode) liveFilteredChapters.reverse();
 
-    const filteredChapters = isLiveMode ? [] : chapters
+    // Always compute filteredChapters from DB (used by progress bar even in live mode)
+    const filteredChapters = chapters
         .filter(chapter => {
             const matchesSearch = chapter.title.toLowerCase().includes(searchQuery.toLowerCase());
             if (!matchesSearch) return false;
@@ -395,10 +374,10 @@ export const ChapterList = () => {
         <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans overflow-hidden">
             {/* Top Navigation Bar using Global Header */}
             <Header
-                title="Chapter Index"
+                title={novel?.title || 'Chapter Index'}
+                subtitle={novel?.author}
                 showBack={true}
-                onBack={() => navigate('/')}
-                className="bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md"
+                className="bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md z-50"
                 withBorder
                 rightActions={
                     <div className="relative flex items-center">
@@ -410,7 +389,7 @@ export const ChapterList = () => {
                         {showMenu && (
                             <>
                                 <div className="fixed inset-0 z-50" onClick={() => setShowMenu(false)}></div>
-                                <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 z-50 py-1 animate-in fade-in zoom-in-95 duration-200">
+                                <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 z-[60] py-1 animate-in fade-in zoom-in-95 duration-200">
                                     <button
                                         className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2 border-b border-slate-100 dark:border-white/5 text-slate-700 dark:text-slate-200"
                                         onClick={() => {
@@ -527,9 +506,23 @@ export const ChapterList = () => {
                             {/* Summary & Meta */}
                             <div className="mt-6 flex flex-col gap-4">
                                 {novel.summary && (
-                                    <div className="text-sm leading-relaxed text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                                    <div className="text-sm leading-relaxed text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 transition-all duration-300">
                                         <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary mb-2">Synopsis</h3>
-                                        <p className="line-clamp-6">{novel.summary}</p>
+                                        <p className={!isSynopsisExpanded ? "line-clamp-4" : ""}>
+                                            {novel.summary}
+                                        </p>
+                                        {novel.summary.length > 150 && (
+                                            <button
+                                                onClick={() => setIsSynopsisExpanded(!isSynopsisExpanded)}
+                                                className="mt-3 flex items-center gap-1.5 text-primary text-xs font-bold font-sans active:opacity-60 transition-opacity"
+                                            >
+                                                {isSynopsisExpanded ? (
+                                                    <>Show Less <ChevronUp size={14} /></>
+                                                ) : (
+                                                    <>Read More <ChevronDown size={14} /></>
+                                                )}
+                                            </button>
+                                        )}
                                     </div>
                                 )}
 
@@ -550,13 +543,42 @@ export const ChapterList = () => {
                             </div>
                         </div>
 
-                        {/* Progress Tracking (Dynamic) - hidden in live mode */}
-                        {!isLiveMode && (() => {
-                            const lastReadIndex = chapters.findIndex((ch: any) => ch.id === novel.lastReadChapterId);
+                        {/* Progress Tracking (Dynamic) - hybrid aware */}
+                        {addedToLibrary && (() => {
+                            // In hybrid mode, we prefer the liveChapters length as the source of truth for total chapters
+                            const totalChapters = (isLiveMode && liveChapters.length > 0) ? liveChapters.length : chapters.length;
+
+                            // Find last read index by matching the lastReadChapterId's URL in the live list
+                            let lastReadIndex = -1;
+                            if (novel.lastReadChapterId) {
+                                // 1. Try to find the exact ID in local chapters
+                                lastReadIndex = chapters.findIndex((ch: any) => ch.id === novel.lastReadChapterId);
+
+                                // 2. If in live mode, try matching by URL in the live list
+                                if (isLiveMode && liveChapters.length > 0) {
+                                    const lastReadChapter = chapters.find(c => c.id === novel.lastReadChapterId);
+                                    if (lastReadChapter?.audioPath) {
+                                        const liveIdx = liveChapters.findIndex(lc => lc.url === lastReadChapter.audioPath);
+                                        if (liveIdx !== -1) lastReadIndex = liveIdx;
+                                    }
+                                }
+
+                                // 3. Fallback: extract index from the chapter ID pattern (e.g., "live-xxx-ch-5")
+                                if (lastReadIndex < 0) {
+                                    const match = novel.lastReadChapterId.match(/-ch-(\d+)$/);
+                                    if (match) {
+                                        const idx = parseInt(match[1], 10);
+                                        if (idx >= 0 && idx < totalChapters) lastReadIndex = idx;
+                                    }
+                                }
+                            }
+
                             const hasStarted = lastReadIndex >= 0;
                             const currentChapterNum = hasStarted ? lastReadIndex + 1 : 0;
-                            const progressPercent = chapters.length > 0 && hasStarted ? Math.round((currentChapterNum / chapters.length) * 100) : 0;
-                            const readChaptersCount = chapters.filter((ch: any) => ch.isRead).length;
+                            const progressPercent = totalChapters > 0 && hasStarted ? Math.round((currentChapterNum / totalChapters) * 100) : 0;
+
+                            // Count read chapters from DB plus any marked as read in live trackers
+                            const readChaptersCount = isLiveMode ? readLiveChapters.size : chapters.filter((ch: any) => ch.isRead).length;
 
                             return (
                                 <div className="mx-4 mt-3 mb-4 p-3 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
@@ -565,7 +587,7 @@ export const ChapterList = () => {
                                             <p className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400 font-sans font-bold">Reading Progress</p>
                                             <p className="text-sm font-bold">
                                                 {hasStarted ? (
-                                                    <>Chapter {currentChapterNum} <span className="text-xs font-normal text-slate-500">of {chapters.length}</span></>
+                                                    <>Chapter {currentChapterNum} <span className="text-xs font-normal text-slate-500">of {totalChapters}</span></>
                                                 ) : (
                                                     <span className="text-slate-400">Not Started</span>
                                                 )}
@@ -582,7 +604,7 @@ export const ChapterList = () => {
 
                         {/* Utilities & Search */}
                         <div
-                            className="px-4 sticky top-0 z-40 bg-background-light dark:bg-background-dark py-2 flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800"
+                            className="px-4 sticky top-0 z-30 bg-background-light dark:bg-background-dark py-2 flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800"
                         >
                             <div className="flex gap-2">
                                 <div className="relative flex-1">
@@ -676,6 +698,7 @@ export const ChapterList = () => {
                                                     chapterTitle: chapter.title,
                                                     novelTitle: novel.title,
                                                     novelCoverUrl: novel.coverUrl,
+                                                    novelSourceUrl: novel.sourceUrl,
                                                     chapters: liveChapters,
                                                     currentIndex: chapter._index,
                                                 }
@@ -687,7 +710,7 @@ export const ChapterList = () => {
                                                         {sortOrder === 'desc' ? liveChapters.length - chapter._index : chapter._index + 1}
                                                     </span>
                                                     <div className="flex flex-col min-w-0">
-                                                        <h3 className="text-sm font-bold truncate dark:text-slate-100">
+                                                        <h3 className={`text-sm font-bold truncate dark:text-slate-100 ${readLiveChapters.has(chapter.url) ? 'opacity-60 font-normal' : ''}`}>
                                                             {chapter.title}
                                                         </h3>
                                                         {(chapter as any).date && (
@@ -723,9 +746,34 @@ export const ChapterList = () => {
                                         </div>
                                     )}
 
-                                    {liveFilteredChapters.length === 0 && !loading && loadingPage === 0 && (
+                                    {liveFilteredChapters.length === 0 && !loading && loadingPage === 0 && chapters.length === 0 && (
                                         <div className="p-8 text-center text-slate-500">
                                             No chapters found.
+                                        </div>
+                                    )}
+
+                                    {/* Hybrid Fallback: If live list is empty but we have local chapters, show them */}
+                                    {liveChapters.length === 0 && chapters.length > 0 && !loading && (
+                                        <div className="flex flex-col">
+                                            <div className="px-4 py-2 bg-slate-50 dark:bg-slate-900/40 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                Offline cached chapters
+                                            </div>
+                                            {filteredChapters.map((chapter) => (
+                                                <div key={chapter.id}
+                                                    className="flex items-center gap-4 p-4 hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors cursor-pointer"
+                                                    onClick={() => navigate(`/read/${novel?.id}/${chapter.id}`)}
+                                                >
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-3 mb-0.5">
+                                                            <span className="text-slate-400 font-sans text-xs font-bold w-6 text-right">{chapter.orderIndex + 1}</span>
+                                                            <h3 className={`text-sm font-bold truncate dark:text-slate-100 ${chapter.isRead ? 'opacity-60 font-normal' : ''}`}>
+                                                                {chapter.title}
+                                                            </h3>
+                                                        </div>
+                                                    </div>
+                                                    <CheckCircle className="text-green-500" size={20} />
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                 </>
@@ -792,7 +840,25 @@ export const ChapterList = () => {
                     className="flex items-center gap-2 bg-primary text-white px-6 py-4 rounded-full shadow-2xl hover:scale-105 transition-transform active:scale-95 font-sans font-bold"
                     onClick={() => {
                         if (isLiveMode && liveChapters.length > 0) {
-                            const ch = liveChapters[0];
+                            // For library novels, find the last-read chapter in the live list
+                            let startIndex = 0;
+                            if (addedToLibrary && novel?.lastReadChapterId) {
+                                // Try to find the chapter in DB and match its URL
+                                const lastReadChapter = chapters.find(c => c.id === novel.lastReadChapterId);
+                                if (lastReadChapter?.audioPath) {
+                                    const liveIdx = liveChapters.findIndex(lc => lc.url === lastReadChapter.audioPath);
+                                    if (liveIdx !== -1) startIndex = liveIdx;
+                                }
+                                // Fallback: extract index from the chapter ID pattern (e.g., "live-xxx-ch-5")
+                                if (startIndex === 0) {
+                                    const match = novel.lastReadChapterId.match(/-ch-(\d+)$/);
+                                    if (match) {
+                                        const idx = parseInt(match[1], 10);
+                                        if (idx >= 0 && idx < liveChapters.length) startIndex = idx;
+                                    }
+                                }
+                            }
+                            const ch = liveChapters[startIndex];
                             navigate(`/read/live/${encodeURIComponent(ch.url)}`, {
                                 state: {
                                     liveMode: true,
@@ -800,8 +866,9 @@ export const ChapterList = () => {
                                     chapterTitle: ch.title,
                                     novelTitle: novel.title,
                                     novelCoverUrl: novel.coverUrl,
+                                    novelSourceUrl: novel.sourceUrl,
                                     chapters: liveChapters,
-                                    currentIndex: 0,
+                                    currentIndex: startIndex,
                                 }
                             });
                         } else if (chapters.length > 0) {
@@ -814,11 +881,13 @@ export const ChapterList = () => {
                     }}
                 >
                     <PlayCircle size={24} />
-                    {isLiveMode
-                        ? 'START READING'
-                        : novel?.lastReadChapterId && chapters.some(c => c.id === novel.lastReadChapterId)
-                            ? 'CONTINUE READING'
-                            : 'START READING'}
+                    {addedToLibrary && novel?.lastReadChapterId
+                        ? 'CONTINUE READING'
+                        : isLiveMode && liveChapters.length > 0
+                            ? 'START READING'
+                            : novel?.lastReadChapterId && chapters.some(c => c.id === novel.lastReadChapterId)
+                                ? 'CONTINUE READING'
+                                : 'START READING'}
                 </button>
             </div>
 

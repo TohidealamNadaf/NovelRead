@@ -82,7 +82,9 @@ export class ScraperService {
         cleaned = cleaned.replace(/^\d+[\s\.\-]+/g, '');
 
         // 2. Remove timestamps (e.g., "1 day ago", "3 years ago")
-        const timestampRegex = /\b\d+\s*(minute|hour|day|week|month|year)s?\s*ago\b/gi;
+        // Use non-\b boundary to handle Cheerio concatenating text without spaces
+        // e.g., "Shadow Dance3 years ago" -> "Shadow Dance"
+        const timestampRegex = /\d+\s*(minute|hour|day|week|month|year)s?\s*ago/gi;
         cleaned = cleaned.replace(timestampRegex, '');
 
         // 3. Remove common UI labels/artifacts
@@ -91,6 +93,22 @@ export class ScraperService {
         // 4. Normalize whitespace
         cleaned = cleaned.replace(/\s+/g, ' ').trim();
 
+        return cleaned;
+    }
+
+    /**
+     * Cleans synopsis/summary text by removing embedded "show more" / "read more"
+     * link text that gets scraped from the source website.
+     */
+    cleanSummary(text: string): string {
+        if (!text) return '';
+        // Remove trailing "Show more", "Read more", "See more", "View more", "Less", "Show less", etc.
+        let cleaned = text
+            .replace(/\s*(show\s*more|read\s*more|see\s*more|view\s*more|show\s*less|read\s*less|see\s*less|view\s*less|\.\.\.\s*more|\.\.\.\s*less|\.{3,}\s*$)\s*$/gi, '')
+            .replace(/\s*(show\s*more|read\s*more|see\s*more|view\s*more)\s*/gi, '')  // Also catch mid-text occurrences
+            .trim();
+        // Remove trailing ellipsis artifacts left after stripping
+        cleaned = cleaned.replace(/\s*\.{3,}\s*$/, '').trim();
         return cleaned;
     }
 
@@ -157,8 +175,9 @@ export class ScraperService {
                     const link = anchor.attr('href');
 
                     if (rawTitle && link) {
-                        // Extract date if present (e.g., "Chapter 1 - Test 3 years ago" -> "3 years ago")
-                        const timestampRegex = /\b\d+\s*(minute|hour|day|week|month|year)s?\s*ago\b/gi;
+                        // Extract date if present (e.g., "Chapter 1 - Test3 years ago" -> "3 years ago")
+                        // Relaxed regex: no \b boundary before digit to handle Cheerio concatenation
+                        const timestampRegex = /\d+\s*(minute|hour|day|week|month|year)s?\s*ago/gi;
                         const dateMatch = rawTitle.match(timestampRegex);
                         const chapterDate = dateMatch ? dateMatch[0] : undefined;
 
@@ -276,7 +295,14 @@ export class ScraperService {
         this.currentProgress = { current: 0, total: novel.chapters.length, currentTitle: 'Starting...', logs: [] };
         this.notifyListeners();
 
-        const novelId = novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) + '-' + Math.random().toString(36).slice(2, 7);
+        // Generate a stable novel ID from the URL if possible, otherwise use title-based slug
+        let novelId = '';
+        if (url) {
+            const path = url.replace(/https?:\/\/[^\/]+/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+            novelId = `live-${path}`.slice(0, 80);
+        } else {
+            novelId = novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) + '-' + Math.random().toString(36).slice(2, 7);
+        }
 
         try {
             await dbService.initialize();
@@ -499,6 +525,7 @@ export class ScraperService {
                     title = extractedTitle;
                     author = getMeta(['.author', '.info-author', '.book-author', 'span[itemprop="author"]', '.txt-author']).replace('Author:', '').trim() || 'Unknown';
                     summary = getMeta(['.summary__content', '.description', '#editdescription', '.book-info-desc', '.content', 'meta[name="description"]']).trim();
+                    summary = this.cleanSummary(summary);
                     status = getMeta(['.status', '.info-status', '.book-status', '.post-content_item:contains("Status") .summary-content']).trim() || 'Ongoing';
 
                     let extractedCover = getAttr([
@@ -651,6 +678,8 @@ export class ScraperService {
                 '.book-info-desc', '.content', 'meta[name="description"]'
             ]).trim();
 
+            const cleanedSummary = this.cleanSummary(extractedSummary);
+
             const extractedStatus = getMeta([
                 '.status', '.info-status', '.book-status',
                 '.post-content_item:contains("Status") .summary-content'
@@ -676,7 +705,7 @@ export class ScraperService {
                 title: extractedTitle,
                 author: extractedAuthor,
                 coverUrl: extractedCover,
-                summary: extractedSummary,
+                summary: cleanedSummary,
                 status: extractedStatus
             };
         };

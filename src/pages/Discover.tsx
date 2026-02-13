@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, Bolt, BookOpen, Filter, RefreshCcw, Minimize2, Loader2, X } from 'lucide-react';
+import { Search, BookOpen, Filter, RefreshCcw, Minimize2, Loader2, X } from 'lucide-react';
 import { scraperService, type ScraperProgress, type NovelMetadata } from '../services/scraper.service';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -48,9 +48,28 @@ export const Discover = () => {
             });
         }
 
+        // Listen for storage changes or internal sync completion
+        const handleSyncComplete = () => {
+            console.log('[Discover] Sync complete event received, refreshing...');
+            loadHomeData();
+        };
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === 'homeData' || e.key === 'manhwaDiscoveryData') {
+                loadHomeData();
+            }
+        };
+        window.addEventListener('sync-complete', handleSyncComplete);
+        window.addEventListener('storage', handleStorageChange);
+
+        // Also refresh every minute if active to pick up background syncs
+        const refreshInterval = setInterval(loadHomeData, 60000);
+
         return () => {
             unsub();
             CapacitorApp.removeAllListeners();
+            window.removeEventListener('sync-complete', handleSyncComplete);
+            window.removeEventListener('storage', handleStorageChange);
+            clearInterval(refreshInterval);
         };
     }, []);
 
@@ -315,7 +334,7 @@ export const Discover = () => {
                                             {novelSearchResults.map((novel: any, idx: number) => (
                                                 <div
                                                     key={idx}
-                                                    className="flex gap-3 p-3 rounded-xl bg-slate-100/60 dark:bg-[#1d1c27] border border-slate-200/60 dark:border-white/5 cursor-pointer active:scale-[0.98] transition-transform"
+                                                    className="flex gap-3 p-3 rounded-xl bg-slate-100/60 dark:bg-transparent border border-slate-200/60 dark:border-white/5 cursor-pointer active:scale-[0.98] transition-transform"
                                                     onClick={() => navigate(`/novel/live-${encodeURIComponent(novel.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`, { state: { liveMode: true, novel } })}
                                                 >
                                                     <div className="w-16 h-22 shrink-0 rounded-lg overflow-hidden shadow-md">
@@ -329,7 +348,7 @@ export const Discover = () => {
                                                     </div>
                                                     <div className="flex-1 flex flex-col justify-center min-w-0">
                                                         <p className="font-bold text-sm text-slate-900 dark:text-white line-clamp-2 leading-tight">{novel.title}</p>
-                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{novel.author || 'Unknown Author'}</p>
+                                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{novel.author && novel.author !== 'Unknown' ? novel.author : novel.chapters?.length ? `${novel.chapters.length} Chapters` : 'Novel'}</p>
                                                         {novel.status && (
                                                             <span className="text-[10px] text-primary font-bold mt-1">{novel.status}</span>
                                                         )}
@@ -361,14 +380,14 @@ export const Discover = () => {
                                             <div
                                                 key={idx}
                                                 className="carousel-item flex-none w-[85%] aspect-[16/9] relative rounded-2xl overflow-hidden shadow-xl snap-center shrink-0 cursor-pointer active:scale-[0.98] transition-transform"
-                                                onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}
+                                                onClick={() => navigate(`/novel/live-${encodeURIComponent(novel.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`, { state: { liveMode: true, novel } })}
                                             >
                                                 <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url('${novel.coverUrl}')` }}></div>
                                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
                                                 <div className="absolute bottom-4 left-4 right-4">
                                                     <span className="bg-primary/90 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider mb-2 inline-block">Recommended</span>
                                                     <h4 className="text-white text-xl font-bold leading-tight line-clamp-1">{novel.title}</h4>
-                                                    <p className="text-white/70 text-sm line-clamp-1">{novel.author || 'Best of NovelFire'}</p>
+                                                    <p className="text-white/70 text-sm line-clamp-1">{novel.author && novel.author !== 'Unknown' ? novel.author : novel.chapters?.length ? `${novel.chapters.length} Chapters` : 'Best of NovelFire'}</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -388,7 +407,7 @@ export const Discover = () => {
                                             <div
                                                 key={idx}
                                                 className="flex-none w-32 flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform"
-                                                onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}
+                                                onClick={() => navigate(`/novel/live-${encodeURIComponent(novel.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`, { state: { liveMode: true, novel } })}
                                             >
                                                 <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg border border-slate-100 dark:border-white/5">
                                                     {novel.coverUrl ? (
@@ -418,31 +437,31 @@ export const Discover = () => {
                                         <h3 className="text-lg font-bold tracking-tight">Latest Updates</h3>
                                         <button onClick={() => navigate('/discover/latest')} className="text-primary text-sm font-medium">See all</button>
                                     </div>
-                                    <div className="flex flex-col px-4 gap-3">
+                                    <div className="flex flex-col bg-white dark:bg-transparent rounded-2xl border border-slate-200 dark:border-white/5 overflow-hidden mx-4">
                                         {homeData.latest.slice(0, 10).map((novel: any, idx: number) => (
                                             <div
                                                 key={idx}
-                                                className="flex items-center gap-4 bg-white dark:bg-[#121118] p-3 rounded-[20px] border border-slate-200 dark:border-white/5 active:scale-[0.98] transition-all cursor-pointer shadow-sm shadow-slate-200/50 dark:shadow-none"
-                                                onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}
+                                                className="flex gap-4 p-4 border-b border-slate-100 dark:border-white/5 last:border-0 hover:bg-slate-50/50 dark:hover:bg-white/5 active:bg-slate-100 dark:active:bg-white/10 transition-colors cursor-pointer"
+                                                onClick={() => navigate(`/novel/live-${encodeURIComponent(novel.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`, { state: { liveMode: true, novel } })}
                                             >
-                                                <div className="size-16 rounded-xl overflow-hidden shrink-0 border border-slate-100 dark:border-white/10 shadow-sm">
+                                                <div className="aspect-[2/3] w-14 shrink-0 rounded-lg overflow-hidden shadow-md border border-slate-100 dark:border-white/10">
                                                     {novel.coverUrl ? (
                                                         <img src={novel.coverUrl} className="w-full h-full object-cover" alt={novel.title} />
                                                     ) : (
                                                         <div className="w-full h-full bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center text-slate-400">
-                                                            <BookOpen size={24} />
+                                                            <BookOpen size={20} />
                                                         </div>
                                                     )}
                                                 </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <h4 className="font-bold text-[15px] truncate text-slate-900 dark:text-white mb-1">{novel.title}</h4>
-                                                    <p className="text-[11px] text-slate-500 dark:text-[#a19db9] line-clamp-2 font-medium leading-normal">
-                                                        {novel.summary || novel.author || 'Recently updated release.'}
-                                                    </p>
-                                                </div>
-                                                <div className="pr-1">
-                                                    <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center">
-                                                        <Bolt size={18} className="text-primary" />
+                                                <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                                    <h4 className="font-bold text-[15px] truncate text-slate-900 dark:text-white mb-1.5 leading-tight">{novel.title}</h4>
+                                                    <div className="flex flex-col gap-0.5">
+                                                        <p className="text-[11px] text-slate-500 dark:text-[#a19db9] font-medium line-clamp-1">
+                                                            {novel.author && novel.author !== 'Unknown' ? novel.author : 'Novel'}
+                                                        </p>
+                                                        <p className="text-[11px] text-primary font-bold">
+                                                            {novel.chapters?.length ? `${novel.chapters.length} Chapters` : 'Recently Updated'}
+                                                        </p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -543,31 +562,31 @@ export const Discover = () => {
                                             See all
                                         </button>
                                     </div>
-                                    <div className="flex flex-col px-4 gap-3">
+                                    <div className="flex flex-col bg-white dark:bg-transparent rounded-2xl border border-slate-200 dark:border-white/5 overflow-hidden mx-4">
                                         {manhwaData.latest.map((manga: any, idx: number) => (
                                             <div
                                                 key={idx}
-                                                className="flex items-center gap-4 bg-white dark:bg-[#121118] p-3 rounded-[20px] border border-slate-200 dark:border-white/5 active:scale-[0.98] transition-all cursor-pointer shadow-sm shadow-slate-200/50 dark:shadow-none"
+                                                className="flex gap-4 p-4 border-b border-slate-100 dark:border-white/5 last:border-0 hover:bg-slate-50/50 dark:hover:bg-white/5 active:bg-slate-100 dark:active:bg-white/10 transition-colors cursor-pointer"
                                                 onClick={() => navigate('/import', { state: { initialUrl: manga.sourceUrl } })}
                                             >
-                                                <div className="size-16 rounded-xl overflow-hidden shrink-0 border border-slate-100 dark:border-white/10 shadow-sm">
+                                                <div className="aspect-[2/3] w-14 shrink-0 rounded-lg overflow-hidden shadow-md border border-slate-100 dark:border-white/10">
                                                     {manga.coverUrl ? (
                                                         <img src={manga.coverUrl} className="w-full h-full object-cover" alt={manga.title} />
                                                     ) : (
                                                         <div className="w-full h-full bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center text-slate-400">
-                                                            <BookOpen size={24} />
+                                                            <BookOpen size={20} />
                                                         </div>
                                                     )}
                                                 </div>
-                                                <div className="flex-1 min-w-0 text-left">
-                                                    <h4 className="font-bold text-[15px] truncate text-slate-900 dark:text-white mb-1">{manga.title}</h4>
-                                                    <p className="text-[11px] text-slate-500 dark:text-[#a19db9] line-clamp-1 font-medium leading-normal">
-                                                        {manga.sourceUrl.split('/').pop()}
-                                                    </p>
-                                                </div>
-                                                <div className="pr-1">
-                                                    <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center">
-                                                        <Bolt size={18} className="text-primary" />
+                                                <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                                    <h4 className="font-bold text-[15px] truncate text-slate-900 dark:text-white mb-1.5 leading-tight">{manga.title}</h4>
+                                                    <div className="flex flex-col gap-0.5">
+                                                        <p className="text-[11px] text-slate-500 dark:text-[#a19db9] font-medium line-clamp-1">
+                                                            {manga.sourceUrl.includes('comic') ? 'Asura Scans' : 'Manhwa'}
+                                                        </p>
+                                                        <p className="text-[11px] text-primary font-bold">
+                                                            Latest Release
+                                                        </p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -590,7 +609,7 @@ export const Discover = () => {
                                     <div
                                         key={idx}
                                         className="flex-none w-28 flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform"
-                                        onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}
+                                        onClick={() => navigate(`/novel/live-${encodeURIComponent(novel.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`, { state: { liveMode: true, novel } })}
                                     >
                                         <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-sm border border-slate-100 dark:border-white/5">
                                             {novel.coverUrl ? (
@@ -623,7 +642,7 @@ export const Discover = () => {
                                     <div
                                         key={idx}
                                         className="flex-none w-32 flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform"
-                                        onClick={() => navigate(`/novel/${novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24)}`, { state: { novel } })}
+                                        onClick={() => navigate(`/novel/live-${encodeURIComponent(novel.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`, { state: { liveMode: true, novel } })}
                                     >
                                         <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg border border-slate-100 dark:border-white/5">
                                             {novel.coverUrl ? (
