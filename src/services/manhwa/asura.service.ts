@@ -520,18 +520,6 @@ export class AsuraScraperService {
      * Handles patterns like: 01.webp, page_02.jpg, image-003.png
      * AND Asura's new ULID patterns: 01K99EBHMABQEN2E3Q5FZ4D29E (Lexicographically sortable - effectively numeric)
      */
-    private extractPageNumber(url: string): number {
-        const filename = url.split('/').pop() || '';
-        const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
-        const cleanName = nameWithoutExt.replace(/-optimized|_optimized/i, '');
-
-        const allNumbers = cleanName.match(/\d+/g);
-        if (allNumbers && allNumbers.length > 0) {
-            return parseInt(allNumbers[allNumbers.length - 1], 10);
-        }
-
-        return -1; // No number found
-    }
 
     /**
      * Check if an image is likely a chapter page (content) or an ad/extra.
@@ -568,34 +556,24 @@ export class AsuraScraperService {
      * Sort image URLs: EXTRACT ONLY CONTENT IMAGES.
      * Filters out ads/extras (long UUIDs, GIFs).
      */
-    private sortImagesByFilename(images: string[]): string[] {
+    /**
+     * Filter image URLs: EXTRACT ONLY CONTENT IMAGES.
+     * Filters out ads/extras (long UUIDs, GIFs).
+     * DOES NOT SORT. Trusts source order.
+     */
+    private filterImages(images: string[]): string[] {
         const contentPages: string[] = [];
+        const seen = new Set<string>();
 
         images.forEach(img => {
             if (!img) return;
             // Strict filtering: Only keep images identified as content
             if (this.isContentPage(img)) {
-                contentPages.push(img);
+                if (!seen.has(img)) {
+                    contentPages.push(img);
+                    seen.add(img);
+                }
             }
-        });
-
-        // Use a smarter sort that handles both Numbers and ULIDs/Strings
-        contentPages.sort((a, b) => {
-            const getCleanName = (url: string) => {
-                const f = url.split('/').pop() || '';
-                return f.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '').replace(/-optimized|_optimized/i, '');
-            };
-
-            const numA = this.extractPageNumber(a);
-            const numB = this.extractPageNumber(b);
-
-            // If both are numeric, sort by number
-            if (numA !== -1 && numB !== -1) {
-                return numA - numB;
-            }
-
-            // Fallback to string comparison for ULIDs or mixed types
-            return getCleanName(a).localeCompare(getCleanName(b));
         });
 
         return contentPages;
@@ -633,7 +611,7 @@ export class AsuraScraperService {
                 }
 
                 if (nextFImages.size > 0) {
-                    return this.sortImagesByFilename(Array.from(nextFImages));
+                    return this.filterImages(Array.from(nextFImages));
                 }
             }
         } catch (e) {
@@ -684,7 +662,7 @@ export class AsuraScraperService {
                         }
 
                         if (orderedImages.length > 0) {
-                            return this.sortImagesByFilename(orderedImages);
+                            return this.filterImages(orderedImages);
                         }
                     }
 
@@ -716,7 +694,7 @@ export class AsuraScraperService {
 
                     const deepImages = findImageArrays(pageProps);
                     if (deepImages.length > 0) {
-                        return this.sortImagesByFilename(deepImages);
+                        return this.filterImages(deepImages);
                     }
                 }
             }
@@ -741,7 +719,7 @@ export class AsuraScraperService {
             }
         });
 
-        return this.sortImagesByFilename(Array.from(uniqueImages));
+        return this.filterImages(Array.from(uniqueImages));
     }
 
     private isValidHtml(html: string): boolean {

@@ -14,18 +14,6 @@ interface WebtoonViewerProps {
  * Extract page number for sorting.
  * Handles digits and ULID patterns.
  */
-const extractPageNumber = (url: string): number => {
-    const filename = url.split('/').pop() || '';
-    const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
-    const cleanName = nameWithoutExt.replace(/-optimized|_optimized/i, '');
-
-    // Try to find numbers
-    const allNumbers = cleanName.match(/\d+/g);
-    if (allNumbers && allNumbers.length > 0) {
-        return parseInt(allNumbers[allNumbers.length - 1], 10);
-    }
-    return -1;
-};
 
 /**
  * Check if an image is content (not ad).
@@ -56,29 +44,12 @@ const isContentPage = (url: string): boolean => {
 };
 
 /**
- * Sort image URLs: EXTRACT ONLY CONTENT IMAGES.
+ * Filter image URLs: EXTRACT ONLY CONTENT IMAGES.
  * Filters out ads/extras (UUIDs, GIFs) entirely.
+ * DOES NOT RE-SORT. Trusts source order.
  */
-const sortByFilenameNumber = (urls: string[]): string[] => {
-    const contentPages = urls.filter(url => url && !url.toLowerCase().includes('.gif') && isContentPage(url));
-
-    contentPages.sort((a, b) => {
-        const numA = extractPageNumber(a);
-        const numB = extractPageNumber(b);
-
-        if (numA !== -1 && numB !== -1) {
-            const diff = numA - numB;
-            if (diff !== 0) return diff;
-        }
-
-        const getCleanName = (u: string) => {
-            const f = u.split('/').pop() || '';
-            return f.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '').replace(/-optimized|_optimized/i, '');
-        };
-        return getCleanName(a).localeCompare(getCleanName(b));
-    });
-
-    return contentPages;
+const filterContentImages = (urls: string[]): string[] => {
+    return urls.filter(url => url && !url.toLowerCase().includes('.gif') && isContentPage(url));
 };
 
 const getProxiedUrl = (url: string): string => {
@@ -93,7 +64,7 @@ export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: p
 
     useEffect(() => {
         if (propImages && propImages.length > 0) {
-            setImages(sortByFilenameNumber(propImages));
+            setImages(filterContentImages(propImages));
         } else if (content) {
             // Parse images from HTML string
             const parser = new DOMParser();
@@ -102,7 +73,7 @@ export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: p
             const imageUrls = imgTags
                 .map(img => img.getAttribute('src') || img.getAttribute('data-src'))
                 .filter((src): src is string => !!src);
-            setImages(sortByFilenameNumber(imageUrls));
+            setImages(filterContentImages(imageUrls));
         }
     }, [content, propImages]);
 

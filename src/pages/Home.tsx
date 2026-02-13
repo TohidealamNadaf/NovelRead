@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { FooterNavigation } from '../components/FooterNavigation';
 import { Header } from '../components/Header';
 import { dbService, type Novel } from '../services/db.service';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Search, Bell, Plus, X, BookOpen, Clock } from 'lucide-react';
 import { notificationService } from '../services/notification.service';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -14,6 +14,7 @@ export const Home = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const containerRef = useRef<HTMLDivElement>(null);
+    const location = useLocation();
 
     // Scroll restoration
     useEffect(() => {
@@ -29,7 +30,7 @@ export const Home = () => {
             setUnreadCount(notificationService.getUnreadCount());
         });
         return unsubscribe;
-    }, []);
+    }, [location]);
 
     const loadLibrary = async () => {
         try {
@@ -38,9 +39,15 @@ export const Home = () => {
             setNovels(data);
         } catch (error) {
             console.error("Failed to load library", error);
+            notificationService.addNotification({ title: 'Error', body: 'Failed to load library data', type: 'system' });
             setNovels([]);
         }
     };
+
+    useEffect(() => {
+        console.log("Home: novels state updated", novels.length);
+        novels.forEach(n => console.log(`- ${n.title} [${n.category}]`));
+    }, [novels]);
 
     const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
         sessionStorage.setItem('homeScroll', e.currentTarget.scrollTop.toString());

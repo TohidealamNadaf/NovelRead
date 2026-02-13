@@ -47,6 +47,8 @@ class DatabaseService {
                 if (jeepSqlite) {
                     await customElements.whenDefined('jeep-sqlite');
                     await this.sqlite.initWebStore();
+                } else {
+                    console.error("jeep-sqlite element not found in DOM");
                 }
             }
 
@@ -111,7 +113,10 @@ class DatabaseService {
             const columnsToAdd = [
                 { name: 'summary', type: 'TEXT' },
                 { name: 'category', type: 'TEXT' },
-                { name: 'status', type: 'TEXT' }
+                { name: 'status', type: 'TEXT' },
+                { name: 'lastReadAt', type: 'INTEGER' },
+                { name: 'totalChapters', type: 'INTEGER DEFAULT 0' },
+                { name: 'readChapters', type: 'INTEGER DEFAULT 0' }
             ];
 
             const chapterColumnsToAdd = [
@@ -203,8 +208,12 @@ class DatabaseService {
     // ---------------------
 
     async addNovel(novel: Novel) {
+        console.log("Adding novel to DB:", novel);
         const db = await this.getDB();
-        if (!db) return;
+        if (!db) {
+            console.error("DB not initialized in addNovel");
+            return;
+        }
         // Use INSERT OR IGNORE so we never overwrite an existing novel's progress
         const query = `
         INSERT OR IGNORE INTO novels (id, title, author, coverUrl, sourceUrl, category, status, summary, lastReadChapterId)
@@ -229,7 +238,8 @@ class DatabaseService {
             coverUrl = COALESCE(?, coverUrl),
             sourceUrl = COALESCE(?, sourceUrl),
             summary = COALESCE(?, summary),
-            status = COALESCE(?, status)
+            status = COALESCE(?, status),
+            category = COALESCE(?, category)
         WHERE id = ?
     `, [
             novel.title || null,
@@ -238,6 +248,7 @@ class DatabaseService {
             novel.sourceUrl || null,
             novel.summary || null,
             novel.status || null,
+            novel.category || null,
             novel.id
         ]);
         await this.save();
@@ -287,7 +298,12 @@ class DatabaseService {
 
     async getNovels(): Promise<Novel[]> {
         const db = await this.getDB();
-        if (!db) return [];
+        if (!db) {
+            console.error("DB not initialized in getNovels");
+            return [];
+        }
+
+        console.log("Fetching novels from DB...");
 
         // Query to get novels with chapter counts
         // We use a LEFT JOIN on chapters to count

@@ -586,7 +586,12 @@ export class ManhwaScraperService {
             .toLowerCase()
             .slice(0, 32);
 
-        const novelId = `${idBase}-${Math.random().toString(36).slice(2, 7)}`;
+        // Generate a deterministic ID based on the URL path to avoid duplicates
+        // Matches logic in useChapterActions but with 'manhwa-' prefix for clarity (or just use standard slug)
+        // actually, let's just use the idBase we already calculated, it's decent.
+        // But let's make sure it's consistent.
+        // const novelId = `${idBase}-${Math.random().toString(36).slice(2, 7)}`; // OLD RANDOM
+        const novelId = `manhwa-${idBase}`.slice(0, 80); // NEW DETERMINISTIC
 
         try {
             await dbService.initialize();
@@ -598,10 +603,10 @@ export class ManhwaScraperService {
             await dbService.addNovel({
                 id: novelId,
                 title: novel.title,
-                author: novel.author,
+                author: novel.author || 'Unknown',
                 coverUrl: novel.coverUrl,
                 sourceUrl: url,
-                category: 'Manhwa',
+                category: 'Manhwa', // Explicitly set Manhwa
                 status: novel.status
             });
 
@@ -644,20 +649,6 @@ export class ManhwaScraperService {
     // --- Lazy Loading Images ---
 
     /**
-     * Extract page number from an image URL filename for sorting.
-     * Returns the last number in the filename, or Infinity if none found.
-     */
-    private extractPageNumber(url: string): number {
-        const filename = url.split('/').pop() || '';
-        const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
-        const nums = nameWithoutExt.match(/\d+/g);
-        if (nums && nums.length > 0) {
-            return parseInt(nums[nums.length - 1], 10);
-        }
-        return Infinity;
-    }
-
-    /**
      * Check if an image is likely a chapter page (content) or an ad/extra.
      */
     private isContentPage(url: string): boolean {
@@ -676,7 +667,11 @@ export class ManhwaScraperService {
     /**
      * Sort HTML <img> tags: Ads/Extras first, then Content pages sorted numerically.
      */
-    private sortImageTagsByFilename(imgTags: string[]): string[] {
+    /**
+     * Filter HTML <img> tags: Ads/Extras first, then Content pages.
+     * DOES NOT SORT by filename number anymore. Trusts DOM order.
+     */
+    private filterImageTags(imgTags: string[]): string[] {
         const contentPages: string[] = [];
         const extras: string[] = [];
 
@@ -697,17 +692,13 @@ export class ManhwaScraperService {
             }
         });
 
-        // Sort content pages purely by number
-        contentPages.sort((a, b) => {
-            const numA = this.extractPageNumber(getSrc(a));
-            const numB = this.extractPageNumber(getSrc(b));
-            return numA - numB;
-        });
+        // extras.sort(); // Optional: keep extras sorted if needed, or just append them
 
-        // Sort extras alphabetically
-        extras.sort();
-
-        return [...extras, ...contentPages];
+        // Return extras (usually logos) first, then content
+        // Or actually, usually we want content first? 
+        // Logic before was: extras (alpha) then content (numeric). 
+        // Let's just return content pages in order found.
+        return contentPages;
     }
 
     async fetchChapterImages(url: string): Promise<string> {
@@ -777,10 +768,10 @@ export class ManhwaScraperService {
         }
 
         if (foundImages.length > 0) {
-            // Sort by filename page number for correct reading order
-            const sorted = this.sortImageTagsByFilename(foundImages);
-            console.log(`[ManhwaScraper] Found ${sorted.length} images for chapter (sorted by filename)`);
-            return sorted.join('');
+            // Filter images but KEEP DOM ORDER
+            const filtered = this.filterImageTags(foundImages);
+            console.log(`[ManhwaScraper] Found ${filtered.length} images for chapter (DOM order)`);
+            return filtered.join('');
         }
 
         return '<p>No images found for this chapter.</p>';

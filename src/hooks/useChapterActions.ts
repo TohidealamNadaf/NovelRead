@@ -55,8 +55,9 @@ export function useChapterActions({
             summary: novel.summary || '',
             status: novel.status || 'Ongoing',
             source: 'NovelFire',
-            category: 'Novel',
+            category: novel.category || 'Novel',
         } as any);
+        console.log(`[useChapterActions] ensureLiveNovelInDB: Saved ${novelDbId} as ${novel.category || 'Novel'}`);
         return novelDbId;
     };
 
