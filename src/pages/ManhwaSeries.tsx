@@ -7,7 +7,7 @@ import { Header } from '../components/Header';
 import { SeriesHero } from '../components/manhwa/SeriesHero';
 import { ChapterList } from '../components/manhwa/ChapterList';
 import { Loader2, Book } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export const ManhwaSeries = () => {
     const { novelId } = useParams<{ novelId: string }>();
@@ -15,6 +15,21 @@ export const ManhwaSeries = () => {
     const [novel, setNovel] = useState<Novel | null>(null);
     const [chapters, setChapters] = useState<Chapter[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [showFixedButton, setShowFixedButton] = useState(false);
+
+    useEffect(() => {
+        const handleScroll = () => {
+            // Show button when scrolled past the hero actions (around 450px)
+            if (window.scrollY > 450) {
+                setShowFixedButton(true);
+            } else {
+                setShowFixedButton(false);
+            }
+        };
+
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
 
     useEffect(() => {
         const loadData = async () => {
@@ -86,13 +101,46 @@ export const ManhwaSeries = () => {
     };
 
     const handleDownload = async (chapter: Chapter) => {
-        // Integrate with scraperService to download/cache content if not present
-        if (!novel) return;
-        // This is a stub for the "Download" trigger. 
-        // In a real implementation, we'd check if content exists and if not, trigger a background scrape.
-        console.log("Download triggered for", chapter.title);
-        // We can trigger the existing scraper logic here if needed:
-        // await scraperService.startImport(...) but for a single chapter.
+        if (!novel || !novelId) return;
+
+        try {
+            console.log(`[ManhwaSeries] Downloading chapter: ${chapter.title}`);
+            // audioPath stores the source URL for manhwa chapters
+            const content = await manhwaScraperService.fetchChapterImages(chapter.audioPath || '');
+
+            if (content && content.length > 50) { // Basic sanity check
+                await dbService.updateChapterContent(novelId, chapter.id, content);
+
+                // Update local state to reflect download status immediately
+                setChapters(prev => prev.map(c =>
+                    c.id === chapter.id ? { ...c, content } : c
+                ));
+                console.log(`[ManhwaSeries] ✓ Downloaded ${chapter.title}`);
+            }
+        } catch (error) {
+            console.error(`[ManhwaSeries] Failed to download chapter ${chapter.title}`, error);
+        }
+    };
+
+    const handleMassDownload = async () => {
+        if (!novel || chapters.length === 0) return;
+
+        const undownloaded = chapters.filter(c => !c.content);
+        if (undownloaded.length === 0) {
+            console.log("[ManhwaSeries] All chapters already downloaded.");
+            return;
+        }
+
+        console.log(`[ManhwaSeries] Starting mass download of ${undownloaded.length} chapters...`);
+
+        // Process in small batches to avoid overwhelming the system/network
+        const batchSize = 3;
+        for (let i = 0; i < undownloaded.length; i += batchSize) {
+            const batch = undownloaded.slice(i, i + batchSize);
+            await Promise.all(batch.map(ch => handleDownload(ch)));
+        }
+
+        console.log("[ManhwaSeries] Mass download complete.");
     };
 
     if (isLoading) {
@@ -111,6 +159,8 @@ export const ManhwaSeries = () => {
             </div>
         );
     }
+
+    const hasStartedReading = !!novel.lastReadChapterId;
 
     return (
         <motion.div
@@ -133,6 +183,7 @@ export const ManhwaSeries = () => {
                 onReadNow={handleReadNow}
                 chapterCount={chapters.length}
                 inLibrary={true} // Hardcoded for now, assuming if in DB it's in library
+                hasStartedReading={hasStartedReading}
             />
 
             <div className="mt-8">
@@ -140,21 +191,31 @@ export const ManhwaSeries = () => {
                     chapters={chapters}
                     onChapterSelect={handleChapterSelect}
                     onDownload={handleDownload}
+                    onMassDownload={handleMassDownload}
                     currentChapterId={novel.lastReadChapterId}
                 />
             </div>
 
-            {/* Resume Button Float (if scrolled down - optional, strictly implementing footer nav is safer) */}
-            {/* Design reference has a "CONTINUE READING" sticky button at bottom */}
-            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-48px)] max-w-md z-40">
-                <button
-                    onClick={handleReadNow}
-                    className="w-full h-14 bg-white text-background-dark rounded-full font-black text-lg shadow-2xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all"
-                >
-                    <Book className="fill-current" size={20} />
-                    CONTINUE READING
-                </button>
-            </div>
+            {/* Resume Button Float (if scrolled down) */}
+            <AnimatePresence>
+                {showFixedButton && (
+                    <motion.div
+                        initial={{ y: 100, x: '-50%', opacity: 0 }}
+                        animate={{ y: 0, x: '-50%', opacity: 1 }}
+                        exit={{ y: 100, x: '-50%', opacity: 0 }}
+                        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                        className="fixed bottom-6 left-1/2 w-[calc(100%-48px)] max-w-md z-40"
+                    >
+                        <button
+                            onClick={handleReadNow}
+                            className="w-full h-14 bg-primary text-white rounded-full font-black text-lg shadow-[0_8px_30px_rgb(93,88,240,0.4)] flex items-center justify-center gap-3 active:scale-[0.98] transition-all border border-white/20 bg-gradient-to-r from-primary to-[#706cf4]"
+                        >
+                            <Book className="fill-current" size={20} />
+                            {hasStartedReading ? 'CONTINUE READING' : 'START READING'}
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 };

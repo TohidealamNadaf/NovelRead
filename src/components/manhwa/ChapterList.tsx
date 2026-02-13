@@ -7,6 +7,7 @@ interface ChapterListProps {
     chapters: Chapter[];
     onChapterSelect: (chapter: Chapter) => void;
     onDownload: (chapter: Chapter) => void;
+    onMassDownload?: () => void;
     currentChapterId?: string;
 }
 
@@ -14,6 +15,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
     chapters,
     onChapterSelect,
     onDownload,
+    onMassDownload,
     // currentChapterId // Consumed if needed for scroll or other highlight logic
 }) => {
     const [sortDesc, setSortDesc] = useState(true);
@@ -81,8 +83,11 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                         Available for offline reading
                     </span>
                 </div>
-                {/* Placeholder action */}
-                <button className="text-xs font-bold bg-primary px-3 py-1.5 rounded-lg text-white shadow-sm active:scale-95 transition-transform">
+                {/* Action button */}
+                <button
+                    onClick={onMassDownload}
+                    className="text-xs font-bold bg-primary px-3 py-1.5 rounded-lg text-white shadow-sm active:scale-95 transition-transform"
+                >
                     Mass Download
                 </button>
             </div>
@@ -130,9 +135,12 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                                         e.stopPropagation();
                                         onDownload(chapter);
                                     }}
-                                    className="p-2 -mr-2 text-slate-400 hover:text-primary dark:hover:text-white transition-colors"
+                                    className={clsx(
+                                        "p-2 -mr-2 transition-colors",
+                                        chapter.content ? "text-green-500" : "text-slate-400 hover:text-primary dark:hover:text-white"
+                                    )}
                                 >
-                                    <Download size={20} />
+                                    {chapter.content ? <CheckCircle2 size={20} /> : <Download size={20} />}
                                 </button>
                             </>
                         ) : (

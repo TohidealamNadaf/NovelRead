@@ -8,6 +8,7 @@ interface SeriesHeroProps {
     onToggleLibrary?: () => void;
     inLibrary?: boolean;
     chapterCount?: number;
+    hasStartedReading?: boolean;
 }
 
 export const SeriesHero: React.FC<SeriesHeroProps> = ({
@@ -15,7 +16,8 @@ export const SeriesHero: React.FC<SeriesHeroProps> = ({
     onReadNow,
     onToggleLibrary,
     inLibrary,
-    chapterCount = 0
+    chapterCount = 0,
+    hasStartedReading = false
 }) => {
     // Defensive deduplication for status (e.g. "ONGOINGONGOING")
     const displayStatus = React.useMemo(() => {
@@ -95,7 +97,7 @@ export const SeriesHero: React.FC<SeriesHeroProps> = ({
                     className="flex items-center justify-center gap-2 bg-primary h-12 rounded-xl text-white font-bold shadow-lg shadow-primary/25 active:scale-95 transition-transform"
                 >
                     <Play size={20} className="fill-white" />
-                    Read Now
+                    {hasStartedReading ? "Continue Reading" : "Read Now"}
                 </button>
                 <button
                     onClick={onToggleLibrary}
