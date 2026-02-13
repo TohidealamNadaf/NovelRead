@@ -27,9 +27,9 @@ export const MiniPlayer = () => {
         e.stopPropagation();
         if (track.type === 'tts') {
             if (track.isPlaying) {
-                audioService.pauseSpeaking();
+                audioService.pause();
             } else {
-                await audioService.resumeSpeaking();
+                audioService.resume();
             }
         } else {
             if (track.isPlaying) audioService.stopBGM();
