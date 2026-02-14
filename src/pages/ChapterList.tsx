@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -18,6 +18,7 @@ export const ChapterList = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const parentRef = useRef<HTMLDivElement>(null);
+    const [searchTerm, setSearchTerm] = useState('');
 
     // --- Hooks ---
     const { isOffline } = useOfflineStatus();
@@ -37,7 +38,6 @@ export const ChapterList = () => {
         isGlobalScraping,
         filter,
         setFilter,
-        searchQuery,
         setSearchQuery,
         sortOrder,
         setSortOrder,
@@ -45,6 +45,14 @@ export const ChapterList = () => {
         // loadData, // Unused in this component (handled in hook)
         setChapters
     } = useChapterData();
+
+    // Debounce search
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setSearchQuery(searchTerm);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm, setSearchQuery]);
 
     // UI State
     const [showMenu, setShowMenu] = useState(false);
@@ -92,9 +100,26 @@ export const ChapterList = () => {
     const rowVirtualizer = useVirtualizer({
         count: filteredChapters.length,
         getScrollElement: () => parentRef.current,
-        estimateSize: () => 73, // Height of a row
-        overscan: 10,
+        estimateSize: () => 73,
+        overscan: 5, // Reduced for mobile memory
+        measureElement: (el) => el.getBoundingClientRect().height,
     });
+
+    // --- Scroll Restoration ---
+    useEffect(() => {
+        if (!loading && parentRef.current && novel?.id) {
+            const savedScroll = sessionStorage.getItem(`scroll-${novel.id}`);
+            if (savedScroll) {
+                parentRef.current.scrollTop = parseInt(savedScroll, 10);
+            }
+        }
+    }, [loading, novel?.id]);
+
+    const handleScroll = useCallback(() => {
+        if (parentRef.current && novel?.id) {
+            sessionStorage.setItem(`scroll-${novel.id}`, parentRef.current.scrollTop.toString());
+        }
+    }, [novel?.id]);
 
     // --- Handlers ---
     const handleChapterClick = useCallback((chapter: any) => {
@@ -107,8 +132,8 @@ export const ChapterList = () => {
                     novelTitle: novel?.title,
                     novelCoverUrl: novel?.coverUrl,
                     novelSourceUrl: novel?.sourceUrl,
-                    chapters: liveChapters,
                     currentIndex: chapter._index,
+                    chapters: liveChapters
                 }
             });
         } else {
@@ -116,11 +141,12 @@ export const ChapterList = () => {
                 state: {
                     novel,
                     liveMode: false,
+                    currentIndex: chapter.orderIndex,
                     chapters: chapters
                 }
             });
         }
-    }, [isLiveMode, navigate, novel, liveChapters, chapters]);
+    }, [isLiveMode, navigate, novel]);
 
 
     // --- Render Helpers ---
@@ -228,7 +254,11 @@ export const ChapterList = () => {
             )}
 
             {/* Main Scroll Container */}
-            <main ref={parentRef} className="flex-1 overflow-y-auto hide-scrollbar pb-24 overscroll-y-contain">
+            <main
+                ref={parentRef}
+                onScroll={handleScroll}
+                className="flex-1 overflow-y-auto hide-scrollbar pb-24 overscroll-y-contain scroll-smooth"
+            >
                 {/* 1. Novel Info Header (Non-virtualized part) */}
                 <div className="p-4 bg-background-light dark:bg-background-dark">
                     <div className="flex gap-5">
@@ -325,8 +355,8 @@ export const ChapterList = () => {
                                 className="w-full pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-900 border-none rounded-lg text-sm focus:ring-1 focus:ring-primary placeholder:text-slate-500 font-sans outline-none dark:text-white"
                                 placeholder="Search chapter title..."
                                 type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
                             />
                         </div>
                         <div className="relative">
@@ -390,7 +420,9 @@ export const ChapterList = () => {
                 >
                     {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                         const chapter = filteredChapters[virtualRow.index];
-                        const isDownloaded = isLiveMode ? downloadedLiveChapters.has(chapter.url) : (chapter.content || false);
+                        if (!chapter) return null;
+
+                        const isDownloaded = isLiveMode ? downloadedLiveChapters.has(chapter.url) : (chapter.content || chapter.contentPath);
                         const isRead = isLiveMode ? readLiveChapters.has(chapter.url) : (chapter.isRead || false);
                         const isDownloadingItem = isLiveMode ? downloadingLive.has(chapter.url) : downloading.has(chapter.id);
                         const displayIndex = sortOrder === 'asc'
@@ -398,32 +430,36 @@ export const ChapterList = () => {
                             : (totalChaptersData - virtualRow.index);
 
                         return (
-                            <ChapterRow
+                            <div
                                 key={virtualRow.key}
-                                chapter={chapter}
-                                index={displayIndex}
-                                isLiveMode={isLiveMode}
-                                isDownloaded={Boolean(isDownloaded)}
-                                isDownloading={isDownloadingItem}
-                                isRead={!!isRead}
-                                onClick={() => handleChapterClick(chapter)}
-                                onDownload={(e) => {
-                                    e?.stopPropagation();
-                                    if (isLiveMode) {
-                                        handleLiveDownloadChapter(chapter, chapter._index);
-                                    } else {
-                                        handleDownload(chapter);
-                                    }
-                                }}
+                                data-index={virtualRow.index}
+                                ref={rowVirtualizer.measureElement}
                                 style={{
                                     position: 'absolute',
                                     top: 0,
                                     left: 0,
                                     width: '100%',
-                                    height: `${virtualRow.size}px`,
                                     transform: `translateY(${virtualRow.start}px)`,
                                 }}
-                            />
+                            >
+                                <ChapterRow
+                                    chapter={chapter}
+                                    index={displayIndex}
+                                    isLiveMode={isLiveMode}
+                                    isDownloaded={Boolean(isDownloaded)}
+                                    isDownloading={isDownloadingItem}
+                                    isRead={!!isRead}
+                                    onClick={() => handleChapterClick(chapter)}
+                                    onDownload={(e) => {
+                                        e?.stopPropagation();
+                                        if (isLiveMode) {
+                                            handleLiveDownloadChapter(chapter, chapter._index);
+                                        } else {
+                                            handleDownload(chapter);
+                                        }
+                                    }}
+                                />
+                            </div>
                         );
                     })}
                 </div>
@@ -448,7 +484,7 @@ export const ChapterList = () => {
 
             {/* Floating Action Button for Start/Continue Reading */}
             {(chapters.length > 0 || liveChapters.length > 0) && (
-                <div className="fixed bottom-6 right-6 z-50">
+                <div className="fixed bottom-6 right-6 z-50" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
                     <button
                         onClick={() => {
                             // DEBUG: Log the values to understand why it fails (AGAIN)
@@ -484,7 +520,7 @@ export const ChapterList = () => {
                                             chapterUrl: foundChapter.audioPath, // Pass URL for fetching
                                             chapterTitle: foundChapter.title,
                                             currentIndex: foundChapter.orderIndex,
-                                            chapters: chapters // PASS FULL LIST for fallback
+                                            chapters: chapters
                                         }
                                     });
                                 } else if (foundLive) {
@@ -499,7 +535,7 @@ export const ChapterList = () => {
                                             novel,
                                             liveMode: true,
                                             chapterUrl: targetUrl,
-                                            chapterTitle: foundLive.title,
+                                            chapterTitle: targetUrl, // Was foundLive.title previously but URL matches param better
                                             currentIndex: (foundLive as any)._index,
                                             chapters: liveChapters
                                         }

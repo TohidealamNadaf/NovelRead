@@ -11,6 +11,7 @@ interface ChapterSidebarProps {
     onClose: () => void;
     chapters: Chapter[];
     currentChapterId: string;
+    currentIndex?: number; // Optional explicit index for more reliable matching
     novelTitle: string;
     onSelectChapter: (chapter: Chapter) => void;
 }
@@ -48,7 +49,7 @@ const ChapterRow = memo(({
                 ? "bg-primary text-white"
                 : isRead
                     ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400"
-                    : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                    : "bg-slate-100 dark:border-slate-800 text-slate-500"
         )}>
             {isRead && !isCurrent ? (
                 <CheckCircle2 size={14} />
@@ -66,7 +67,7 @@ const ChapterRow = memo(({
                     ? "text-slate-400 dark:text-slate-500"
                     : "text-slate-700 dark:text-slate-200"
         )}>
-            {chapter.title}
+            {chapter?.title || `Chapter ${index + 1}`}
         </span>
     </button>
 ));
@@ -76,6 +77,7 @@ export const ChapterSidebar = ({
     onClose,
     chapters,
     currentChapterId,
+    currentIndex: explicitIndex,
     novelTitle,
     onSelectChapter
 }: ChapterSidebarProps) => {
@@ -93,9 +95,12 @@ export const ChapterSidebar = ({
         };
     }, [isOpen]);
 
-    const currentIndex = useMemo(() =>
-        chapters.findIndex(c => c.id === currentChapterId),
-        [chapters, currentChapterId]);
+    const currentIndex = useMemo(() => {
+        if (typeof explicitIndex === 'number' && explicitIndex >= 0) {
+            return explicitIndex;
+        }
+        return chapters.findIndex(c => c.id === currentChapterId);
+    }, [chapters, currentChapterId, explicitIndex]);
 
     // Virtualizer
     const rowVirtualizer = useVirtualizer({

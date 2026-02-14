@@ -170,12 +170,28 @@ export function useChapterActions({
             async () => {
                 try {
                     const novelDbId = await ensureLiveNovelInDB();
-                    scraperService.downloadAll(novelDbId, novel.title, undownloaded.map((ch) => ({
-                        title: ch.title,
-                        url: ch.url,
-                        audioPath: ch.url,
-                    })));
-                    onShowToast("Background download started", 'info');
+
+                    // CHUNKED TRIGGERING: Process in batches of 50 to avoid freezing main thread
+                    // during large list transformations
+                    const CHUNK_SIZE = 50;
+                    for (let i = 0; i < undownloaded.length; i += CHUNK_SIZE) {
+                        const chunk = undownloaded.slice(i, i + CHUNK_SIZE);
+                        const mappedChunk = chunk.map((ch) => ({
+                            title: ch.title,
+                            url: ch.url,
+                            audioPath: ch.url,
+                        }));
+
+                        // Pass chunk to background downloader
+                        scraperService.downloadAll(novelDbId, novel.title, mappedChunk);
+
+                        // Yield to main thread
+                        if (i + CHUNK_SIZE < undownloaded.length) {
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                        }
+                    }
+
+                    onShowToast(`Background download started for ${undownloaded.length} chapters`, 'info');
                 } catch (error) {
                     console.error('Failed to start download all:', error);
                     onShowToast('Failed to start download.', 'error');

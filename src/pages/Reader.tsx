@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react';
+﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MoreHorizontal, Play, Pause, FastForward, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
@@ -21,14 +21,27 @@ export const Reader = () => {
     const { novelId, chapterId } = useParams();
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const [chapter, setChapter] = useState<Chapter | null>(null);
-    const [nextChapter, setNextChapter] = useState<Chapter | null>(null);
-    const [prevChapter, setPrevChapter] = useState<Chapter | null>(null);
     const [novel, setNovel] = useState<Novel | null>(null);
     const [loading, setLoading] = useState(true);
 
     // Unified Navigation State (Hybrid/Live/Offline)
     const [navChapters, setNavChapters] = useState<(Chapter | any)[]>(location.state?.chapters || []);
     const [navIndex, setNavIndex] = useState<number>(location.state?.currentIndex ?? -1);
+
+    // Derived Navigation (Primary source of truth for continuity)
+    const prevChapter = useMemo(() => {
+        if (navIndex > 0 && navChapters.length > 0) {
+            return navChapters[navIndex - 1];
+        }
+        return null;
+    }, [navChapters, navIndex]);
+
+    const nextChapter = useMemo(() => {
+        if (navIndex !== -1 && navIndex < navChapters.length - 1) {
+            return navChapters[navIndex + 1];
+        }
+        return null;
+    }, [navChapters, navIndex]);
 
     // Live browsing mode indicators
     const isLiveMode = !!location.state?.liveMode || novelId?.startsWith('live-');
@@ -82,6 +95,15 @@ export const Reader = () => {
         } else {
             console.warn("[Reader] Missing novelId or chapterId");
             setLoading(false);
+        }
+
+        // --- IMMEDIATE NAVIGATION SYNC ---
+        // Sync nav state from router immediately to prevent gesture break during sync
+        if (location.state?.chapters) {
+            setNavChapters(location.state.chapters);
+            if (typeof location.state.currentIndex === 'number') {
+                setNavIndex(location.state.currentIndex);
+            }
         }
 
         // Sync with global audio state
@@ -195,34 +217,6 @@ export const Reader = () => {
                     }
                 }
 
-                // Fetch surrounding local chapters
-                // Fetch surrounding local chapters
-                let [next, prev] = await Promise.all([
-                    dbService.getNextChapter(nid, cData.orderIndex),
-                    dbService.getPrevChapter(nid, cData.orderIndex)
-                ]);
-
-                // Fallback: If DB didn't return next/prev logic, use the list passed from navigation state
-                // This covers cases where only 1 chapter is in DB but ChapterList knew about others
-                const passedChapters = location.state?.chapters as Chapter[];
-                if (passedChapters && passedChapters.length > 0) {
-                    // Try to find current index in passed list
-                    // We match by ID first, then title/url
-                    const currentIdx = passedChapters.findIndex(c => c.id === cid || c.title === cData.title);
-
-                    if (currentIdx !== -1) {
-                        if (!next && currentIdx < passedChapters.length - 1) {
-                            next = passedChapters[currentIdx + 1];
-                            console.log("[Reader] Using passed state for Next Chapter:", next.title);
-                        }
-                        if (!prev && currentIdx > 0) {
-                            prev = passedChapters[currentIdx - 1];
-                        }
-                    }
-                }
-
-                setNextChapter(next);
-                setPrevChapter(prev);
 
                 // Fetch all local chapters for the sidebar initially
                 const localChapters = await dbService.getChapters(nid);
@@ -248,16 +242,6 @@ export const Reader = () => {
                             // Find current chapter in web list to identify its index
                             const currentIndex = webChapters.findIndex(ch => ch.url === cData.audioPath || ch.title === cData.title);
                             if (currentIndex !== -1) {
-                                // If we don't have a local next chapter, use the web one
-                                if (!next && currentIndex < webChapters.length - 1) {
-                                    const nextWeb = webChapters[currentIndex + 1];
-                                    setNextChapter({
-                                        id: nextWeb.url,
-                                        novelId: nid,
-                                        title: nextWeb.title,
-                                        orderIndex: currentIndex + 1,
-                                    } as Chapter);
-                                }
 
                                 // Update local navigation states for unified logic
                                 setNavChapters(webChapters);
@@ -293,6 +277,10 @@ export const Reader = () => {
         // 1. RECOVERY: If state is missing (refresh), try to reconstruct context
         let currentSourceUrl = location.state?.novel?.sourceUrl || location.state?.novelSourceUrl || novel?.sourceUrl || '';
         let currentLiveChapters = (location.state?.chapters || (navChapters.length > 0 ? navChapters : [])) as any[];
+
+        // SANITIZE: Remove any null/undefined entries that might have polluted the list
+        currentLiveChapters = currentLiveChapters.filter(c => !!c);
+
         let currentIdx = (location.state?.currentIndex ?? (navIndex !== -1 ? navIndex : -1)) as number;
 
         let stableNovelId = novelId; // Use URL param as primary ID
@@ -325,6 +313,7 @@ export const Reader = () => {
                                     stableId: `${stableNovelId}-ch-${i}`
                                 } as any));
                                 console.log("[Reader] Recovered live chapters:", currentLiveChapters.length);
+                                setNavChapters(currentLiveChapters);
                             }
                         } catch (e) {
                             console.error("[Reader] Failed to recover live chapters", e);
@@ -345,18 +334,19 @@ export const Reader = () => {
                     if (urlMatch !== -1) currentIdx = urlMatch;
                 }
                 console.log("[Reader] Recovered index:", currentIdx);
+                setNavIndex(currentIdx);
             }
 
             // --- END RECOVERY ---
 
             // Determine Chapter URL (for fetching content)
             const targetChapter = currentLiveChapters[currentIdx];
-            const chapterUrl = location.state?.chapterUrl || (targetChapter as any)?.url || targetChapter?.audioPath || (chapterId?.startsWith('http') ? chapterId : '');
+            const chapterUrl = location.state?.chapterUrl || (targetChapter as any)?.url || (targetChapter as any)?.audioPath || (chapterId?.startsWith('http') ? chapterId : '');
 
             // Fallback Title
-            const chapterTitle = location.state?.chapterTitle || targetChapter?.title || 'Chapter';
+            const chapterTitle = location.state?.chapterTitle || (targetChapter as any)?.title || 'Chapter';
 
-            const chapterStableId = `${stableNovelId}-ch-${currentIdx}`;
+            const chapterStableId = `${stableNovelId}-ch-${currentIdx !== -1 ? currentIdx : 0}`;
 
             // 1. Check if chapter already exists in DB (persistent download verification)
             const existingChapter = await dbService.getChapter(stableNovelId!, chapterStableId);
@@ -401,34 +391,6 @@ export const Reader = () => {
                 status: 'Ongoing',
             } as Novel);
 
-            // Set next/prev from live chapters list
-            if (currentLiveChapters.length > 0 && currentIdx < currentLiveChapters.length - 1) {
-                const next = currentLiveChapters[currentIdx + 1];
-                const nextUrl = (next as any).url || next.audioPath || next.id;
-                setNextChapter({
-                    id: nextUrl, // Keep URL for live navigation
-                    novelId: stableNovelId,
-                    title: next.title,
-                    orderIndex: currentIdx + 1,
-                    audioPath: nextUrl
-                } as Chapter);
-            } else {
-                setNextChapter(null);
-            }
-
-            if (currentLiveChapters.length > 0 && currentIdx > 0) {
-                const prev = currentLiveChapters[currentIdx - 1];
-                const prevUrl = (prev as any).url || prev.audioPath || prev.id;
-                setPrevChapter({
-                    id: prevUrl,
-                    novelId: stableNovelId,
-                    title: prev.title,
-                    orderIndex: currentIdx - 1,
-                    audioPath: prevUrl
-                } as Chapter);
-            } else {
-                setPrevChapter(null);
-            }
 
             // Build sidebar chapters list with read status from DB
             try {
@@ -436,18 +398,20 @@ export const Reader = () => {
                 const readStatusMap = new Set(dbChapters.filter(c => c.isRead).map(c => c.id));
 
                 setAllChapters(currentLiveChapters.map((ch, idx) => {
+                    if (!ch) return null; // Safe guard
                     // Hybrid ID matching: try both URL and stable ID format
                     const stableId = `${stableNovelId}-ch-${idx}`;
-                    const isRead = readStatusMap.has(stableId) || readStatusMap.has(ch.url);
+                    const chUrl = (ch as any).url || (ch as any).audioPath || '';
+                    const isRead = readStatusMap.has(stableId) || (chUrl && readStatusMap.has(chUrl));
 
                     return {
-                        id: ch.url,
+                        id: chUrl,
                         novelId: stableNovelId,
-                        title: ch.title,
+                        title: ch.title || `Chapter ${idx + 1}`,
                         orderIndex: idx,
                         isRead: isRead ? 1 : 0
                     } as Chapter;
-                }));
+                }).filter((c): c is Chapter => !!c));
             } catch (e) {
                 console.warn("[Reader] Failed to sync read status for sidebar", e);
                 // Fallback to simple list
@@ -491,35 +455,20 @@ export const Reader = () => {
     };
 
     const handleNextChapter = useCallback(() => {
-        const canNavigateLive = (isLiveMode || !!novel?.sourceUrl) && navChapters.length > 0;
-        const stateCurrentIndex = navIndex;
+        if (nextChapter) {
+            setNavigationDirection('next');
+            const targetUrl = nextChapter.url || nextChapter.audioPath || nextChapter.id || '';
 
-        if (canNavigateLive && stateCurrentIndex !== -1 && stateCurrentIndex < navChapters.length - 1) {
-            const next = navChapters[stateCurrentIndex + 1];
-            setNavigationDirection('next');
-            navigate(`/read/live/${encodeURIComponent(next.url)}`, {
-                state: {
-                    ...location.state,
-                    chapterUrl: next.url,
-                    chapterTitle: next.title,
-                    currentIndex: stateCurrentIndex + 1,
-                    chapters: navChapters // Pass current list forward
-                },
-                replace: true
-            });
-            setShowSettings(false);
-        } else if (nextChapter) {
-            setNavigationDirection('next');
-            const targetUrl = nextChapter.id.startsWith('http')
-                ? `/read/live/${encodeURIComponent(nextChapter.id)}`
+            const route = targetUrl.startsWith('http')
+                ? `/read/live/${encodeURIComponent(targetUrl)}`
                 : `/read/${novelId}/${nextChapter.id}`;
 
-            navigate(targetUrl, {
+            navigate(route, {
                 state: {
                     ...location.state,
-                    chapterUrl: nextChapter.id.startsWith('http') ? nextChapter.id : '',
+                    chapterUrl: targetUrl.startsWith('http') ? targetUrl : '',
                     chapterTitle: nextChapter.title,
-                    currentIndex: (navIndex !== -1 ? navIndex : (location.state?.currentIndex ?? -1)) + 1,
+                    currentIndex: navIndex + 1,
                     chapters: navChapters
                 },
                 replace: true
@@ -528,45 +477,30 @@ export const Reader = () => {
         } else {
             setShowComingSoon(true);
         }
-    }, [nextChapter, novelId, navigate, isLiveMode, novel, navChapters, navIndex, location.state]);
+    }, [nextChapter, novelId, navigate, navChapters, navIndex, location.state]);
 
     const handlePrevChapter = useCallback(() => {
-        const canNavigateLive = (isLiveMode || !!novel?.sourceUrl) && navChapters.length > 0;
-        const stateCurrentIndex = navIndex;
+        if (prevChapter) {
+            setNavigationDirection('prev');
+            const targetUrl = prevChapter.url || prevChapter.audioPath || prevChapter.id || '';
 
-        if (canNavigateLive && stateCurrentIndex > 0) {
-            const prev = navChapters[stateCurrentIndex - 1];
-            setNavigationDirection('prev');
-            navigate(`/read/live/${encodeURIComponent(prev.url)}`, {
-                state: {
-                    ...location.state,
-                    chapterUrl: prev.url,
-                    chapterTitle: prev.title,
-                    currentIndex: stateCurrentIndex - 1,
-                    chapters: navChapters // Pass current list forward
-                },
-                replace: true
-            });
-            setShowSettings(false);
-        } else if (prevChapter) {
-            setNavigationDirection('prev');
-            const targetUrl = prevChapter.id.startsWith('http')
-                ? `/read/live/${encodeURIComponent(prevChapter.id)}`
+            const route = targetUrl.startsWith('http')
+                ? `/read/live/${encodeURIComponent(targetUrl)}`
                 : `/read/${novelId}/${prevChapter.id}`;
 
-            navigate(targetUrl, {
+            navigate(route, {
                 state: {
                     ...location.state,
-                    chapterUrl: prevChapter.id.startsWith('http') ? prevChapter.id : '',
+                    chapterUrl: targetUrl.startsWith('http') ? targetUrl : '',
                     chapterTitle: prevChapter.title,
-                    currentIndex: (navIndex !== -1 ? navIndex : (location.state?.currentIndex ?? 1)) - 1,
+                    currentIndex: navIndex - 1,
                     chapters: navChapters
                 },
                 replace: true
             });
             setShowSettings(false);
         }
-    }, [prevChapter, novelId, navigate, isLiveMode, novel, navChapters, navIndex, location.state]);
+    }, [prevChapter, novelId, navigate, navChapters, navIndex, location.state]);
 
 
     // Save current live chapter to DB for offline reading
@@ -614,8 +548,8 @@ export const Reader = () => {
     // STABLE GESTURE NAVIGATION SYSTEM (FSM + Async Locking)
     const { onTouchStart, onTouchMove, onTouchEnd } = useChapterPullNavigation({
         containerRef: scrollContainerRef,
-        hasPrev: !!prevChapter,
-        hasNext: !!nextChapter,
+        hasPrev: navIndex > 0 || !!prevChapter,
+        hasNext: (navChapters.length > 0 && navIndex < navChapters.length - 1) || !!nextChapter,
         onLoadPrev: handlePrevChapter,
         onLoadNext: handleNextChapter,
         activeChapterId: chapterId,
@@ -1164,6 +1098,7 @@ export const Reader = () => {
                 onClose={() => setShowChapterSidebar(false)}
                 chapters={allChapters}
                 currentChapterId={isLiveMode ? (location.state?.chapterUrl || '') : (chapterId || '')}
+                currentIndex={navIndex}
                 novelTitle={novel?.title || ''}
                 onSelectChapter={(ch) => {
                     if (isLiveMode) {

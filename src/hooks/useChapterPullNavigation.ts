@@ -44,30 +44,27 @@ export const useChapterPullNavigation = ({
     // SAFE SCROLL RESTORATION
     // ---------------------------
     useEffect(() => {
-        if (
-            !isLoading &&
-            activeChapterId &&
-            activeChapterId !== lastChapterIdRef.current
-        ) {
+        if (activeChapterId && activeChapterId !== lastChapterIdRef.current) {
             const container = containerRef.current;
-            if (!container) return;
+            if (container) {
+                const wasPrev = state === 'loading-prev';
 
-            const wasPrev = state === 'loading-prev';
-
-            // Wait 2 frames to ensure layout stabilizes
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    if (wasPrev) {
-                        container.scrollTop = container.scrollHeight;
-                    } else {
-                        container.scrollTop = 0;
-                    }
-
-                    isLockedRef.current = false;
-                    setState('idle');
-                    lastChapterIdRef.current = activeChapterId;
-                });
-            });
+                if (!isLoading) {
+                    // Wait 2 frames to ensure layout stabilizes
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            if (wasPrev) {
+                                container.scrollTop = container.scrollHeight;
+                            } else {
+                                container.scrollTop = 0;
+                            }
+                            lastChapterIdRef.current = activeChapterId;
+                        });
+                    });
+                }
+            } else {
+                lastChapterIdRef.current = activeChapterId;
+            }
         }
     }, [activeChapterId, isLoading]);
 
@@ -176,10 +173,17 @@ export const useChapterPullNavigation = ({
                 isLockedRef.current = true;
                 setState(isPrev ? 'loading-prev' : 'loading-next');
 
-                if (isPrev) {
-                    await onLoadPrev();
-                } else {
-                    await onLoadNext();
+                try {
+                    if (isPrev) {
+                        await onLoadPrev();
+                    } else {
+                        await onLoadNext();
+                    }
+                } finally {
+                    // CRITICAL: Always release gesture lock
+                    isLockedRef.current = false;
+                    setState('idle');
+                    diffYRef.current = 0;
                 }
             } else {
                 setState('idle');
