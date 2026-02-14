@@ -84,18 +84,19 @@ export const useChapterPullNavigation = ({
 
             isTouchingRef.current = true;
             startYRef.current = e.touches[0].clientY;
+            diffYRef.current = 0; // Reset movement
 
             const { scrollTop, scrollHeight, clientHeight } = container;
 
+            // Use a small tolerance for "at top/bottom" detection
             const atTop = scrollTop <= BOUNDARY_TOLERANCE;
-            const atBottom =
-                scrollHeight - scrollTop - clientHeight <= BOUNDARY_TOLERANCE;
+            const atBottom = scrollHeight - scrollTop - clientHeight <= BOUNDARY_TOLERANCE;
 
-            if (atTop) {
-                setState('pulling-prev');
-            } else if (atBottom) {
-                setState('pulling-next');
-            } else {
+            // If we are at both (short content), we don't know the intent yet
+            // If just top/bottom, we set a temporary state to track movement
+            if (atTop || atBottom) {
+                // We use 'idle' here but diffYRef will tell us where we're going
+                // Actually, let's keep it 'idle' and determine in onTouchMove
                 setState('idle');
             }
         },
@@ -109,13 +110,29 @@ export const useChapterPullNavigation = ({
         (e: React.TouchEvent) => {
             if (isLockedRef.current) return;
             if (!isTouchingRef.current) return;
-            if (state === 'idle') return;
+
+            const container = containerRef.current;
+            if (!container) return;
 
             const currentY = e.touches[0].clientY;
             const diffY = currentY - startYRef.current;
             diffYRef.current = diffY;
 
-            // Direction validation
+            const { scrollTop, scrollHeight, clientHeight } = container;
+            const atTop = scrollTop <= BOUNDARY_TOLERANCE;
+            const atBottom = scrollHeight - scrollTop - clientHeight <= BOUNDARY_TOLERANCE;
+
+            // 1. Determine Intent (if idle)
+            if (state === 'idle') {
+                if (diffY > 10 && atTop) {
+                    setState('pulling-prev');
+                } else if (diffY < -10 && atBottom) {
+                    setState('pulling-next');
+                }
+                return;
+            }
+
+            // 2. Validate Movement Direction relative to current State
             if (state === 'pulling-prev' && diffY < 0) {
                 setState('idle');
                 onPulling?.(0, 'none');
@@ -128,12 +145,13 @@ export const useChapterPullNavigation = ({
                 return;
             }
 
+            // 3. Update Progress
             onPulling?.(
                 Math.abs(diffY),
                 state === 'pulling-prev' ? 'prev' : 'next'
             );
         },
-        [state, onPulling]
+        [state, onPulling, containerRef]
     );
 
     // ---------------------------
