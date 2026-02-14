@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import {
     MoreHorizontal, Search, Filter, Download, CheckCircle,
     DownloadCloud, Trash2, Minimize2, Loader2, Save,
-    BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, WifiOff
+    BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, WifiOff, BookOpen
 } from 'lucide-react';
 import { Header } from '../components/Header';
 import { Toast } from '../components/Toast';
@@ -239,12 +239,13 @@ export const ChapterList = () => {
                         <div className="flex flex-col justify-center flex-1 min-w-0">
                             <h1 className="text-xl font-bold leading-tight mb-1 line-clamp-2">{novel.title}</h1>
                             <p className="text-slate-500 dark:text-slate-400 text-base mb-2 italic truncate">by {novel.author}</p>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-2 mb-3">
                                 <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-xs rounded-full border border-green-500/20 font-sans">
                                     {novel.status || 'Ongoing'}
                                 </span>
                                 <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full border border-primary/20 font-sans">
-                                    {totalChaptersData} Chapters
+                                    {/* Use totalChapters from DB if available, else count */}
+                                    {(novel.totalChapters || 0) > 0 ? novel.totalChapters : totalChaptersData} Chapters
                                 </span>
                                 {isLiveMode && (
                                     <span className="px-2 py-0.5 bg-amber-500/10 text-amber-500 text-xs rounded-full border border-amber-500/20 font-sans">
@@ -282,12 +283,29 @@ export const ChapterList = () => {
                     </div>
                 </div>
 
-                {/* 2. Reading Progress (Static) */}
+                {/* 2. Reading Progress (DB Driven) */}
                 {addedToLibrary && (
                     <div className="mx-4 mt-3 mb-4 p-3 rounded-xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
-                        {/* ... Progress bar logic (simplified) ... */}
-                        {/* You can restore the full complex progress logic here or componentize it later */}
-                        <p className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400 font-sans font-bold">Reading Progress</p>
+                        <div className="flex justify-between items-center mb-1.5">
+                            <p className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400 font-sans font-bold">Reading Progress</p>
+                            <span className="text-xs font-bold text-primary">
+                                {Math.round(((novel.readChapters || 0) / (novel.totalChapters || 1)) * 100)}%
+                            </span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-200 dark:bg-slate-700/50 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-primary transition-all duration-500 ease-out"
+                                style={{ width: `${Math.min(100, ((novel.readChapters || 0) / (novel.totalChapters || 1)) * 100)}%` }}
+                            />
+                        </div>
+                        <div className="flex justify-between mt-1">
+                            <span className="text-[10px] text-slate-400">
+                                {novel.readChapters || 0} Read
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                                {novel.totalChapters || 0} Total
+                            </span>
+                        </div>
                     </div>
                 )}
 
@@ -421,6 +439,81 @@ export const ChapterList = () => {
                 )}
 
             </main>
+
+            {/* Floating Action Button for Start/Continue Reading */}
+            {(chapters.length > 0 || liveChapters.length > 0) && (
+                <div className="fixed bottom-6 right-6 z-50">
+                    <button
+                        onClick={() => {
+                            // DEBUG: Log the values to understand why it fails (AGAIN)
+                            console.log('[ChapterList] Continue Reading Check:', {
+                                lastReadId: novel.lastReadChapterId,
+                                liveChaptersCount: liveChapters.length,
+                                firstLiveUrl: liveChapters[0]?.url,
+                                firstLiveIndex: (liveChapters[0] as any)._index
+                            });
+
+                            // 1. Try to find in LOCAL DB (match ID or Audio/URL)
+                            const foundChapter = chapters.find(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId);
+
+                            // 2. Try to find in LIVE list (match URL or Derived ID)
+                            const foundLive = liveChapters.find(c =>
+                                c.url === novel.lastReadChapterId ||
+                                `${novel.id}-ch-${(c as any)._index}` === novel.lastReadChapterId
+                            );
+
+                            console.log('[ChapterList] foundChapter:', foundChapter?.id, 'foundLive:', foundLive?.url);
+
+                            const lastReadValid = novel.lastReadChapterId && (!!foundChapter || !!foundLive);
+
+                            if (lastReadValid) {
+                                if (foundChapter) {
+                                    // PREFER LOCAL: If we have it in DB (even if it was a URL match), use the DB ID
+                                    // BUT also pass the audioPath (URL) so Reader can fetch if content is missing
+                                    console.log('[ChapterList] Navigating LOCAL:', foundChapter.id, 'URL:', foundChapter.audioPath);
+                                    navigate(`/read/${novel.id}/${foundChapter.id}`, {
+                                        state: {
+                                            novel,
+                                            liveMode: isLiveMode,
+                                            chapterUrl: foundChapter.audioPath, // Pass URL for fetching
+                                            chapterTitle: foundChapter.title,
+                                            currentIndex: foundChapter.orderIndex
+                                        }
+                                    });
+                                } else if (foundLive) {
+                                    // FALLBACK LIVE: Use URL with explicit state
+                                    // It's a live chapter
+                                    // Reader.tsx needs the URL to fetch content in Live Mode.
+                                    // We pass it both as the route param (for deep linking) AND in state (for Reader convenience).
+                                    const targetUrl = foundLive.url;
+                                    console.log(`[ChapterList] Navigating to Live URL: ${targetUrl}`);
+                                    navigate(`/read/${novel.id}/${encodeURIComponent(targetUrl)}`, {
+                                        state: {
+                                            novel,
+                                            liveMode: true,
+                                            chapterUrl: targetUrl,
+                                            chapterTitle: foundLive.title,
+                                            currentIndex: (foundLive as any)._index
+                                        }
+                                    });
+                                } else {
+                                    navigate(`/read/${novel.id}/${novel.lastReadChapterId}`, { state: { novel, liveMode: isLiveMode } });
+                                }
+                            } else if (chapters.length > 0) {
+                                navigate(`/read/${novel.id}/${chapters[0].id}`, { state: { novel, liveMode: isLiveMode } });
+                            } else if (liveChapters.length > 0) {
+                                navigate(`/read/${novel.id}/${encodeURIComponent(liveChapters[0].url)}`, { state: { novel, liveMode: true } });
+                            }
+                        }}
+                        className="group flex items-center gap-2 bg-primary hover:bg-primary-dark text-white rounded-full px-6 py-4 shadow-xl shadow-primary/30 transition-all active:scale-95 hover:scale-105"
+                    >
+                        <BookOpen size={24} className={(novel.lastReadChapterId && chapters.some(c => c.id === novel.lastReadChapterId)) ? "" : "animate-pulse"} />
+                        <span className="font-bold text-lg">
+                            {(novel.lastReadChapterId && chapters.some(c => c.id === novel.lastReadChapterId)) ? 'Continue' : 'Start Reading'}
+                        </span>
+                    </button>
+                </div>
+            )}
 
             {/* Modals & Toasts */}
             {toast && (

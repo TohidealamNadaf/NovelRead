@@ -1,5 +1,6 @@
 import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 
 
 export interface Novel {
@@ -17,6 +18,7 @@ export interface Novel {
     createdAt?: number;
     totalChapters?: number;
     readChapters?: number;
+    lastFetchedAt?: number; // Timestamp of last successful chapter fetch
 }
 
 export interface Chapter {
@@ -24,6 +26,7 @@ export interface Chapter {
     novelId: string;
     title: string;
     content?: string;
+    contentPath?: string; // Path to file on disk
     orderIndex: number;
     audioPath?: string;
     isRead?: number;
@@ -69,19 +72,28 @@ class DatabaseService {
                     category TEXT,
                     status TEXT,
                     lastReadChapterId TEXT,
+                    lastReadAt INTEGER,
+                    totalChapters INTEGER DEFAULT 0,
+                    readChapters INTEGER DEFAULT 0,
+                    lastFetchedAt INTEGER,
                     createdAt INTEGER DEFAULT (strftime('%s', 'now'))
                 );
+                CREATE INDEX IF NOT EXISTS idx_novels_lastReadAt ON novels(lastReadAt DESC);
 
                 CREATE TABLE IF NOT EXISTS chapters (
                     id TEXT PRIMARY KEY,
                     novelId TEXT NOT NULL,
                     title TEXT NOT NULL,
-                    content TEXT,
+                    content TEXT, -- Deprecated, use contentPath + Filesystem
+                    contentPath TEXT,
                     orderIndex INTEGER NOT NULL,
                     audioPath TEXT,
                     isRead INTEGER DEFAULT 0,
+                    date TEXT,
                     FOREIGN KEY(novelId) REFERENCES novels(id) ON DELETE CASCADE
                 );
+                CREATE INDEX IF NOT EXISTS idx_chapters_novel_order ON chapters(novelId, orderIndex);
+                CREATE INDEX IF NOT EXISTS idx_chapters_isRead ON chapters(isRead);
             `;
 
             await this.db.execute(schema);
@@ -109,18 +121,20 @@ class DatabaseService {
             `;
             await this.db.execute(cacheTableSchema);
 
-            // Migration: Ensure new columns exist for older databases
+            // Migration: Ensure new columns exist
             const columnsToAdd = [
                 { name: 'summary', type: 'TEXT' },
                 { name: 'category', type: 'TEXT' },
                 { name: 'status', type: 'TEXT' },
                 { name: 'lastReadAt', type: 'INTEGER' },
                 { name: 'totalChapters', type: 'INTEGER DEFAULT 0' },
-                { name: 'readChapters', type: 'INTEGER DEFAULT 0' }
+                { name: 'readChapters', type: 'INTEGER DEFAULT 0' },
+                { name: 'lastFetchedAt', type: 'INTEGER' }
             ];
 
             const chapterColumnsToAdd = [
-                { name: 'date', type: 'TEXT' }
+                { name: 'date', type: 'TEXT' },
+                { name: 'contentPath', type: 'TEXT' }
             ];
 
             for (const col of columnsToAdd) {
@@ -152,8 +166,99 @@ class DatabaseService {
                     console.error(`Failed to migrate column ${col.name}`, e);
                 }
             }
+
+            // ---------------------------------------------------------
+            // MIGRATION: Move CONTENT from DB to FILESYSTEM
+            // ---------------------------------------------------------
+            try {
+                // Find up to 50 chapters with content but no contentPath
+                const result = await this.db.query('SELECT * FROM chapters WHERE content IS NOT NULL AND content != "" AND (contentPath IS NULL OR contentPath = "") LIMIT 50');
+                if (result.values && result.values.length > 0) {
+                    console.log(`[DB] Migrating ${result.values.length} chapters to Filesystem...`);
+                    for (const ch of result.values as Chapter[]) {
+                        try {
+                            // Save to FS
+                            const path = await this.saveChapterContent(ch.novelId, ch.id, ch.content!);
+                            // Update DB
+                            await this.db.run('UPDATE chapters SET contentPath = ?, content = NULL WHERE id = ?', [path, ch.id]);
+                        } catch (err) {
+                            console.error(`[DB] Failed to migrate chapter ${ch.id}`, err);
+                        }
+                    }
+                    console.log(`[DB] Migration batch complete.`);
+                }
+            } catch (e) {
+                console.error("[DB] Migration check failed", e);
+            }
+
         } catch (error) {
             console.error("Database initialization failed", error);
+        }
+    }
+
+    // --- Filesystem Helpers ---
+    private async getNovelDir(novelId: string): Promise<string> {
+        return `NOVEL_DATA/${novelId}`;
+    }
+
+    async saveChapterContent(novelId: string, chapterId: string, content: string): Promise<string> {
+        try {
+            const dir = await this.getNovelDir(novelId);
+            // Ensure directory exists (silently fail if already exists)
+            try {
+                await Filesystem.mkdir({
+                    path: dir,
+                    directory: Directory.Data,
+                    recursive: true
+                });
+            } catch (e: any) {
+                // Ignore "Current directory does already exist" error on Web/Android
+                if (!e.message?.includes('already exist')) {
+                    console.warn('[FS] mkdir error (ignored if exists):', e);
+                }
+            }
+
+            const fileName = `${chapterId}.txt`;
+            const filePath = `${dir}/${fileName}`;
+
+            await Filesystem.writeFile({
+                path: filePath,
+                data: content,
+                directory: Directory.Data,
+                encoding: Encoding.UTF8
+            });
+
+            return filePath;
+        } catch (e) {
+            console.error(`[FS] Failed to save chapter content: ${e}`);
+            // Fallback: return empty string or throw? For now throw to handle upstream
+            throw e;
+        }
+    }
+
+    async readChapterContent(contentPath: string): Promise<string | null> {
+        try {
+            const result = await Filesystem.readFile({
+                path: contentPath,
+                directory: Directory.Data,
+                encoding: Encoding.UTF8
+            });
+            return result.data as string;
+        } catch (e) {
+            console.error(`[FS] Failed to read chapter content at ${contentPath}: ${e}`);
+            return null;
+        }
+    }
+
+    async deleteChapterContent(contentPath: string) {
+        if (!contentPath) return;
+        try {
+            await Filesystem.deleteFile({
+                path: contentPath,
+                directory: Directory.Data
+            });
+        } catch (e) {
+            // Ignore if file not found
         }
     }
 
@@ -216,8 +321,8 @@ class DatabaseService {
         }
         // Use INSERT OR IGNORE so we never overwrite an existing novel's progress
         const query = `
-        INSERT OR IGNORE INTO novels (id, title, author, coverUrl, sourceUrl, category, status, summary, lastReadChapterId)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+        INSERT OR IGNORE INTO novels (id, title, author, coverUrl, sourceUrl, category, status, summary, lastReadChapterId, totalChapters, lastFetchedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `;
         await db.run(query, [
             novel.id,
@@ -228,9 +333,12 @@ class DatabaseService {
             novel.category || 'Unknown',
             novel.status || 'Ongoing',
             novel.summary || null,
-            null
+            null,
+            novel.totalChapters || 0,
+            novel.lastFetchedAt || Math.floor(Date.now() / 1000)
         ]);
         // Update metadata fields (but NOT lastReadChapterId) for existing novels
+        // Also update totalChapters and lastFetchedAt if provided
         await db.run(`
         UPDATE novels SET
             title = COALESCE(?, title),
@@ -239,7 +347,9 @@ class DatabaseService {
             sourceUrl = COALESCE(?, sourceUrl),
             summary = COALESCE(?, summary),
             status = COALESCE(?, status),
-            category = COALESCE(?, category)
+            category = COALESCE(?, category),
+            totalChapters = COALESCE(?, totalChapters),
+            lastFetchedAt = COALESCE(?, lastFetchedAt)
         WHERE id = ?
     `, [
             novel.title || null,
@@ -249,33 +359,98 @@ class DatabaseService {
             novel.summary || null,
             novel.status || null,
             novel.category || null,
+            novel.totalChapters || null,
+            novel.lastFetchedAt || Math.floor(Date.now() / 1000),
             novel.id
         ]);
         await this.save();
+        console.log(`[dbService] addNovel complete for ${novel.title} (${novel.id}). Category: ${novel.category}`);
     }
 
     async addChapter(chapter: Chapter) {
         const db = await this.getDB();
         if (!db) return;
+
+        let contentPath = chapter.contentPath;
+
+        // Save content to FS if provided
+        if (chapter.content) {
+            try {
+                contentPath = await this.saveChapterContent(chapter.novelId, chapter.id, chapter.content);
+            } catch (e) {
+                console.error(`[DB] Failed to save chapter content to FS for ${chapter.id}`, e);
+                // Fallback? ensure we don't block metadata save
+            }
+        }
+
         // Preserve existing isRead status if the chapter already exists
         const existingResult = await db.query('SELECT isRead FROM chapters WHERE id = ?', [chapter.id]);
         const existing = existingResult.values && existingResult.values.length > 0 ? existingResult.values[0] : null;
         const isRead = existing && existing.isRead !== undefined ? existing.isRead : 0;
+
         const query = `
-        INSERT OR REPLACE INTO chapters (id, novelId, title, content, orderIndex, audioPath, isRead, date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+        INSERT OR REPLACE INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
     `;
         await db.run(query, [
             chapter.id,
             chapter.novelId,
             chapter.title,
-            chapter.content,
+            null, // content is now NULL
+            contentPath || null,
             chapter.orderIndex,
             chapter.audioPath || null,
             isRead,
             chapter.date || null
         ]);
         await this.save();
+    }
+
+    async addChapters(chapters: Chapter[]) {
+        const db = await this.getDB();
+        if (!db || chapters.length === 0) return;
+
+        console.log(`[dbService] Bulk adding ${chapters.length} chapters...`);
+
+        // 1. Save all content to FS in parallel (or batches)
+        const updatedChapters = await Promise.all(chapters.map(async (ch) => {
+            if (ch.content) {
+                try {
+                    const path = await this.saveChapterContent(ch.novelId, ch.id, ch.content);
+                    return { ...ch, contentPath: path, content: null };
+                } catch (e) {
+                    console.error(`[DB] Failed to save content for ${ch.id}`, e);
+                    return ch;
+                }
+            }
+            return ch;
+        }));
+
+        try {
+            const set = updatedChapters.map(chapter => ({
+                statement: `
+                    INSERT OR REPLACE INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT isRead FROM chapters WHERE id = ?), 0), ?);
+                `,
+                values: [
+                    chapter.id,
+                    chapter.novelId,
+                    chapter.title,
+                    null, // content column cleared
+                    chapter.contentPath || null,
+                    chapter.orderIndex,
+                    chapter.audioPath || null,
+                    chapter.id, // for COALESCE subquery
+                    chapter.date || null
+                ]
+            }));
+
+            await db.executeSet(set);
+            await this.save();
+            console.log(`[dbService] Bulk insert complete.`);
+        } catch (error) {
+            console.error('[dbService] Bulk insert failed:', error);
+        }
     }
 
     async getStats(): Promise<{ chaptersRead: number, novelsCount: number }> {
@@ -322,18 +497,83 @@ n.*,
         return (result.values as Novel[]) || [];
     }
 
-    async getNovel(id: string): Promise<Novel | null> {
+    async getChapter(novelId: string, chapterId: string): Promise<Chapter | null> {
         const db = await this.getDB();
         if (!db) return null;
-        const result = await db.query('SELECT * FROM novels WHERE id = ?', [id]);
-        return result.values && result.values.length > 0 ? (result.values[0] as Novel) : null;
+        const result = await db.query('SELECT * FROM chapters WHERE novelId = ? AND id = ?', [novelId, chapterId]);
+
+        if (result.values && result.values.length > 0) {
+            const chapter = result.values[0] as Chapter;
+            // 1. Try reading from FileSystem if contentPath exists
+            if (chapter.contentPath) {
+                const fsContent = await this.readChapterContent(chapter.contentPath);
+                if (fsContent) {
+                    chapter.content = fsContent;
+                }
+            }
+            // 2. Fallback: If content is in DB (legacy), it's already in chapter.content
+
+            return chapter;
+        }
+        return null;
     }
 
-    async getChapters(novelId: string): Promise<Chapter[]> {
+    async getChapters(novelId: string, limit?: number, offset?: number): Promise<Chapter[]> {
         const db = await this.getDB();
         if (!db) return [];
-        const result = await db.query('SELECT * FROM chapters WHERE novelId = ? ORDER BY orderIndex ASC', [novelId]);
+
+        let query = 'SELECT id, novelId, title, orderIndex, audioPath, isRead, date, contentPath FROM chapters WHERE novelId = ? ORDER BY orderIndex ASC';
+        const params: any[] = [novelId];
+
+        if (limit !== undefined && offset !== undefined) {
+            query += ' LIMIT ? OFFSET ?';
+            params.push(limit, offset);
+        }
+
+        const result = await db.query(query, params);
         return (result.values as Chapter[]) || [];
+    }
+
+    // --- Maintenance Methods ---
+
+    async vacuum() {
+        const db = await this.getDB();
+        if (!db) return;
+        try {
+            await db.execute('VACUUM;');
+            console.log('[DB] VACUUM completed');
+        } catch (e) {
+            console.error('[DB] VACUUM failed', e);
+        }
+    }
+
+    async integrityCheck(): Promise<boolean> {
+        const db = await this.getDB();
+        if (!db) return false;
+        try {
+            const result = await db.query('PRAGMA integrity_check;');
+            if (result.values && result.values.length > 0) {
+                const status = result.values[0].integrity_check;
+                console.log(`[DB] Integrity Check: ${status}`);
+                return status === 'ok';
+            }
+        } catch (e) {
+            console.error('[DB] Integrity Check failed', e);
+        }
+        return false;
+    }
+
+    async cleanupCache(ttlSeconds: number = 24 * 60 * 60) { // Default 24h
+        const db = await this.getDB();
+        if (!db) return;
+        try {
+            const cutoff = Math.floor(Date.now() / 1000) - ttlSeconds;
+            await db.run('DELETE FROM discovery_cache WHERE timestamp < ?', [cutoff]);
+            await this.save();
+            console.log('[DB] Cache cleanup completed');
+        } catch (e) {
+            console.error('[DB] Cache cleanup failed', e);
+        }
     }
 
     async isChapterExists(novelId: string, audioPath: string): Promise<boolean> {
@@ -343,12 +583,24 @@ n.*,
         return !!(result.values && result.values.length > 0);
     }
 
-    async getChapter(novelId: string, chapterId: string): Promise<Chapter | null> {
+    async getNovel(id: string): Promise<Novel | null> {
         const db = await this.getDB();
         if (!db) return null;
-        const result = await db.query('SELECT * FROM chapters WHERE novelId = ? AND id = ?', [novelId, chapterId]);
-        return result.values && result.values.length > 0 ? (result.values[0] as Chapter) : null;
+
+        // Use JOIN to get dynamic accurate count of read chapters
+        const query = `
+            SELECT 
+                n.*,
+                (SELECT COUNT(*) FROM chapters c WHERE c.novelId = n.id) as totalChapters,
+                (SELECT COUNT(*) FROM chapters c WHERE c.novelId = n.id AND c.isRead = 1) as readChapters
+            FROM novels n
+            WHERE n.id = ?
+        `;
+
+        const result = await db.query(query, [id]);
+        return result.values && result.values.length > 0 ? (result.values[0] as Novel) : null;
     }
+
     async updateNovelMetadata(id: string, metadata: Partial<Novel>) {
         const db = await this.getDB();
         if (!db) return;
@@ -382,6 +634,19 @@ n.*,
         if (!db) return;
 
         try {
+            // 1. Delete FS content
+            try {
+                const dir = await this.getNovelDir(id);
+                await Filesystem.rmdir({
+                    path: dir,
+                    directory: Directory.Data,
+                    recursive: true
+                });
+            } catch (fsErr) {
+                console.warn(`[FS] Failed to delete novel directory for ${id}`, fsErr);
+            }
+
+            // 2. Delete DB records & Save
             await db.run('DELETE FROM chapters WHERE novelId = ?', [id]);
             await db.run('DELETE FROM novels WHERE id = ?', [id]);
             await this.save();
@@ -417,7 +682,15 @@ n.*,
 
         try {
             // Update novel's lastReadChapterId and timestamp
-            await db.run('UPDATE novels SET lastReadChapterId = ?, lastReadAt = ? WHERE id = ?', [chapterId, Date.now(), novelId]);
+            const res = await db.run('UPDATE novels SET lastReadChapterId = ?, lastReadAt = ? WHERE id = ?', [chapterId, Date.now(), novelId]);
+
+            // Fallback for Live novels (not in DB)
+            const changes = res.changes?.changes || 0;
+            if (changes === 0 && typeof localStorage !== 'undefined') {
+                localStorage.setItem(`lastRead:${novelId}`, chapterId);
+                localStorage.setItem(`lastReadAt:${novelId}`, Date.now().toString());
+            }
+
             // Mark chapter as read
             await db.run('UPDATE chapters SET isRead = 1 WHERE id = ?', [chapterId]);
             await this.save();
@@ -431,9 +704,13 @@ n.*,
         if (!db) return;
 
         try {
-            await db.run('UPDATE chapters SET content = ? WHERE id = ? AND novelId = ?', [content, chapterId, novelId]);
+            // 1. Save to Filesystem
+            const contentPath = await this.saveChapterContent(novelId, chapterId, content);
+
+            // 2. Update DB: set contentPath and clear legacy content column
+            await db.run('UPDATE chapters SET contentPath = ?, content = NULL WHERE id = ? AND novelId = ?', [contentPath, chapterId, novelId]);
             await this.save();
-            console.log(`Chapter ${chapterId} content updated successfully`);
+            console.log(`Chapter ${chapterId} content updated successfully to ${contentPath}`);
         } catch (e) {
             console.error("Failed to update chapter content", e);
             throw e;

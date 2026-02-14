@@ -13,7 +13,12 @@ dependencies {
     implementation project(':capacitor-community-text-to-speech')
     implementation project(':capacitor-app')
     implementation project(':capacitor-camera')
+    implementation project(':capacitor-device')
+    implementation project(':capacitor-filesystem')
+    implementation project(':capacitor-haptics')
     implementation project(':capacitor-local-notifications')
+    implementation project(':capacitor-preferences')
+    implementation project(':capacitor-status-bar')
 
 }
 

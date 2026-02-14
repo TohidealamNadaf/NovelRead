@@ -77,6 +77,9 @@ export const Reader = () => {
             loadLiveData();
         } else if (novelId && chapterId) {
             loadData(novelId, chapterId);
+        } else {
+            console.warn("[Reader] Missing novelId or chapterId");
+            setLoading(false);
         }
 
         // Sync with global audio state
@@ -173,6 +176,23 @@ export const Reader = () => {
             setNovel(nData);
 
             if (cData) {
+                // AUTO-FETCH: If chapter is empty but has a source URL (stub), fetch it now
+                if ((!cData.content || cData.content.length < 50) && cData.audioPath && cData.audioPath.startsWith('http')) {
+                    console.log(`[Reader] Empty chapter detected, auto-fetching content from ${cData.audioPath}`);
+                    try {
+                        const fetchedContent = await scraperService.fetchChapterContent(cData.audioPath);
+                        if (fetchedContent && fetchedContent.length > 50) {
+                            cData.content = fetchedContent;
+                            setChapter({ ...cData }); // Update UI immediately
+
+                            // Persist to DB (and Filesystem)
+                            await dbService.updateChapterContent(nid, cid, fetchedContent);
+                        }
+                    } catch (fetchErr) {
+                        console.warn("[Reader] Auto-fetch failed", fetchErr);
+                    }
+                }
+
                 // Fetch surrounding local chapters
                 const [next, prev] = await Promise.all([
                     dbService.getNextChapter(nid, cData.orderIndex),
@@ -250,7 +270,7 @@ export const Reader = () => {
     const loadLiveData = async () => {
         setLoading(true);
         setLiveError('');
-        const chapterUrl = location.state?.chapterUrl || '';
+        const chapterUrl = location.state?.chapterUrl || (chapterId?.startsWith('http') ? chapterId : '');
         const chapterTitle = location.state?.chapterTitle || 'Chapter';
         const novelTitle = location.state?.novelTitle || 'Novel';
         const novelCoverUrl = location.state?.novelCoverUrl || '';
@@ -275,14 +295,22 @@ export const Reader = () => {
             }
 
             // Create chapter object for rendering (using stable IDs if possible)
-            setChapter({
+            const newChapter = {
                 id: chapterStableId,
                 novelId: stableNovelId,
                 title: chapterTitle,
                 content: content || '',
                 orderIndex: liveCurrentIndex,
                 audioPath: chapterUrl, // original URL
-            } as Chapter);
+            } as Chapter;
+
+            console.log('[Reader] Loaded Live Data:', {
+                id: newChapter.id,
+                audioPath: newChapter.audioPath,
+                contentLength: newChapter.content?.length
+            });
+
+            setChapter(newChapter);
 
             // Set novel info
             setNovel({

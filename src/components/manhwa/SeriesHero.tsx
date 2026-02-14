@@ -94,16 +94,16 @@ export const SeriesHero: React.FC<SeriesHeroProps> = ({
             <div className="px-6 -mt-4 relative z-10 grid grid-cols-2 gap-3">
                 <button
                     onClick={onReadNow}
-                    className="flex items-center justify-center gap-2 bg-primary h-12 rounded-xl text-white font-bold shadow-lg shadow-primary/25 active:scale-95 transition-transform"
+                    className="flex items-center justify-center gap-2 bg-primary h-10 rounded-lg text-white font-semibold text-sm shadow-md shadow-primary/20 active:scale-[0.97] transition-all"
                 >
-                    <Play size={20} className="fill-white" />
+                    <Play size={16} className="fill-white" />
                     {hasStartedReading ? "Continue Reading" : "Read Now"}
                 </button>
                 <button
                     onClick={onToggleLibrary}
-                    className="flex items-center justify-center gap-2 bg-white dark:bg-[#1d1c27] border border-slate-200 dark:border-white/10 h-12 rounded-xl text-slate-900 dark:text-white font-bold active:scale-95 transition-transform"
+                    className="flex items-center justify-center gap-2 bg-white dark:bg-[#1d1c27] border border-slate-200 dark:border-white/10 h-10 rounded-lg text-slate-900 dark:text-white font-semibold text-sm active:scale-[0.97] transition-all"
                 >
-                    <Bookmark size={20} className={inLibrary ? "fill-primary text-primary" : ""} />
+                    <Bookmark size={16} className={inLibrary ? "fill-primary text-primary" : ""} />
                     {inLibrary ? "Saved" : "Library"}
                 </button>
             </div>

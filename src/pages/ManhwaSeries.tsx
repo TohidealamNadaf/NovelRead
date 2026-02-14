@@ -278,10 +278,10 @@ export const ManhwaSeries = () => {
                     >
                         <button
                             onClick={handleReadNow}
-                            className="w-full h-14 bg-primary text-white rounded-full font-black text-lg shadow-[0_8px_30px_rgb(93,88,240,0.4)] flex items-center justify-center gap-3 active:scale-[0.98] transition-all border border-white/20 bg-gradient-to-r from-primary to-[#706cf4]"
+                            className="w-full h-11 bg-primary text-white rounded-lg font-semibold text-sm shadow-lg shadow-primary/30 flex items-center justify-center gap-2 active:scale-[0.98] transition-all border border-white/10"
                         >
-                            <Book className="fill-current" size={20} />
-                            {hasStartedReading ? 'CONTINUE READING' : 'START READING'}
+                            <Book className="fill-current" size={16} />
+                            {hasStartedReading ? 'Continue Reading' : 'Start Reading'}
                         </button>
                     </motion.div>
                 )}

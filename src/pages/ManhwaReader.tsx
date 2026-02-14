@@ -9,6 +9,8 @@ import { ChapterSidebar } from '../components/ChapterSidebar'; // Reusing existi
 import { ReadingProgressBar } from '../components/manhwa/ReadingProgressBar';
 import { Header } from '../components/Header';
 import { AnimatePresence, motion } from 'framer-motion';
+import { StatusBar } from '@capacitor/status-bar';
+import { Capacitor } from '@capacitor/core';
 
 export const ManhwaReader = () => {
     const { novelId, chapterId } = useParams<{ novelId: string; chapterId: string }>();
@@ -145,6 +147,34 @@ export const ManhwaReader = () => {
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
+
+    // Sync System Bar with Header Visibility
+    useEffect(() => {
+        const syncStatusBar = async () => {
+            if (Capacitor.isNativePlatform()) {
+                try {
+                    if (showControls) {
+                        await StatusBar.show();
+                        // Optional: Ensure it overlays instead of resizing logic if needed, 
+                        // but default behavior is usually fine or handled by global config.
+                    } else {
+                        await StatusBar.hide();
+                    }
+                } catch (e) {
+                    // Ignore errors on non-compatible environments
+                }
+            }
+        };
+
+        syncStatusBar();
+
+        // Cleanup: Ensure bar is shown when leaving
+        return () => {
+            if (Capacitor.isNativePlatform()) {
+                StatusBar.show().catch(() => { });
+            }
+        };
+    }, [showControls]);
 
     const handleNextChapter = async () => {
         if (!chapter || !novelId) return;
