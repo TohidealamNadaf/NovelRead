@@ -82,6 +82,11 @@ export const Profile = () => {
             }
 
             await Preferences.set({ key: 'profileImage', value: imageToStore });
+
+            // Sync with other components via localStorage and event
+            localStorage.setItem('profileImage', imageToStore);
+            window.dispatchEvent(new CustomEvent('profile-updated', { detail: imageToStore }));
+
         } catch (e) {
             console.error("Failed to save profile", e);
         }

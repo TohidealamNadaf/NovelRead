@@ -11,6 +11,7 @@ import { NovelDiscoverSection } from '../components/discover/NovelDiscoverSectio
 import { ManhwaDiscoverSection } from '../components/discover/ManhwaDiscoverSection';
 import { DiscoverSyncModal } from '../components/discover/DiscoverSyncModal';
 import { dbService } from '../services/db.service';
+import { useProfileImage } from '../hooks/useProfileImage';
 
 const GlobalScrapingBar = memo(({ isGlobalScraping, scrapingProgress }: { isGlobalScraping: boolean, scrapingProgress: ScraperProgress }) => {
     if (!isGlobalScraping) return null;
@@ -63,6 +64,7 @@ export const Discover = () => {
     const [isSearchingNovels, setIsSearchingNovels] = useState(false);
     const [searchPerformed, setSearchPerformed] = useState(false);
     const [isOffline, setIsOffline] = useState(!navigator.onLine);
+    const profileImage = useProfileImage();
 
     // Initial Load & Listeners
     useEffect(() => {
@@ -225,7 +227,7 @@ export const Discover = () => {
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto pb-24">
                 <DiscoverHeader
-                    profileImage={localStorage.getItem('profileImage') || ''}
+                    profileImage={profileImage}
                     isSyncingHome={isSyncingHome}
                     isGlobalScraping={isGlobalScraping}
                     isFilterOpen={isFilterOpen}

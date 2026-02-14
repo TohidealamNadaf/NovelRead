@@ -6,6 +6,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Search, Bell, Plus, X, BookOpen, Clock } from 'lucide-react';
 import { notificationService } from '../services/notification.service';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useProfileImage } from '../hooks/useProfileImage';
 
 export const Home = () => {
     const [novels, setNovels] = useState<Novel[]>([]);
@@ -102,7 +103,7 @@ export const Home = () => {
         overscan: 5,
     });
 
-    const profileImage = localStorage.getItem('profileImage') || "https://img.freepik.com/free-psd/3d-illustration-person-with-sunglasses_23-2149436188.jpg";
+    const profileImage = useProfileImage();
 
     return (
         <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark overflow-hidden">
