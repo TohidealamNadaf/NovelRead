@@ -93,13 +93,13 @@ export const Home = () => {
     }, [novels]);
 
     // Virtualization (Grid)
-    const COLUMN_COUNT = 3; // Mobile friendly grid
+    const COLUMN_COUNT = 4; // Compact grid
     const rowCount = Math.ceil((filteredNovels.length + 1) / COLUMN_COUNT); // +1 for "Import New" card
 
     const rowVirtualizer = useVirtualizer({
         count: rowCount,
         getScrollElement: () => containerRef.current,
-        estimateSize: () => 240, // Height of card row + gap
+        estimateSize: () => 180, // Height of card row + gap
         overscan: 5,
     });
 
@@ -267,7 +267,7 @@ export const Home = () => {
                                             height: `${virtualRow.size}px`,
                                             transform: `translateY(${virtualRow.start}px)`,
                                         }}
-                                        className="grid grid-cols-3 gap-3"
+                                        className="grid grid-cols-4 gap-2"
                                     >
                                         {rowItems.map((novel) => (
                                             <Link
