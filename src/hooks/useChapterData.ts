@@ -102,6 +102,7 @@ export function useChapterData() {
                 setNovel(currentNovel);
                 setIsPreviewMode(true);
                 setAddedToLibrary(false);
+                setLoading(false); // Render shell immediately while fetching chapters in bg
             }
 
             // 2. Live Sync / Smart Caching
@@ -133,38 +134,50 @@ export function useChapterData() {
                         const indexedChapters = data.chapters.map((ch, idx) => ({ ...ch, _index: idx }));
                         setLiveChapters(indexedChapters);
 
-                        // Update DB with new fetch timestamp and total count
-                        if (dbNovel || novelId) { // Ensure we have an ID to save to
-                            // 1. Save all chapters to DB to ensure cache is complete for next time
-                            // Standardize ID format: {novelId}-ch-{index}
-                            const chaptersToSave: Chapter[] = indexedChapters.map(ch => ({
-                                id: `${novelId}-ch-${ch._index}`, // Deterministic ID matching Reader.tsx
-                                novelId: novelId,
-                                title: ch.title,
-                                orderIndex: ch._index,
-                                audioPath: ch.url, // Storing URL in audioPath
-                                date: ch.date
-                            }));
+                        // Update State & DB
+                        if (dbNovel) {
+                            try {
+                                // 1. Update Novel Metadata FIRST to ensure FK exists
+                                await dbService.addNovel({
+                                    ...dbNovel,
+                                    title: data.title || dbNovel.title,
+                                    totalChapters: data.chapters.length,
+                                    lastFetchedAt: Math.floor(Date.now() / 1000)
+                                });
 
-                            await dbService.addChapters(chaptersToSave);
+                                // 2. Save all chapters to DB
+                                // Standardize ID format: {novelId}-ch-{index}
+                                const chaptersToSave: Chapter[] = indexedChapters.map(ch => ({
+                                    id: `${novelId}-ch-${ch._index}`, // Deterministic ID matching Reader.tsx
+                                    novelId: novelId,
+                                    title: ch.title,
+                                    orderIndex: ch._index,
+                                    audioPath: ch.url, // Storing URL in audioPath
+                                    date: ch.date
+                                }));
 
-                            // 2. Update Novel Metadata
-                            await dbService.addNovel({
-                                ...(dbNovel || {
-                                    id: novelId,
-                                    title: data.title || currentNovel?.title || 'Unknown',
-                                    sourceUrl: sourceUrl,
-                                    category: 'Novel'
-                                } as any),
-                                totalChapters: data.chapters.length,
-                                lastFetchedAt: Math.floor(Date.now() / 1000)
-                            });
+                                await dbService.addChapters(chaptersToSave);
 
-                            // 3. Reload chapters from DB to ensure UI is in sync with DB state
-                            const updatedDbChapters = await dbService.getChapters(novelId);
-                            setChapters(updatedDbChapters);
-                            setLoading(false);
+                                // 3. Reload chapters from DB to ensure UI is in sync with DB state
+                                const updatedDbChapters = await dbService.getChapters(novelId);
+                                setChapters(updatedDbChapters);
+                            } catch (error) {
+                                console.error("Failed to update DB in loadData", error);
+                            }
+                        } else {
+                            // Preview Mode: Just update state, don't save to DB
+                            // Ensure we preserve the coverUrl and other info from location state
+                            if (currentNovel) {
+                                setNovel(prev => prev ? {
+                                    ...prev,
+                                    title: data.title || prev.title,
+                                    totalChapters: data.chapters.length,
+                                    lastFetchedAt: Math.floor(Date.now() / 1000)
+                                } : null);
+                            }
                         }
+
+                        setLoading(false);
                     }
                 } catch (e) {
                     console.error("Failed to fetch live chapters", e);

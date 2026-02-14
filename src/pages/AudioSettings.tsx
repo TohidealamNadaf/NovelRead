@@ -17,6 +17,7 @@ export const AudioSettings = () => {
     const [voiceVolume, setVoiceVolume] = useState(80);
     const [bgmVolume, setBgmVolume] = useState(35);
     const [availableVoices, setAvailableVoices] = useState<VoiceInfo[]>([]);
+    const [profileImage, setProfileImage] = useState<string | null>(null);
 
     // Convert stored pitch (0.5-1.5 or 0 default) to slider value (-5 to 5)
     // Default 0 in settings means unset, which maps to 0 slider (1.0 pitch)
@@ -60,6 +61,23 @@ export const AudioSettings = () => {
         }
     }, [rate, pitch]);
 
+    // Load profile image
+    useEffect(() => {
+        const loadProfileImage = async () => {
+            try {
+                const { value } = await Preferences.get({ key: 'profileImage' });
+                if (value) {
+                    setProfileImage(
+                        value.startsWith('file://') ? Capacitor.convertFileSrc(value) : value
+                    );
+                }
+            } catch (e) {
+                console.error("Failed to load profile image", e);
+            }
+        };
+        loadProfileImage();
+    }, []);
+
     const toggleAmbience = (track: 'rainy' | 'fireplace' | 'forest') => {
         if (ambience === track) {
             audioService.stopBGM();
@@ -72,46 +90,6 @@ export const AudioSettings = () => {
 
 
 
-    const [profileImage, setProfileImage] = useState<string | null>(null);
-
-    // ... existing state ...
-
-    useEffect(() => {
-        // Load profile image
-        const loadProfileImage = async () => {
-            try {
-                const { value } = await Preferences.get({ key: 'profileImage' });
-                if (value) {
-                    if (value.startsWith('file://')) {
-                        // Import Capacitor if not already (it is in Profile, maybe not here)
-                        // But we need Capacitor core for convertFileSrc.
-                        // Let's assume Capacitor is available or just use it if we can import it.
-                        // We will add the import at the top if missing via a separate edit or verify it exists.
-                        // Actually, let's use a helper if possible, or just the global Capacitor object if imported.
-                        // I'll check imports first.
-                        // Wait, I can't check imports dynamically in this tool call.
-                        // I'll add the logic assuming I can fix imports if needed.
-                        // "Capacitor" is likely not imported.
-                        // I will just use the same logic as Profile.tsx using a typesafe approach
-                    }
-                    setProfileImage(value);
-                }
-            } catch (e) {
-                console.error("Failed to load profile image", e);
-            }
-        };
-        loadProfileImage();
-    }, []);
-
-    // Helper for image src (duplicated from Profile for now)
-    const getDisplayImage = (src: string | null) => {
-        if (!src) return "https://img.freepik.com/free-psd/3d-illustration-person-with-sunglasses_23-2149436188.jpg";
-        if (src.startsWith('file://')) {
-            return Capacitor.convertFileSrc(src);
-        }
-        return src;
-    }
-
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen font-sans flex flex-col transition-colors duration-300">
             {/* Header */}
@@ -120,14 +98,13 @@ export const AudioSettings = () => {
                 leftContent={
                     <Link to="/profile" className="flex items-center justify-center p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
                         <div className="flex size-9 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20">
-                            <img
-                                src={getDisplayImage(profileImage)}
-                                alt="Profile"
-                                className="size-full object-cover"
-                                onError={(e) => {
-                                    (e.target as HTMLImageElement).src = "https://img.freepik.com/free-psd/3d-illustration-person-with-sunglasses_23-2149436188.jpg";
-                                }}
-                            />
+                            {profileImage ? (
+                                <img src={profileImage} alt="Profile" className="size-full object-cover" />
+                            ) : (
+                                <div className="bg-center bg-no-repeat aspect-square bg-cover size-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
+                                    <span className="text-lg">👤</span>
+                                </div>
+                            )}
                         </div>
                     </Link>
                 }

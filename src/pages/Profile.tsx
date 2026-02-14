@@ -71,11 +71,10 @@ export const Profile = () => {
                     // about the read-back logic for the 'src' attribute.
                     // RE-READ REQUIREMENTS: "Store profile image using Capacitor Filesystem and only persist file path in Preferences."
                     // Okay, I will implement it.
-                    imageToStore = savedFile.uri;
-
-                    // Note: We need to handle reading this back!
-                    // Effectively, we can't display a file:/// URI directly in WebView in all cases.
-                    // We need Capacitor.convertFileSrc(imageToStore)
+                    // On Native, we store the file path. On Web, we must use the DataURL.
+                    if (Capacitor.getPlatform() !== 'web') {
+                        imageToStore = savedFile.uri;
+                    }
                 } catch (fsError) {
                     console.error("Filesystem write failed, falling back to dataUrl", fsError);
                 }

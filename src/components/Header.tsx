@@ -61,27 +61,28 @@ export const Header = memo(({
             )}
         >
             {/* Left Section (Back Button or Custom) */}
-            {(showBack || leftContent) && (
-                <div className="flex items-center gap-1 min-w-[40px] shrink-0">
-                    {showBack ? (
-                        <button
-                            onClick={handleBack}
-                            aria-label={backButtonLabel}
-                            className={clsx(
-                                "flex items-center justify-center p-2 -ml-2 rounded-full",
-                                "text-slate-900 dark:text-white",
-                                "hover:bg-slate-100 dark:hover:bg-white/10",
-                                "active:scale-95 transition-transform duration-200",
-                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                            )}
-                        >
-                            <ChevronLeft size={24} strokeWidth={2.5} />
-                        </button>
-                    ) : leftContent ? (
-                        <div className="-ml-1 flex items-center text-slate-900 dark:text-white">{leftContent}</div>
-                    ) : null}
-                </div>
-            )}
+            <div className={clsx(
+                "flex items-center gap-1 shrink-0 transition-[min-width] duration-300",
+                (showBack || leftContent) ? "min-w-[40px]" : "min-w-0 w-0 hidden"
+            )}>
+                {showBack ? (
+                    <button
+                        onClick={handleBack}
+                        aria-label={backButtonLabel}
+                        className={clsx(
+                            "flex items-center justify-center p-2 -ml-2 rounded-full",
+                            "text-slate-900 dark:text-white",
+                            "hover:bg-slate-100 dark:hover:bg-white/10",
+                            "active:scale-95 transition-transform duration-200",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        )}
+                    >
+                        <ChevronLeft size={24} strokeWidth={2.5} />
+                    </button>
+                ) : leftContent ? (
+                    <div className="-ml-1 flex items-center text-slate-900 dark:text-white">{leftContent}</div>
+                ) : null}
+            </div>
 
             {/* Center Section (Title) */}
             <div className="flex-1 flex flex-col justify-center min-w-0 mx-3 text-left">
