@@ -27,7 +27,7 @@ export const Reader = () => {
     const [loading, setLoading] = useState(true);
 
     // Live browsing mode
-    const isLiveMode = !!location.state?.liveMode;
+    const isLiveMode = !!location.state?.liveMode || novelId?.startsWith('live-');
     const liveChapters = (location.state?.chapters || []) as { title: string; url: string }[];
     const liveCurrentIndex = (location.state?.currentIndex ?? 0) as number;
     const [liveError, setLiveError] = useState('');
@@ -194,10 +194,31 @@ export const Reader = () => {
                 }
 
                 // Fetch surrounding local chapters
-                const [next, prev] = await Promise.all([
+                // Fetch surrounding local chapters
+                let [next, prev] = await Promise.all([
                     dbService.getNextChapter(nid, cData.orderIndex),
                     dbService.getPrevChapter(nid, cData.orderIndex)
                 ]);
+
+                // Fallback: If DB didn't return next/prev logic, use the list passed from navigation state
+                // This covers cases where only 1 chapter is in DB but ChapterList knew about others
+                const passedChapters = location.state?.chapters as Chapter[];
+                if (passedChapters && passedChapters.length > 0) {
+                    // Try to find current index in passed list
+                    // We match by ID first, then title/url
+                    const currentIdx = passedChapters.findIndex(c => c.id === cid || c.title === cData.title);
+
+                    if (currentIdx !== -1) {
+                        if (!next && currentIdx < passedChapters.length - 1) {
+                            next = passedChapters[currentIdx + 1];
+                            console.log("[Reader] Using passed state for Next Chapter:", next.title);
+                        }
+                        if (!prev && currentIdx > 0) {
+                            prev = passedChapters[currentIdx - 1];
+                        }
+                    }
+                }
+
                 setNextChapter(next);
                 setPrevChapter(prev);
 
@@ -270,25 +291,84 @@ export const Reader = () => {
     const loadLiveData = async () => {
         setLoading(true);
         setLiveError('');
-        const chapterUrl = location.state?.chapterUrl || (chapterId?.startsWith('http') ? chapterId : '');
-        const chapterTitle = location.state?.chapterTitle || 'Chapter';
-        const novelTitle = location.state?.novelTitle || 'Novel';
-        const novelCoverUrl = location.state?.novelCoverUrl || '';
-        const stableNovelId = getStableNovelId();
-        const chapterStableId = `${stableNovelId}-ch-${liveCurrentIndex}`;
+
+        // 1. RECOVERY: If state is missing (refresh), try to reconstruct context
+        let currentSourceUrl = location.state?.novel?.sourceUrl || location.state?.novelSourceUrl || novel?.sourceUrl || '';
+        let currentLiveChapters = (location.state?.chapters || []) as any[];
+        let currentIdx = (location.state?.currentIndex ?? -1) as number;
+
+        let stableNovelId = novelId; // Use URL param as primary ID
+        if (!stableNovelId || stableNovelId === 'null') {
+            // Fallback to generating
+            stableNovelId = getStableNovelId();
+        }
 
         try {
             await dbService.initialize();
 
+            // Attempt to restore Novel info from DB if missing
+            if (!currentSourceUrl && stableNovelId) {
+                const dbNovel = await dbService.getNovel(stableNovelId);
+                if (dbNovel && dbNovel.sourceUrl) {
+                    currentSourceUrl = dbNovel.sourceUrl;
+                    console.log("[Reader] Recovered sourceUrl from DB:", currentSourceUrl);
+
+                    // Restore Web Chapters if missing
+                    if (currentLiveChapters.length === 0) {
+                        try {
+                            const scraped = await scraperService.fetchNovel(currentSourceUrl);
+                            if (scraped && scraped.chapters) {
+                                currentLiveChapters = scraped.chapters.map((c, i) => ({
+                                    ...c,
+                                    novelId: stableNovelId!,
+                                    id: c.url, // Use URL as temp ID
+                                    orderIndex: i,
+                                    // Generate stable ID for matching
+                                    stableId: `${stableNovelId}-ch-${i}`
+                                } as any));
+                                console.log("[Reader] Recovered live chapters:", currentLiveChapters.length);
+                            }
+                        } catch (e) {
+                            console.error("[Reader] Failed to recover live chapters", e);
+                        }
+                    }
+                }
+            }
+
+            // Restore Current Index if missing (parse from chapterId param)
+            if (currentIdx === -1 && chapterId && currentLiveChapters.length > 0) {
+                // Try matching by ID format "novel-ch-index"
+                const match = chapterId.match(/-ch-(\d+)$/);
+                if (match) {
+                    currentIdx = parseInt(match[1], 10);
+                } else {
+                    // Try matching by URL (if chapterId is a URL)
+                    const urlMatch = currentLiveChapters.findIndex(c => c.url === chapterId || c.audioPath === chapterId);
+                    if (urlMatch !== -1) currentIdx = urlMatch;
+                }
+                console.log("[Reader] Recovered index:", currentIdx);
+            }
+
+            // --- END RECOVERY ---
+
+            // Determine Chapter URL (for fetching content)
+            const targetChapter = currentLiveChapters[currentIdx];
+            const chapterUrl = location.state?.chapterUrl || (targetChapter as any)?.url || targetChapter?.audioPath || (chapterId?.startsWith('http') ? chapterId : '');
+
+            // Fallback Title
+            const chapterTitle = location.state?.chapterTitle || targetChapter?.title || 'Chapter';
+
+            const chapterStableId = `${stableNovelId}-ch-${currentIdx}`;
+
             // 1. Check if chapter already exists in DB (persistent download verification)
-            const existingChapter = await dbService.getChapter(stableNovelId, chapterStableId);
+            const existingChapter = await dbService.getChapter(stableNovelId!, chapterStableId);
             let content = '';
 
             if (existingChapter && existingChapter.content) {
                 content = existingChapter.content;
                 setIsChapterSaved(true);
                 console.log(`[Reader] Using persistent content for ${chapterStableId}`);
-            } else {
+            } else if (chapterUrl) {
                 // 2. Fetch live content
                 setIsChapterSaved(false);
                 content = await scraperService.fetchChapterContent(chapterUrl);
@@ -300,7 +380,7 @@ export const Reader = () => {
                 novelId: stableNovelId,
                 title: chapterTitle,
                 content: content || '',
-                orderIndex: liveCurrentIndex,
+                orderIndex: currentIdx,
                 audioPath: chapterUrl, // original URL
             } as Chapter;
 
@@ -314,35 +394,39 @@ export const Reader = () => {
 
             // Set novel info
             setNovel({
-                id: stableNovelId,
-                title: novelTitle,
+                id: stableNovelId!,
+                title: location.state?.novelTitle || (await dbService.getNovel(stableNovelId!)?.then(n => n?.title)) || 'Novel',
                 author: '',
-                coverUrl: novelCoverUrl,
-                sourceUrl: location.state?.novelSourceUrl || '',
+                coverUrl: location.state?.novelCoverUrl || '',
+                sourceUrl: currentSourceUrl,
                 summary: '',
                 status: 'Ongoing',
             } as Novel);
 
             // Set next/prev from live chapters list
-            if (liveCurrentIndex < liveChapters.length - 1) {
-                const next = liveChapters[liveCurrentIndex + 1];
+            if (currentLiveChapters.length > 0 && currentIdx < currentLiveChapters.length - 1) {
+                const next = currentLiveChapters[currentIdx + 1];
+                const nextUrl = (next as any).url || next.audioPath || next.id;
                 setNextChapter({
-                    id: next.url, // Keep URL for live navigation
+                    id: nextUrl, // Keep URL for live navigation
                     novelId: stableNovelId,
                     title: next.title,
-                    orderIndex: liveCurrentIndex + 1,
+                    orderIndex: currentIdx + 1,
+                    audioPath: nextUrl
                 } as Chapter);
             } else {
                 setNextChapter(null);
             }
 
-            if (liveCurrentIndex > 0) {
-                const prev = liveChapters[liveCurrentIndex - 1];
+            if (currentLiveChapters.length > 0 && currentIdx > 0) {
+                const prev = currentLiveChapters[currentIdx - 1];
+                const prevUrl = (prev as any).url || prev.audioPath || prev.id;
                 setPrevChapter({
-                    id: prev.url,
+                    id: prevUrl,
                     novelId: stableNovelId,
                     title: prev.title,
-                    orderIndex: liveCurrentIndex - 1,
+                    orderIndex: currentIdx - 1,
+                    audioPath: prevUrl
                 } as Chapter);
             } else {
                 setPrevChapter(null);
@@ -353,7 +437,7 @@ export const Reader = () => {
                 const dbChapters = await dbService.getChapters(stableNovelId);
                 const readStatusMap = new Set(dbChapters.filter(c => c.isRead).map(c => c.id));
 
-                setAllChapters(liveChapters.map((ch, idx) => {
+                setAllChapters(currentLiveChapters.map((ch, idx) => {
                     // Hybrid ID matching: try both URL and stable ID format
                     const stableId = `${stableNovelId}-ch-${idx}`;
                     const isRead = readStatusMap.has(stableId) || readStatusMap.has(ch.url);
@@ -369,7 +453,7 @@ export const Reader = () => {
             } catch (e) {
                 console.warn("[Reader] Failed to sync read status for sidebar", e);
                 // Fallback to simple list
-                setAllChapters(liveChapters.map((ch, idx) => ({
+                setAllChapters(currentLiveChapters.map((ch, idx) => ({
                     id: ch.url,
                     novelId: stableNovelId,
                     title: ch.title,

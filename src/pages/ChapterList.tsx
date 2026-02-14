@@ -112,9 +112,15 @@ export const ChapterList = () => {
                 }
             });
         } else {
-            navigate(`/read/${novel?.id}/${chapter.id}`);
+            navigate(`/read/${novel?.id}/${chapter.id}`, {
+                state: {
+                    novel,
+                    liveMode: false,
+                    chapters: chapters
+                }
+            });
         }
-    }, [isLiveMode, navigate, novel, liveChapters]);
+    }, [isLiveMode, navigate, novel, liveChapters, chapters]);
 
 
     // --- Render Helpers ---
@@ -477,7 +483,8 @@ export const ChapterList = () => {
                                             liveMode: isLiveMode,
                                             chapterUrl: foundChapter.audioPath, // Pass URL for fetching
                                             chapterTitle: foundChapter.title,
-                                            currentIndex: foundChapter.orderIndex
+                                            currentIndex: foundChapter.orderIndex,
+                                            chapters: chapters // PASS FULL LIST for fallback
                                         }
                                     });
                                 } else if (foundLive) {
@@ -493,16 +500,35 @@ export const ChapterList = () => {
                                             liveMode: true,
                                             chapterUrl: targetUrl,
                                             chapterTitle: foundLive.title,
-                                            currentIndex: (foundLive as any)._index
+                                            currentIndex: (foundLive as any)._index,
+                                            chapters: liveChapters
                                         }
                                     });
                                 } else {
-                                    navigate(`/read/${novel.id}/${novel.lastReadChapterId}`, { state: { novel, liveMode: isLiveMode } });
+                                    navigate(`/read/${novel.id}/${novel.lastReadChapterId}`, {
+                                        state: {
+                                            novel,
+                                            liveMode: isLiveMode,
+                                            chapters: isLiveMode ? liveChapters : chapters
+                                        }
+                                    });
                                 }
                             } else if (chapters.length > 0) {
-                                navigate(`/read/${novel.id}/${chapters[0].id}`, { state: { novel, liveMode: isLiveMode } });
+                                navigate(`/read/${novel.id}/${chapters[0].id}`, {
+                                    state: {
+                                        novel,
+                                        liveMode: isLiveMode,
+                                        chapters: chapters
+                                    }
+                                });
                             } else if (liveChapters.length > 0) {
-                                navigate(`/read/${novel.id}/${encodeURIComponent(liveChapters[0].url)}`, { state: { novel, liveMode: true } });
+                                navigate(`/read/${novel.id}/${encodeURIComponent(liveChapters[0].url)}`, {
+                                    state: {
+                                        novel,
+                                        liveMode: true,
+                                        chapters: liveChapters
+                                    }
+                                });
                             }
                         }}
                         className="group flex items-center gap-2 bg-primary hover:bg-primary-dark text-white rounded-full px-6 py-4 shadow-xl shadow-primary/30 transition-all active:scale-95 hover:scale-105"

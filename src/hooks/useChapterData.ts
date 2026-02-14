@@ -125,9 +125,38 @@ export function useChapterData() {
             if (sourceUrl && navigator.onLine && !shouldSkipFetch) {
                 // console.log(`[useChapterData] Triggering Live Sync for ${novelId}`);
                 try {
-                    const data = await scraperService.fetchNovelFast(sourceUrl, async (_chaptersFound, page, _metadata) => {
+                    const data = await scraperService.fetchNovelFast(sourceUrl, async (chaptersFound, page, metadata) => {
                         setLoadingPage(page);
-                        // Progress update - we don't save to DB yet, wait for full list or chunks
+
+                        // Incremental Update: Show chapters as they arrive!
+                        if (chaptersFound.length > 0) {
+                            const indexedChapters = chaptersFound.map((ch, idx) => ({
+                                ...ch,
+                                _index: idx,
+                                // Safe fallback for keys
+                                date: ch.date
+                            }));
+                            setLiveChapters(indexedChapters);
+
+                            // Unlock UI immediately after first batch
+                            if (page === 1 || chaptersFound.length > 0) {
+                                setLoading(false);
+                            }
+                        }
+
+                        // Early Metadata Update (e.g. cover/synopsis from page 0)
+                        if (metadata && currentNovel) {
+                            const updatedNovel = {
+                                ...currentNovel,
+                                ...metadata,
+                                title: metadata.title || currentNovel.title,
+                            } as Novel;
+                            // Only update state if meaningful change to avoid flickering
+                            if (updatedNovel.coverUrl !== currentNovel.coverUrl || updatedNovel.summary !== currentNovel.summary) {
+                                setNovel(updatedNovel);
+                                currentNovel = updatedNovel; // Update local ref
+                            }
+                        }
                     });
 
                     if (data) {
