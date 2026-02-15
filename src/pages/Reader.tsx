@@ -76,12 +76,13 @@ export const Reader = () => {
     // Chapter Sidebar State
     const [showChapterSidebar, setShowChapterSidebar] = useState(false);
     const [allChapters, setAllChapters] = useState<Chapter[]>([]);
-    const edgeSwipeStartRef = useRef<number | null>(null);
+    const edgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
     const [isEdgeSwiping, setIsEdgeSwiping] = useState(false);
 
-    // Edge swipe configuration
-    const EDGE_WIDTH = 40; // px from left edge to activate
-    const OPEN_THRESHOLD = 50; // px horizontal drag to open sidebar
+    // Swipe-to-open sidebar configuration
+    const SWIPE_ZONE_WIDTH = 0.5; // left half of screen
+    const OPEN_THRESHOLD = 60; // px horizontal drag to open sidebar
+    const MAX_VERTICAL_DRIFT = 40; // max vertical px before it's considered a scroll, not a swipe
 
     const theme = settings.theme;
     const font = settings.fontFamily;
@@ -750,30 +751,37 @@ export const Reader = () => {
     // EDGE SWIPE GESTURE HANDLERS (priority over pull navigation)
     const handleEdgeTouchStart = (e: React.TouchEvent) => {
         const touch = e.touches[0];
-        if (touch.clientX <= EDGE_WIDTH) {
-            edgeSwipeStartRef.current = touch.clientX;
-            setIsEdgeSwiping(true);
-            e.stopPropagation();
+        const screenWidth = window.innerWidth;
+        if (touch.clientX <= screenWidth * SWIPE_ZONE_WIDTH) {
+            edgeSwipeStartRef.current = { x: touch.clientX, y: touch.clientY };
         }
     };
 
     const handleEdgeTouchMove = (e: React.TouchEvent) => {
         if (edgeSwipeStartRef.current === null) return;
-        e.stopPropagation();
         const touch = e.touches[0];
-        const diffX = touch.clientX - edgeSwipeStartRef.current;
+        const diffX = touch.clientX - edgeSwipeStartRef.current.x;
+        const diffY = Math.abs(touch.clientY - edgeSwipeStartRef.current.y);
 
-        if (diffX > OPEN_THRESHOLD) {
+        // If vertical movement exceeds threshold, it's a scroll not a swipe
+        if (diffY > MAX_VERTICAL_DRIFT) {
+            edgeSwipeStartRef.current = null;
+            setIsEdgeSwiping(false);
+            return;
+        }
+
+        // Detect intentional horizontal right-swipe
+        if (diffX > OPEN_THRESHOLD && diffX > diffY * 1.5) {
             setShowChapterSidebar(true);
             edgeSwipeStartRef.current = null;
             setIsEdgeSwiping(false);
+        } else if (diffX > 15) {
+            // Starting to look like a horizontal swipe, flag it
+            setIsEdgeSwiping(true);
         }
     };
 
-    const handleEdgeTouchEnd = (e: React.TouchEvent) => {
-        if (edgeSwipeStartRef.current !== null) {
-            e.stopPropagation();
-        }
+    const handleEdgeTouchEnd = () => {
         edgeSwipeStartRef.current = null;
         setIsEdgeSwiping(false);
     };
@@ -831,23 +839,17 @@ export const Reader = () => {
                 }
             />
 
-            {/* Edge Swipe Gesture Layer (Invisible zone for sidebar) */}
-            <div
-                className="fixed left-0 top-16 bottom-0 w-12 z-40"
-                style={{ touchAction: 'pan-x' }}
-                onTouchStart={handleEdgeTouchStart}
-                onTouchMove={handleEdgeTouchMove}
-                onTouchEnd={handleEdgeTouchEnd}
-            />
+            {/* Edge swipe gesture is now handled on the main reading area below */}
 
             {/* Main Reading Area */}
             <div
                 ref={scrollContainerRef}
                 className={`flex-1 overflow-y-auto px-6 py-8 ${getThemeClass()} relative touch-pan-y`}
-                onTouchStart={(e) => { if (!isEdgeSwiping) onTouchStart(e); }}
-                onTouchMove={(e) => { if (!isEdgeSwiping) onTouchMove(e); }}
+                onTouchStart={(e) => { handleEdgeTouchStart(e); if (!isEdgeSwiping) onTouchStart(e); }}
+                onTouchMove={(e) => { handleEdgeTouchMove(e); if (!isEdgeSwiping) onTouchMove(e); }}
                 onTouchEnd={(e) => {
                     handleDoubleTap(e);
+                    handleEdgeTouchEnd();
                     if (!isEdgeSwiping) onTouchEnd();
                 }}
                 onClick={handleDoubleTap}
