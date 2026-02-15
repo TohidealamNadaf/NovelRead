@@ -75,6 +75,11 @@ export const Reader = () => {
     const [showChapterSidebar, setShowChapterSidebar] = useState(false);
     const [allChapters, setAllChapters] = useState<Chapter[]>([]);
     const edgeSwipeStartRef = useRef<number | null>(null);
+    const [isEdgeSwiping, setIsEdgeSwiping] = useState(false);
+
+    // Edge swipe configuration
+    const EDGE_WIDTH = 40; // px from left edge to activate
+    const OPEN_THRESHOLD = 50; // px horizontal drag to open sidebar
 
     const theme = settings.theme;
     const font = settings.fontFamily;
@@ -730,28 +735,35 @@ export const Reader = () => {
         }
     }, []);
 
-    // EDGE SWIPE GESTURE HANDLERS
+    // EDGE SWIPE GESTURE HANDLERS (priority over pull navigation)
     const handleEdgeTouchStart = (e: React.TouchEvent) => {
         const touch = e.touches[0];
-        if (touch.clientX < 30) {
+        if (touch.clientX <= EDGE_WIDTH) {
             edgeSwipeStartRef.current = touch.clientX;
+            setIsEdgeSwiping(true);
+            e.stopPropagation();
         }
     };
 
     const handleEdgeTouchMove = (e: React.TouchEvent) => {
         if (edgeSwipeStartRef.current === null) return;
+        e.stopPropagation();
         const touch = e.touches[0];
         const diffX = touch.clientX - edgeSwipeStartRef.current;
 
-        // Optional: If we want to add some haptic feel or visual feedback during the swipe itself
-        if (diffX > 60) {
+        if (diffX > OPEN_THRESHOLD) {
             setShowChapterSidebar(true);
             edgeSwipeStartRef.current = null;
+            setIsEdgeSwiping(false);
         }
     };
 
-    const handleEdgeTouchEnd = () => {
+    const handleEdgeTouchEnd = (e: React.TouchEvent) => {
+        if (edgeSwipeStartRef.current !== null) {
+            e.stopPropagation();
+        }
         edgeSwipeStartRef.current = null;
+        setIsEdgeSwiping(false);
     };
 
     const fontSizes = [
@@ -809,7 +821,8 @@ export const Reader = () => {
 
             {/* Edge Swipe Gesture Layer (Invisible zone for sidebar) */}
             <div
-                className="fixed left-0 top-16 bottom-0 w-8 z-40 cursor-w-resize"
+                className="fixed left-0 top-16 bottom-0 w-12 z-40"
+                style={{ touchAction: 'pan-x' }}
                 onTouchStart={handleEdgeTouchStart}
                 onTouchMove={handleEdgeTouchMove}
                 onTouchEnd={handleEdgeTouchEnd}
@@ -819,11 +832,11 @@ export const Reader = () => {
             <div
                 ref={scrollContainerRef}
                 className={`flex-1 overflow-y-auto px-6 py-8 ${getThemeClass()} relative touch-pan-y`}
-                onTouchStart={onTouchStart}
-                onTouchMove={onTouchMove}
+                onTouchStart={(e) => { if (!isEdgeSwiping) onTouchStart(e); }}
+                onTouchMove={(e) => { if (!isEdgeSwiping) onTouchMove(e); }}
                 onTouchEnd={(e) => {
                     handleDoubleTap(e);
-                    onTouchEnd();
+                    if (!isEdgeSwiping) onTouchEnd();
                 }}
                 onClick={handleDoubleTap}
                 onScroll={(e) => {

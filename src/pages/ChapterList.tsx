@@ -259,9 +259,14 @@ export const ChapterList = () => {
                 </div>
             )}
 
-            {/* 1. Novel Info Header + Reading Progress + Search Bar (Static/Sticky Section) */}
-            <div className="bg-background-light dark:bg-background-dark border-b border-slate-200 dark:border-slate-800 shadow-sm z-30">
-                <div className="p-4">
+            {/* Single Scroll Container — novel info scrolls away, search bar sticks */}
+            <main
+                ref={parentRef}
+                onScroll={handleScroll}
+                className="flex-1 overflow-y-auto hide-scrollbar overscroll-y-contain"
+            >
+                {/* Novel Info Header (scrolls away naturally) */}
+                <div className="p-4 bg-background-light dark:bg-background-dark">
                     <div className="flex gap-5">
                         {/* Cover Image */}
                         <div className="relative shrink-0">
@@ -337,8 +342,8 @@ export const ChapterList = () => {
                     )}
                 </div>
 
-                {/* Filters/Search (Sticky at the bottom of static section) */}
-                <div className="px-4 py-2 flex flex-col gap-3">
+                {/* Search/Filter Bar (Sticky — stays pinned as you scroll) */}
+                <div className="px-4 py-2 flex flex-col gap-3 sticky top-0 z-30 bg-background-light dark:bg-background-dark border-b border-slate-200 dark:border-slate-800 shadow-sm">
                     <div className="flex gap-2">
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -398,14 +403,8 @@ export const ChapterList = () => {
                         </button>
                     </div>
                 </div>
-            </div>
 
-            {/* 2. Scrollable Virtualized List AREA */}
-            <main
-                ref={parentRef}
-                onScroll={handleScroll}
-                className="flex-1 overflow-y-auto hide-scrollbar overscroll-y-contain"
-            >
+                {/* Virtualized Chapter List */}
                 <div
                     style={{
                         height: `${rowVirtualizer.getTotalSize()}px`,
@@ -458,7 +457,7 @@ export const ChapterList = () => {
                         );
                     })}
                 </div>
-                {/* Bottom spacer for FAB clearance — OUTSIDE the virtualizer container */}
+                {/* Bottom spacer for FAB clearance */}
                 <div className="h-24" />
 
                 {/* Live Loading Indicator */}
