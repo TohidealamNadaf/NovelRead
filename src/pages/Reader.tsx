@@ -74,7 +74,7 @@ export const Reader = () => {
     // Chapter Sidebar State
     const [showChapterSidebar, setShowChapterSidebar] = useState(false);
     const [allChapters, setAllChapters] = useState<Chapter[]>([]);
-    const swipeStartXRef = useRef(0);
+    const edgeSwipeStartRef = useRef<number | null>(null);
 
     const theme = settings.theme;
     const font = settings.fontFamily;
@@ -227,41 +227,38 @@ export const Reader = () => {
 
                 // HYBRID SYNC / Navigation Recovery: If novel has a sourceUrl, fetch the full web index in background
                 if (nData?.sourceUrl) {
-                    console.log(`[Reader] Triggering background live sync for ${nid}`);
+                    // console.log(`[Reader] Triggering background live sync for ${nid}`);
                     try {
                         await scraperService.fetchNovelFast(nData.sourceUrl, (webChapters) => {
-                            // Update sidebar and navigation state with full web list
+                            // Update sidebar only
                             setAllChapters(webChapters.map((ch, idx) => ({
                                 id: ch.url,
                                 novelId: nid,
                                 title: ch.title,
                                 orderIndex: idx,
-                                isRead: 0 // UI will overlay DB status via IDs
+                                isRead: 0
                             } as Chapter)));
 
-                            // Find current chapter in web list to identify its index
-                            const currentIndex = webChapters.findIndex(ch => ch.url === cData.audioPath || ch.title === cData.title);
-                            if (currentIndex !== -1) {
-
-                                // Update local navigation states for unified logic
-                                setNavChapters(webChapters);
-                                setNavIndex(currentIndex);
-                            } else if (navChapters.length === 0) {
-                                // Fallback: If current chapter not found in web list, but we have no navigation list, use DB list
-                                setNavChapters(localChapters);
-                                setNavIndex(cData.orderIndex);
+                            // RULE: Only update nav state if it's currently empty
+                            if (navChapters.length === 0) {
+                                const currentIndex = webChapters.findIndex(ch => ch.url === cData.audioPath || ch.title === cData.title);
+                                if (currentIndex !== -1) {
+                                    setNavChapters(webChapters);
+                                    setNavIndex(currentIndex);
+                                } else {
+                                    setNavChapters(localChapters);
+                                    setNavIndex(cData.orderIndex);
+                                }
                             }
                         });
                     } catch (syncErr) {
                         console.warn("[Reader] Background sync failed", syncErr);
-                        // Fallback to local chapters if sync fails and we have no state
                         if (navChapters.length === 0) {
                             setNavChapters(localChapters);
                             setNavIndex(cData.orderIndex);
                         }
                     }
                 } else if (navChapters.length === 0) {
-                    // No source URL and no nav state: Use local DB list
                     setNavChapters(localChapters);
                     setNavIndex(cData.orderIndex);
                 }
@@ -335,7 +332,7 @@ export const Reader = () => {
                 }
             }
 
-            // Navigation Re-construction Fallback
+            // Navigation Re-construction Fallback (Recovery Rule)
             if (currentLiveChapters.length === 0 && currentSourceUrl) {
                 console.log("[Reader] Missing navChapters in state, fetching live index...");
                 try {
@@ -344,7 +341,7 @@ export const Reader = () => {
                     currentIdx = currentLiveChapters.findIndex(ch =>
                         ch.url === chapterId ||
                         ch.id === chapterId ||
-                        ch.title === (location.state?.chapterTitle)
+                        (location.state?.chapterUrl && ch.url === location.state.chapterUrl)
                     );
                     if (currentLiveChapters.length > 0) {
                         setNavChapters(currentLiveChapters);
@@ -354,18 +351,22 @@ export const Reader = () => {
                 }
             }
 
-            // Restore Current Index if missing (parse from chapterId param)
-            if (currentIdx === -1 && chapterId && currentLiveChapters.length > 0) {
-                // Try matching by ID format "novel-ch-index"
-                const match = chapterId.match(/-ch-(\d+)$/);
-                if (match) {
-                    currentIdx = parseInt(match[1], 10);
-                } else {
-                    // Try matching by URL (if chapterId is a URL)
-                    const urlMatch = currentLiveChapters.findIndex(c => c.url === chapterId || c.id === chapterId);
-                    if (urlMatch !== -1) currentIdx = urlMatch;
+            // Restore Current Index if missing (Recovery Rule: findIndex ONLY)
+            if (currentIdx === -1 && currentLiveChapters.length > 0) {
+                currentIdx = currentLiveChapters.findIndex(c =>
+                    c.url === chapterId ||
+                    c.id === chapterId ||
+                    (location.state?.chapterUrl && c.url === location.state.chapterUrl)
+                );
+
+                // Fallback to ID-based index parsing as a LAST resort if URL lookup fails
+                if (currentIdx === -1 && chapterId) {
+                    const match = chapterId.match(/-ch-(\d+)$/);
+                    if (match) currentIdx = parseInt(match[1], 10);
                 }
-                console.log("[Reader] Recovered index:", currentIdx);
+            }
+
+            if (currentIdx !== -1) {
                 setNavIndex(currentIdx);
             }
 
@@ -729,6 +730,30 @@ export const Reader = () => {
         }
     }, []);
 
+    // EDGE SWIPE GESTURE HANDLERS
+    const handleEdgeTouchStart = (e: React.TouchEvent) => {
+        const touch = e.touches[0];
+        if (touch.clientX < 30) {
+            edgeSwipeStartRef.current = touch.clientX;
+        }
+    };
+
+    const handleEdgeTouchMove = (e: React.TouchEvent) => {
+        if (edgeSwipeStartRef.current === null) return;
+        const touch = e.touches[0];
+        const diffX = touch.clientX - edgeSwipeStartRef.current;
+
+        // Optional: If we want to add some haptic feel or visual feedback during the swipe itself
+        if (diffX > 60) {
+            setShowChapterSidebar(true);
+            edgeSwipeStartRef.current = null;
+        }
+    };
+
+    const handleEdgeTouchEnd = () => {
+        edgeSwipeStartRef.current = null;
+    };
+
     const fontSizes = [
         { label: '14', value: 0.875 },
         { label: '16', value: 1 },
@@ -782,25 +807,21 @@ export const Reader = () => {
                 }
             />
 
+            {/* Edge Swipe Gesture Layer (Invisible zone for sidebar) */}
+            <div
+                className="fixed left-0 top-16 bottom-0 w-8 z-40 cursor-w-resize"
+                onTouchStart={handleEdgeTouchStart}
+                onTouchMove={handleEdgeTouchMove}
+                onTouchEnd={handleEdgeTouchEnd}
+            />
+
             {/* Main Reading Area */}
             <div
                 ref={scrollContainerRef}
-                className={`flex-1 overflow-y-auto px-6 py-8 ${getThemeClass()} relative`}
-                onTouchStart={(e) => {
-                    swipeStartXRef.current = e.touches[0].clientX;
-                    onTouchStart(e);
-                }}
+                className={`flex-1 overflow-y-auto px-6 py-8 ${getThemeClass()} relative touch-pan-y`}
+                onTouchStart={onTouchStart}
                 onTouchMove={onTouchMove}
                 onTouchEnd={(e) => {
-                    // Detect left swipe from left edge (60px zone for better touch detection)
-                    const endX = e.changedTouches[0].clientX;
-                    const diffX = endX - swipeStartXRef.current;
-                    const startedFromLeftEdge = swipeStartXRef.current < 60;
-
-                    if (startedFromLeftEdge && diffX > 80) {
-                        setShowChapterSidebar(true);
-                    }
-
                     handleDoubleTap(e);
                     onTouchEnd();
                 }}
