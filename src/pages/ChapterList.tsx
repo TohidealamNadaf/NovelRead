@@ -131,14 +131,10 @@ export const ChapterList = () => {
 
     // --- Handlers ---
     const handleChapterClick = useCallback((chapter: any) => {
-        const masterList = liveChapters.length > 0 ? liveChapters : chapters;
-        const realIndex = masterList.findIndex((c: any) =>
-            (c.id && c.id === chapter.id) ||
-            (c.url && c.url === chapter.url) ||
-            (c.audioPath && c.audioPath === chapter.url)
-        );
-
         if (isLiveMode) {
+            const realIndex = liveChapters.findIndex((c: any) =>
+                (c.url && c.url === chapter.url)
+            );
             navigate(`/read/live/${encodeURIComponent(chapter.url)}`, {
                 state: {
                     liveMode: true,
@@ -147,17 +143,18 @@ export const ChapterList = () => {
                     novelTitle: novel?.title,
                     novelCoverUrl: novel?.coverUrl,
                     novelSourceUrl: novel?.sourceUrl,
-                    currentIndex: realIndex,
-                    chapters: masterList
+                    currentIndex: realIndex !== -1 ? realIndex : 0,
+                    chapters: [...liveChapters]
                 }
             });
         } else {
+            const realIndex = chapters.findIndex(c => c.id === chapter.id);
             navigate(`/read/${novel?.id}/${chapter.id}`, {
                 state: {
                     novel,
                     liveMode: false,
-                    currentIndex: realIndex,
-                    chapters: masterList
+                    currentIndex: realIndex !== -1 ? realIndex : 0,
+                    chapters: [...chapters]
                 }
             });
         }
@@ -513,11 +510,8 @@ export const ChapterList = () => {
 
                             if (lastReadValid) {
                                 if (foundChapter) {
-                                    const masterList = liveChapters.length > 0 ? liveChapters : chapters;
-                                    const realIndex = masterList.findIndex((c: any) =>
-                                        (c.id && c.id === foundChapter.id) ||
-                                        (c.audioPath && c.audioPath === foundChapter.audioPath)
-                                    );
+                                    // foundChapter is a local DB Chapter — always use `chapters` for navigation
+                                    const realIndex = chapters.findIndex(c => c.id === foundChapter.id);
 
                                     navigate(`/read/${novel.id}/${foundChapter.id}`, {
                                         state: {
@@ -525,17 +519,13 @@ export const ChapterList = () => {
                                             liveMode: isLiveMode,
                                             chapterUrl: foundChapter.audioPath,
                                             chapterTitle: foundChapter.title,
-                                            currentIndex: realIndex,
-                                            chapters: masterList
+                                            currentIndex: realIndex !== -1 ? realIndex : 0,
+                                            chapters: [...chapters]
                                         }
                                     });
                                 } else if (foundLive) {
                                     const targetUrl = foundLive.url;
-                                    const masterList = liveChapters.length > 0 ? liveChapters : chapters;
-                                    const realIndex = masterList.findIndex((c: any) =>
-                                        (c.url && c.url === foundLive.url) ||
-                                        (c.id && (foundLive as any).id && c.id === (foundLive as any).id)
-                                    );
+                                    const realIndex = liveChapters.findIndex((c: any) => c.url === foundLive.url);
 
                                     navigate(`/read/${novel.id}/${encodeURIComponent(targetUrl)}`, {
                                         state: {
@@ -543,8 +533,8 @@ export const ChapterList = () => {
                                             liveMode: true,
                                             chapterUrl: targetUrl,
                                             chapterTitle: foundLive.title,
-                                            currentIndex: realIndex,
-                                            chapters: masterList
+                                            currentIndex: realIndex !== -1 ? realIndex : 0,
+                                            chapters: [...liveChapters]
                                         }
                                     });
                                 } else {
@@ -552,7 +542,7 @@ export const ChapterList = () => {
                                         state: {
                                             novel,
                                             liveMode: isLiveMode,
-                                            chapters: liveChapters.length > 0 ? liveChapters : chapters
+                                            chapters: [...(liveChapters.length > 0 ? liveChapters : chapters)]
                                         }
                                     });
                                 }
@@ -561,7 +551,7 @@ export const ChapterList = () => {
                                     state: {
                                         novel,
                                         liveMode: isLiveMode,
-                                        chapters: liveChapters.length > 0 ? liveChapters : chapters
+                                        chapters: [...(liveChapters.length > 0 ? liveChapters : chapters)]
                                     }
                                 });
                             } else if (liveChapters.length > 0) {
@@ -569,7 +559,7 @@ export const ChapterList = () => {
                                     state: {
                                         novel,
                                         liveMode: true,
-                                        chapters: liveChapters
+                                        chapters: [...liveChapters]
                                     }
                                 });
                             }

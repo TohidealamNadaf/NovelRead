@@ -25,7 +25,9 @@ export const Reader = () => {
     const [loading, setLoading] = useState(true);
 
     // Unified Navigation State (Hybrid/Live/Offline)
-    const [navChapters, setNavChapters] = useState<(Chapter | any)[]>(location.state?.chapters || []);
+    const [navChapters, setNavChapters] = useState<(Chapter | any)[]>(
+        location.state?.chapters ? [...location.state.chapters] : []
+    );
     const [navIndex, setNavIndex] = useState<number>(location.state?.currentIndex ?? -1);
 
     // Derived Navigation (Primary source of truth for continuity)
@@ -105,7 +107,7 @@ export const Reader = () => {
         // --- IMMEDIATE NAVIGATION SYNC ---
         // Sync nav state from router immediately to prevent gesture break during sync
         if (location.state?.chapters) {
-            setNavChapters(location.state.chapters);
+            setNavChapters([...location.state.chapters]);
             if (typeof location.state.currentIndex === 'number') {
                 setNavIndex(location.state.currentIndex);
             }
@@ -227,6 +229,15 @@ export const Reader = () => {
                 const localChapters = await dbService.getChapters(nid);
                 setAllChapters(localChapters);
 
+                // Restore navigation state if missing (Continue button flow)
+                if (navChapters.length === 0 && localChapters.length > 0) {
+                    const index = localChapters.findIndex(c => c.id === cid);
+                    if (index !== -1) {
+                        setNavChapters(localChapters);
+                        setNavIndex(index);
+                    }
+                }
+
                 // Update reading progress (marks chapter as read + updates lastReadChapterId)
                 await dbService.updateReadingProgress(nid, cid);
 
@@ -244,13 +255,14 @@ export const Reader = () => {
                                 isRead: 0
                             } as Chapter)));
 
-                            // RULE: Only update nav state if it's currently empty
-                            if (navChapters.length === 0) {
+                            // RULE: Update nav state if empty OR if web index is more complete
+                            const webHasMore = webChapters.length > navChapters.length;
+                            if (navChapters.length === 0 || webHasMore) {
                                 const currentIndex = webChapters.findIndex(ch => ch.url === cData.audioPath || ch.title === cData.title);
                                 if (currentIndex !== -1) {
                                     setNavChapters(webChapters);
                                     setNavIndex(currentIndex);
-                                } else {
+                                } else if (navChapters.length === 0) {
                                     setNavChapters(localChapters);
                                     setNavIndex(cData.orderIndex);
                                 }
