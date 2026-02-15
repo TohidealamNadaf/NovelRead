@@ -142,7 +142,7 @@ export const ChapterList = () => {
                     novel,
                     liveMode: false,
                     currentIndex: chapter.orderIndex,
-                    chapters: chapters
+                    chapters: liveChapters.length > 0 ? liveChapters : chapters
                 }
             });
         }
@@ -520,7 +520,7 @@ export const ChapterList = () => {
                                             chapterUrl: foundChapter.audioPath, // Pass URL for fetching
                                             chapterTitle: foundChapter.title,
                                             currentIndex: foundChapter.orderIndex,
-                                            chapters: chapters
+                                            chapters: liveChapters.length > 0 ? liveChapters : chapters
                                         }
                                     });
                                 } else if (foundLive) {
@@ -545,7 +545,7 @@ export const ChapterList = () => {
                                         state: {
                                             novel,
                                             liveMode: isLiveMode,
-                                            chapters: isLiveMode ? liveChapters : chapters
+                                            chapters: liveChapters.length > 0 ? liveChapters : chapters
                                         }
                                     });
                                 }
@@ -554,7 +554,7 @@ export const ChapterList = () => {
                                     state: {
                                         novel,
                                         liveMode: isLiveMode,
-                                        chapters: chapters
+                                        chapters: liveChapters.length > 0 ? liveChapters : chapters
                                     }
                                 });
                             } else if (liveChapters.length > 0) {

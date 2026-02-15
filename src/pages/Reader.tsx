@@ -225,7 +225,7 @@ export const Reader = () => {
                 // Update reading progress (marks chapter as read + updates lastReadChapterId)
                 await dbService.updateReadingProgress(nid, cid);
 
-                // HYBRID SYNC: If novel has a sourceUrl, fetch the full web index in background
+                // HYBRID SYNC / Navigation Recovery: If novel has a sourceUrl, fetch the full web index in background
                 if (nData?.sourceUrl) {
                     console.log(`[Reader] Triggering background live sync for ${nid}`);
                     try {
@@ -246,11 +246,24 @@ export const Reader = () => {
                                 // Update local navigation states for unified logic
                                 setNavChapters(webChapters);
                                 setNavIndex(currentIndex);
+                            } else if (navChapters.length === 0) {
+                                // Fallback: If current chapter not found in web list, but we have no navigation list, use DB list
+                                setNavChapters(localChapters);
+                                setNavIndex(cData.orderIndex);
                             }
                         });
                     } catch (syncErr) {
                         console.warn("[Reader] Background sync failed", syncErr);
+                        // Fallback to local chapters if sync fails and we have no state
+                        if (navChapters.length === 0) {
+                            setNavChapters(localChapters);
+                            setNavIndex(cData.orderIndex);
+                        }
                     }
+                } else if (navChapters.length === 0) {
+                    // No source URL and no nav state: Use local DB list
+                    setNavChapters(localChapters);
+                    setNavIndex(cData.orderIndex);
                 }
             }
         } catch (error) {
@@ -322,6 +335,25 @@ export const Reader = () => {
                 }
             }
 
+            // Navigation Re-construction Fallback
+            if (currentLiveChapters.length === 0 && currentSourceUrl) {
+                console.log("[Reader] Missing navChapters in state, fetching live index...");
+                try {
+                    const novelData = await scraperService.fetchNovelFast(currentSourceUrl);
+                    currentLiveChapters = novelData.chapters;
+                    currentIdx = currentLiveChapters.findIndex(ch =>
+                        ch.url === chapterId ||
+                        ch.id === chapterId ||
+                        ch.title === (location.state?.chapterTitle)
+                    );
+                    if (currentLiveChapters.length > 0) {
+                        setNavChapters(currentLiveChapters);
+                    }
+                } catch (e) {
+                    console.warn("[Reader] Failed to reconstruct live navigation", e);
+                }
+            }
+
             // Restore Current Index if missing (parse from chapterId param)
             if (currentIdx === -1 && chapterId && currentLiveChapters.length > 0) {
                 // Try matching by ID format "novel-ch-index"
@@ -330,7 +362,7 @@ export const Reader = () => {
                     currentIdx = parseInt(match[1], 10);
                 } else {
                     // Try matching by URL (if chapterId is a URL)
-                    const urlMatch = currentLiveChapters.findIndex(c => c.url === chapterId || c.audioPath === chapterId);
+                    const urlMatch = currentLiveChapters.findIndex(c => c.url === chapterId || c.id === chapterId);
                     if (urlMatch !== -1) currentIdx = urlMatch;
                 }
                 console.log("[Reader] Recovered index:", currentIdx);
@@ -1081,8 +1113,8 @@ export const Reader = () => {
             <CompletionModal
                 isOpen={showComingSoon}
                 onClose={() => setShowComingSoon(false)}
-                title="Coming Soon!"
-                message="Next chapter navigation is being optimized and will be available in the next update."
+                title="End of Novel"
+                message="You have reached the end of this novel. Check back later for new chapters!"
             />
 
             <SummaryModal
@@ -1116,7 +1148,16 @@ export const Reader = () => {
                             replace: true
                         });
                     } else {
-                        navigate(`/read/${novelId}/${ch.id}`, { replace: true });
+                        const idx = navChapters.findIndex(lc => lc.id === ch.id || lc.audioPath === ch.id || lc.url === ch.id);
+                        navigate(`/read/${novelId}/${ch.id}`, {
+                            state: {
+                                ...location.state,
+                                chapters: navChapters,
+                                currentIndex: idx >= 0 ? idx : ch.orderIndex,
+                                liveMode: isLiveMode
+                            },
+                            replace: true
+                        });
                     }
                 }}
             />
