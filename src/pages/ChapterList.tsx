@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import {
     MoreHorizontal, Search, Filter, Download, CheckCircle,
     DownloadCloud, Trash2, Minimize2, Loader2, Save,
-    BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, WifiOff, BookOpen
+    BookmarkPlus, BookmarkCheck, ChevronDown, ChevronUp, WifiOff, BookOpen, ArrowUp
 } from 'lucide-react';
 import { Header } from '../components/Header';
 import { Toast } from '../components/Toast';
@@ -114,11 +114,20 @@ export const ChapterList = () => {
         }
     }, [loading, novel?.id]);
 
+    const [showScrollTop, setShowScrollTop] = useState(false);
+
     const handleScroll = useCallback(() => {
         if (parentRef.current && novel?.id) {
             sessionStorage.setItem(`scroll-${novel.id}`, parentRef.current.scrollTop.toString());
+            setShowScrollTop(parentRef.current.scrollTop > 400);
         }
     }, [novel?.id]);
+
+    const scrollToTop = useCallback(() => {
+        if (parentRef.current) {
+            parentRef.current.scrollTop = 0;
+        }
+    }, []);
 
     // --- Handlers ---
     const handleChapterClick = useCallback((chapter: any) => {
@@ -472,6 +481,17 @@ export const ChapterList = () => {
                     <div className="p-8 text-center text-slate-500">No chapters found.</div>
                 )}
             </main>
+
+            {/* Scroll to Top Button */}
+            {showScrollTop && (
+                <button
+                    onClick={scrollToTop}
+                    className="fixed bottom-6 left-6 z-50 w-11 h-11 rounded-full bg-slate-800/80 dark:bg-slate-200/80 text-white dark:text-slate-900 shadow-lg backdrop-blur-sm flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-200"
+                    style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+                >
+                    <ArrowUp size={20} />
+                </button>
+            )}
 
             {/* Floating Action Button for Start/Continue Reading */}
             {(chapters.length > 0 || liveChapters.length > 0) && (
