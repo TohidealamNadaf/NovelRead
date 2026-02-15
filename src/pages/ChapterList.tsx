@@ -484,7 +484,6 @@ export const ChapterList = () => {
                 <button
                     onClick={scrollToTop}
                     className="fixed bottom-6 left-6 z-50 w-11 h-11 rounded-full bg-slate-800/80 dark:bg-slate-200/80 text-white dark:text-slate-900 shadow-lg backdrop-blur-sm flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-200"
-                    style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
                 >
                     <ArrowUp size={20} />
                 </button>
