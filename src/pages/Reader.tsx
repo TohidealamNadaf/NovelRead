@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MoreHorizontal, Play, Pause, FastForward, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download } from 'lucide-react';
+import { MoreHorizontal, Play, Pause, FastForward, Rewind, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -960,7 +960,18 @@ export const Reader = () => {
                                         <Music size={20} />
                                         <span className="text-xs">{isMusicPlaying ? 'On' : 'Off'}</span>
                                     </button>
-                                    <button onClick={toggleTTS} className="size-16 flex items-center justify-center bg-primary rounded-full shadow-lg shadow-primary/40 active:scale-95 transition-transform">
+                                    <button
+                                        onClick={handlePrevChapter}
+                                        disabled={!prevChapter}
+                                        className={clsx(
+                                            "flex-1 flex items-center justify-center gap-2 h-12 rounded-xl font-semibold transition-opacity px-4 bg-gray-100 dark:bg-gray-800",
+                                            !prevChapter && "opacity-30"
+                                        )}
+                                    >
+                                        <Rewind size={20} />
+                                        <span className="text-xs">Prev</span>
+                                    </button>
+                                    <button onClick={toggleTTS} className="size-16 shrink-0 flex items-center justify-center bg-primary rounded-full shadow-lg shadow-primary/40 active:scale-95 transition-transform">
                                         {isSpeaking ? <Pause className="text-white fill-white" size={32} /> : <Play className="text-white fill-white ml-1" size={32} />}
                                     </button>
                                     <button
