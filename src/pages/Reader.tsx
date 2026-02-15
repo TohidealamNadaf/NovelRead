@@ -999,62 +999,59 @@ export const Reader = () => {
                             <div className="flex justify-center py-3" onClick={() => setShowSettings(false)}>
                                 <div className="w-10 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
                             </div>
-                            <div className="px-6 pb-10 space-y-6">
+                            <div className="px-5 pb-8 space-y-5">
                                 {/* TTS Controls */}
-                                <div className="flex items-center justify-between gap-4">
-                                    <button onClick={toggleMusic} className={clsx("flex-1 flex items-center justify-center gap-2 h-12 rounded-xl  font-semibold transition-colors", isMusicPlaying ? "bg-primary/20 text-primary border border-primary/50" : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white")}>
-                                        <Music size={20} />
-                                        <span className="text-xs">{isMusicPlaying ? 'On' : 'Off'}</span>
+                                <div className="flex items-center justify-between gap-3">
+                                    <button onClick={toggleMusic} className={clsx("flex-1 flex items-center justify-center gap-2 h-11 rounded-xl font-semibold transition-colors text-sm", isMusicPlaying ? "bg-primary/20 text-primary border border-primary/50" : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300")}>
+                                        <Music size={18} />
+                                        <span>{isMusicPlaying ? 'On' : 'Off'}</span>
                                     </button>
                                     <button
                                         onClick={handlePrevChapter}
                                         disabled={!prevChapter}
-                                        className={clsx(
-                                            "flex-1 flex items-center justify-center gap-2 h-12 rounded-xl font-semibold transition-opacity px-4 bg-gray-100 dark:bg-gray-800",
-                                            !prevChapter && "opacity-30"
-                                        )}
+                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-11 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm", !prevChapter && "opacity-30")}
                                     >
-                                        <Rewind size={20} />
-                                        <span className="text-xs">Prev</span>
+                                        <Rewind size={16} />
+                                        Prev
                                     </button>
-                                    <button onClick={toggleTTS} className="size-16 shrink-0 flex items-center justify-center bg-primary rounded-full shadow-lg shadow-primary/40 active:scale-95 transition-transform">
-                                        {isSpeaking ? <Pause className="text-white fill-white" size={32} /> : <Play className="text-white fill-white ml-1" size={32} />}
+                                    <button onClick={toggleTTS} className="size-14 shrink-0 flex items-center justify-center bg-primary rounded-full shadow-lg shadow-primary/30 active:scale-95 transition-transform">
+                                        {isSpeaking ? <Pause className="text-white fill-white" size={28} /> : <Play className="text-white fill-white ml-0.5" size={28} />}
                                     </button>
                                     <button
                                         onClick={handleNextChapter}
                                         disabled={!nextChapter}
-                                        className={clsx("flex-1 flex items-center justify-center gap-2 h-12 rounded-xl text-gray-900 dark:text-white font-semibold transition-opacity px-4 bg-gray-100 dark:bg-gray-800", !nextChapter && "opacity-30")}
+                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-11 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm", !nextChapter && "opacity-30")}
                                     >
-                                        <FastForward size={20} />
-                                        <span className="text-xs">Next</span>
+                                        Next
+                                        <FastForward size={16} />
                                     </button>
                                 </div>
 
                                 {/* Quick Actions Grid */}
-                                <div className="grid grid-cols-3 gap-2">
+                                <div className="grid grid-cols-3 gap-2.5">
                                     <button
                                         onClick={() => {
                                             setShowSettings(false);
                                             setShowChapterSidebar(true);
                                         }}
-                                        className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold transition-colors active:scale-95"
+                                        className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold transition-colors active:scale-95"
                                     >
                                         <List size={20} />
-                                        <span className="text-[10px]">Contents</span>
+                                        <span className="text-[11px]">Contents</span>
                                     </button>
                                     <button
                                         onClick={handleShowSummary}
-                                        className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800 transition-colors active:scale-95"
+                                        className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 font-semibold border border-indigo-200 dark:border-indigo-800 transition-colors active:scale-95"
                                     >
                                         <Sparkles size={20} />
-                                        <span className="text-[10px]">Summary</span>
+                                        <span className="text-[11px]">Summary</span>
                                     </button>
                                     {!isLiveMode && (
                                         <button
                                             onClick={handleResyncChapter}
                                             disabled={isResyncing || !chapter?.audioPath}
                                             className={clsx(
-                                                "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-bold transition-colors active:scale-95",
+                                                "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-semibold transition-colors active:scale-95",
                                                 isResyncing
                                                     ? "bg-primary/20 text-primary border border-primary/50"
                                                     : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200",
@@ -1062,7 +1059,7 @@ export const Reader = () => {
                                             )}
                                         >
                                             <RefreshCw size={20} className={isResyncing ? "animate-spin" : ""} />
-                                            <span className="text-[10px]">{isResyncing ? 'Syncing...' : 'Resync'}</span>
+                                            <span className="text-[11px]">{isResyncing ? 'Syncing...' : 'Resync'}</span>
                                         </button>
                                     )}
                                     {isLiveMode && (
@@ -1070,7 +1067,7 @@ export const Reader = () => {
                                             onClick={handleSaveOffline}
                                             disabled={isSavingOffline || isChapterSaved}
                                             className={clsx(
-                                                "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-bold transition-colors active:scale-95",
+                                                "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-semibold transition-colors active:scale-95",
                                                 isChapterSaved
                                                     ? "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800"
                                                     : isSavingOffline
@@ -1080,49 +1077,47 @@ export const Reader = () => {
                                         >
                                             {isSavingOffline ? (
                                                 <Loader2 size={20} className="animate-spin" />
-                                            ) : isChapterSaved ? (
-                                                <Download size={20} />
                                             ) : (
                                                 <Download size={20} />
                                             )}
-                                            <span className="text-[10px]">{isChapterSaved ? 'Saved' : isSavingOffline ? 'Saving...' : 'Save'}</span>
+                                            <span className="text-[11px]">{isChapterSaved ? 'Saved' : isSavingOffline ? 'Saving...' : 'Save'}</span>
                                         </button>
                                     )}
                                 </div>
 
-                                {/* Font Customization */}
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Font Style</p>
+                                {/* Font & Size */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1.5">
+                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Font</p>
                                         <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
                                             <button
                                                 onClick={() => settingsService.updateSettings({ fontFamily: 'serif' })}
-                                                className={clsx("flex-1 py-1.5 text-xs font-bold rounded shadow-sm transition-colors", font === 'serif' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white" : "text-gray-500")}
+                                                className={clsx("flex-1 py-2 text-xs font-bold rounded-md transition-colors", font === 'serif' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500")}
                                             >
                                                 Serif
                                             </button>
                                             <button
                                                 onClick={() => settingsService.updateSettings({ fontFamily: 'sans' })}
-                                                className={clsx("flex-1 py-1.5 text-xs font-bold rounded shadow-sm transition-colors", font === 'sans' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white" : "text-gray-500")}
+                                                className={clsx("flex-1 py-2 text-xs font-bold rounded-md transition-colors", font === 'sans' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500")}
                                             >
                                                 Sans
                                             </button>
                                             <button
                                                 onClick={() => settingsService.updateSettings({ fontFamily: 'comfortable' })}
-                                                className={clsx("flex-1 py-1.5 text-xs font-bold rounded shadow-sm transition-colors", font === 'comfortable' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white" : "text-gray-500")}
+                                                className={clsx("flex-1 py-2 text-xs font-bold rounded-md transition-colors", font === 'comfortable' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500")}
                                             >
                                                 Soft
                                             </button>
                                         </div>
                                     </div>
-                                    <div className="space-y-2">
-                                        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Font Size (px)</p>
+                                    <div className="space-y-1.5">
+                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Size</p>
                                         <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
                                             {fontSizes.map((size) => (
                                                 <button
                                                     key={size.label}
                                                     onClick={() => settingsService.updateSettings({ fontSize: size.value })}
-                                                    className={clsx("size-8 text-[10px] font-black rounded-lg transition-all", fontSize === size.value ? "bg-primary text-white shadow-lg shadow-primary/30 scale-110" : "text-gray-400 hover:text-gray-600")}
+                                                    className={clsx("size-9 text-[10px] font-black rounded-lg transition-all", fontSize === size.value ? "bg-primary text-white shadow-md shadow-primary/30 scale-105" : "text-gray-400 hover:text-gray-600")}
                                                 >
                                                     {size.label}
                                                 </button>
@@ -1132,8 +1127,8 @@ export const Reader = () => {
                                 </div>
 
                                 {/* Theme Selection */}
-                                <div className="space-y-3">
-                                    <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Reading Theme</p>
+                                <div className="space-y-2">
+                                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Theme</p>
                                     <div className="grid grid-cols-4 gap-3">
                                         {[
                                             { id: 'light', color: 'bg-white', label: 'Paper' },
@@ -1145,16 +1140,16 @@ export const Reader = () => {
                                                 key={t.id}
                                                 onClick={() => settingsService.updateSettings({ theme: t.id as any })}
                                                 className={clsx(
-                                                    "group flex flex-col items-center gap-2",
+                                                    "group flex flex-col items-center gap-1.5",
                                                     theme === t.id ? "scale-105" : "opacity-60 grayscale-[0.5]"
                                                 )}
                                             >
                                                 <div className={clsx(
-                                                    "size-12 rounded-2xl border-2 transition-all",
+                                                    "size-11 rounded-xl border-2 transition-all",
                                                     t.color,
-                                                    theme === t.id ? "border-primary shadow-lg shadow-primary/20" : "border-transparent"
+                                                    theme === t.id ? "border-primary shadow-md shadow-primary/20" : "border-transparent"
                                                 )} />
-                                                <span className={clsx("text-[10px] font-bold uppercase tracking-tighter transition-colors", theme === t.id ? "text-primary" : "text-gray-500")}>
+                                                <span className={clsx("text-[10px] font-bold uppercase tracking-tight transition-colors", theme === t.id ? "text-primary" : "text-gray-500")}>
                                                     {t.label}
                                                 </span>
                                             </button>
