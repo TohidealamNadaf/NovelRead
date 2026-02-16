@@ -312,19 +312,28 @@ class DatabaseService {
     }
     // ---------------------
 
-    async addNovel(novel: Novel) {
+    async addNovel(novel: Novel, skipSave = false) {
         console.log("Adding novel to DB:", novel);
         const db = await this.getDB();
         if (!db) {
             console.error("DB not initialized in addNovel");
             return;
         }
-        // Use INSERT OR IGNORE so we never overwrite an existing novel's progress
-        const query = `
-        INSERT OR IGNORE INTO novels (id, title, author, coverUrl, sourceUrl, category, status, summary, lastReadChapterId, totalChapters, lastFetchedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-    `;
-        await db.run(query, [
+        // Single UPSERT: insert if new, update metadata (but preserve lastReadChapterId) if existing
+        await db.run(`
+            INSERT INTO novels (id, title, author, coverUrl, sourceUrl, category, status, summary, lastReadChapterId, totalChapters, lastFetchedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title = COALESCE(excluded.title, title),
+                author = COALESCE(excluded.author, author),
+                coverUrl = COALESCE(excluded.coverUrl, coverUrl),
+                sourceUrl = COALESCE(excluded.sourceUrl, sourceUrl),
+                summary = COALESCE(excluded.summary, summary),
+                status = COALESCE(excluded.status, status),
+                category = COALESCE(excluded.category, category),
+                totalChapters = COALESCE(excluded.totalChapters, totalChapters),
+                lastFetchedAt = COALESCE(excluded.lastFetchedAt, lastFetchedAt);
+        `, [
             novel.id,
             novel.title,
             novel.author || 'Unknown',
@@ -333,37 +342,12 @@ class DatabaseService {
             novel.category || 'Unknown',
             novel.status || 'Ongoing',
             novel.summary || null,
-            null,
             novel.totalChapters || 0,
             novel.lastFetchedAt || Math.floor(Date.now() / 1000)
         ]);
-        // Update metadata fields (but NOT lastReadChapterId) for existing novels
-        // Also update totalChapters and lastFetchedAt if provided
-        await db.run(`
-        UPDATE novels SET
-            title = COALESCE(?, title),
-            author = COALESCE(?, author),
-            coverUrl = COALESCE(?, coverUrl),
-            sourceUrl = COALESCE(?, sourceUrl),
-            summary = COALESCE(?, summary),
-            status = COALESCE(?, status),
-            category = COALESCE(?, category),
-            totalChapters = COALESCE(?, totalChapters),
-            lastFetchedAt = COALESCE(?, lastFetchedAt)
-        WHERE id = ?
-    `, [
-            novel.title || null,
-            novel.author || null,
-            novel.coverUrl || null,
-            novel.sourceUrl || null,
-            novel.summary || null,
-            novel.status || null,
-            novel.category || null,
-            novel.totalChapters || null,
-            novel.lastFetchedAt || Math.floor(Date.now() / 1000),
-            novel.id
-        ]);
-        await this.save();
+        if (!skipSave) {
+            await this.save();
+        }
         console.log(`[dbService] addNovel complete for ${novel.title} (${novel.id}). Category: ${novel.category}`);
     }
 

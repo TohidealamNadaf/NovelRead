@@ -210,7 +210,10 @@ export const ChapterSidebar = ({
                             >
                                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                                     const chapter = chapters[virtualRow.index];
-                                    const isCurrent = chapter.id === currentChapterId;
+                                    // Use index-based matching (more reliable after sidebar navigation) with ID fallback
+                                    const isCurrent = currentIndex >= 0
+                                        ? virtualRow.index === currentIndex
+                                        : chapter.id === currentChapterId;
 
                                     return (
                                         <ChapterRow

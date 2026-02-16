@@ -212,7 +212,12 @@ export const Reader = () => {
                 if ((!cData.content || cData.content.length < 50) && cData.audioPath && cData.audioPath.startsWith('http')) {
                     console.log(`[Reader] Empty chapter detected, auto-fetching content from ${cData.audioPath}`);
                     try {
-                        const fetchedContent = await scraperService.fetchChapterContent(cData.audioPath);
+                        const fetchedContent = await Promise.race([
+                            scraperService.fetchChapterContent(cData.audioPath),
+                            new Promise<string>((_, reject) =>
+                                setTimeout(() => reject(new Error('Auto-fetch timed out')), 15000)
+                            )
+                        ]);
                         if (fetchedContent && fetchedContent.length > 50) {
                             cData.content = fetchedContent;
                             setChapter({ ...cData }); // Update UI immediately
@@ -242,40 +247,40 @@ export const Reader = () => {
                 // Update reading progress (marks chapter as read + updates lastReadChapterId)
                 await dbService.updateReadingProgress(nid, cid);
 
-                // HYBRID SYNC / Navigation Recovery: If novel has a sourceUrl, fetch the full web index in background
-                if (nData?.sourceUrl) {
-                    // console.log(`[Reader] Triggering background live sync for ${nid}`);
-                    try {
-                        await scraperService.fetchNovelFast(nData.sourceUrl, (webChapters) => {
-                            // Update sidebar only
-                            setAllChapters(webChapters.map((ch, idx) => ({
-                                id: ch.url,
-                                novelId: nid,
-                                title: ch.title,
-                                orderIndex: idx,
-                                isRead: 0
-                            } as Chapter)));
+                // Show content immediately — mark loading as done BEFORE background sync
+                setLoading(false);
 
-                            // RULE: Update nav state if empty OR if web index is more complete
-                            const webHasMore = webChapters.length > navChapters.length;
-                            if (navChapters.length === 0 || webHasMore) {
-                                const currentIndex = webChapters.findIndex(ch => ch.url === cData.audioPath || ch.title === cData.title);
-                                if (currentIndex !== -1) {
-                                    setNavChapters(webChapters);
-                                    setNavIndex(currentIndex);
-                                } else if (navChapters.length === 0) {
-                                    setNavChapters(localChapters);
-                                    setNavIndex(cData.orderIndex);
-                                }
+                // HYBRID SYNC / Navigation Recovery: Fire-and-forget background sync (non-blocking)
+                if (nData?.sourceUrl) {
+                    scraperService.fetchNovelFast(nData.sourceUrl, (webChapters) => {
+                        // Update sidebar only
+                        setAllChapters(webChapters.map((ch, idx) => ({
+                            id: ch.url,
+                            novelId: nid,
+                            title: ch.title,
+                            orderIndex: idx,
+                            isRead: 0
+                        } as Chapter)));
+
+                        // RULE: Update nav state if empty OR if web index is more complete
+                        const webHasMore = webChapters.length > navChapters.length;
+                        if (navChapters.length === 0 || webHasMore) {
+                            const currentIndex = webChapters.findIndex(ch => ch.url === cData.audioPath || ch.title === cData.title);
+                            if (currentIndex !== -1) {
+                                setNavChapters(webChapters);
+                                setNavIndex(currentIndex);
+                            } else if (navChapters.length === 0) {
+                                setNavChapters(localChapters);
+                                setNavIndex(cData.orderIndex);
                             }
-                        });
-                    } catch (syncErr) {
+                        }
+                    }).catch(syncErr => {
                         console.warn("[Reader] Background sync failed", syncErr);
                         if (navChapters.length === 0) {
                             setNavChapters(localChapters);
                             setNavIndex(cData.orderIndex);
                         }
-                    }
+                    });
                 } else if (navChapters.length === 0) {
                     setNavChapters(localChapters);
                     setNavIndex(cData.orderIndex);
@@ -408,9 +413,25 @@ export const Reader = () => {
                 setIsChapterSaved(true);
                 console.log(`[Reader] Using persistent content for ${chapterStableId}`);
             } else if (chapterUrl) {
-                // 2. Fetch live content
+                // 2. Fetch live content with timeout protection
                 setIsChapterSaved(false);
-                content = await scraperService.fetchChapterContent(chapterUrl);
+                const fetchWithTimeout = (url: string, timeoutMs: number) =>
+                    Promise.race([
+                        scraperService.fetchChapterContent(url),
+                        new Promise<string>((_, reject) =>
+                            setTimeout(() => reject(new Error('Chapter fetch timed out')), timeoutMs)
+                        )
+                    ]);
+                try {
+                    content = await fetchWithTimeout(chapterUrl, 15000);
+                } catch (fetchErr) {
+                    console.warn('[Reader] First fetch attempt failed, retrying...', fetchErr);
+                    try {
+                        content = await fetchWithTimeout(chapterUrl, 15000);
+                    } catch {
+                        content = '<p>Chapter content could not be loaded. Please try again or check your connection.</p>';
+                    }
+                }
             }
 
             // Create chapter object for rendering (using stable IDs if possible)
@@ -1187,8 +1208,11 @@ export const Reader = () => {
                 currentIndex={navIndex}
                 novelTitle={novel?.title || ''}
                 onSelectChapter={(ch) => {
+                    // Find the correct index within allChapters (which is what the sidebar shows)
+                    const sidebarIndex = allChapters.findIndex(c => c.id === ch.id);
+                    const correctIndex = sidebarIndex >= 0 ? sidebarIndex : 0;
+
                     if (isLiveMode) {
-                        const idx = navChapters.findIndex(lc => lc.url === ch.id);
                         navigate(`/read/live/${encodeURIComponent(ch.id)}`, {
                             state: {
                                 liveMode: true,
@@ -1196,18 +1220,17 @@ export const Reader = () => {
                                 chapterTitle: ch.title,
                                 novelTitle: location.state?.novelTitle,
                                 novelCoverUrl: location.state?.novelCoverUrl,
-                                chapters: navChapters,
-                                currentIndex: idx >= 0 ? idx : 0,
+                                chapters: [...allChapters],
+                                currentIndex: correctIndex,
                             },
                             replace: true
                         });
                     } else {
-                        const idx = navChapters.findIndex(lc => lc.id === ch.id || lc.audioPath === ch.id || lc.url === ch.id);
                         navigate(`/read/${novelId}/${ch.id}`, {
                             state: {
                                 ...location.state,
-                                chapters: navChapters,
-                                currentIndex: idx >= 0 ? idx : ch.orderIndex,
+                                chapters: [...allChapters],
+                                currentIndex: correctIndex,
                                 liveMode: isLiveMode
                             },
                             replace: true

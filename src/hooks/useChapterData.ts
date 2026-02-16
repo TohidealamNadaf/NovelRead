@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { dbService, type Novel, type Chapter } from '../services/db.service';
 import { scraperService, type ScraperProgress } from '../services/scraper.service';
@@ -35,10 +35,15 @@ export function useChapterData() {
     const [scrapingProgress, setScrapingProgress] = useState<ScraperProgress>(scraperService.progress);
     const [isGlobalScraping, setIsGlobalScraping] = useState(scraperService.isScraping);
 
+    // Lock to prevent re-entry into loadData (prevents DB transaction errors)
+    const isLoadingRef = useRef(false);
+
     const loadData = async () => {
         if (!novelId) return;
+        if (isLoadingRef.current) return; // Prevent re-entry
 
         try {
+            isLoadingRef.current = true;
             setLoading(true);
             await dbService.initialize();
 
@@ -166,13 +171,13 @@ export function useChapterData() {
                         // Update State & DB
                         if (dbNovel) {
                             try {
-                                // 1. Update Novel Metadata FIRST to ensure FK exists
+                                // 1. Update Novel Metadata FIRST (skipSave: addChapters will do the final save)
                                 await dbService.addNovel({
                                     ...dbNovel,
                                     title: data.title || dbNovel.title,
                                     totalChapters: data.chapters.length,
                                     lastFetchedAt: Math.floor(Date.now() / 1000)
-                                });
+                                }, true);
 
                                 // 2. Save all chapters to DB
                                 // Standardize ID format: {novelId}-ch-{index}
@@ -227,6 +232,7 @@ export function useChapterData() {
             setLoading(false);
         } finally {
             setLoadingPage(0);
+            isLoadingRef.current = false;
         }
     };
 

@@ -40,6 +40,8 @@ export class ScraperService {
     private currentProgress: ScraperProgress = { current: 0, total: 0, currentTitle: '', logs: [] };
     private activeNovel: NovelMetadata | null = null;
     private listeners: ((progress: ScraperProgress, isScraping: boolean) => void)[] = [];
+    // Deduplication: prevent concurrent fetchNovelFast calls for the same URL
+    private _pendingFetches = new Map<string, Promise<NovelMetadata>>();
 
     get isScraping() { return this.isScrapingInternal; }
     get progress() { return this.currentProgress; }
@@ -492,6 +494,28 @@ export class ScraperService {
         url: string,
         onProgress?: (chapters: { title: string; url: string; date?: string }[], page: number, metadata?: Partial<NovelMetadata>) => void
     ): Promise<NovelMetadata> {
+        // Deduplication: if the same URL is already being fetched, reuse that promise
+        const normalizedUrl = url.replace(/\/chapters\/?(\\?.*)?$/, '');
+        const existingFetch = this._pendingFetches.get(normalizedUrl);
+        if (existingFetch) {
+            console.log(`[Scraper:Fast] Deduplicating request for ${normalizedUrl}`);
+            return existingFetch;
+        }
+
+        const fetchPromise = this._fetchNovelFastInternal(url, onProgress);
+        this._pendingFetches.set(normalizedUrl, fetchPromise);
+
+        try {
+            return await fetchPromise;
+        } finally {
+            this._pendingFetches.delete(normalizedUrl);
+        }
+    }
+
+    private async _fetchNovelFastInternal(
+        url: string,
+        onProgress?: (chapters: { title: string; url: string; date?: string }[], page: number, metadata?: Partial<NovelMetadata>) => void
+    ): Promise<NovelMetadata> {
         const infoUrl = url.replace(/\/chapters\/?(\\?.*)?$/, '');
         let listUrl = url;
         const userProvidedChapters = /\/chapters\/?(\\?.*)?$/.test(url);
@@ -630,7 +654,10 @@ export class ScraperService {
             }
 
             if (!pageFound) break;
-            // No artificial delay — speed is priority for live browsing
+            // Small delay between pages to avoid 429 rate limiting from CORS proxies
+            if (pageCount > 0) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
         }
 
         return {
@@ -988,8 +1015,8 @@ export class ScraperService {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             },
-            connectTimeout: 25000,
-            readTimeout: 25000
+            connectTimeout: 10000,
+            readTimeout: 10000
         };
 
         try {
@@ -1013,6 +1040,11 @@ export class ScraperService {
                 return String(response.data || '');
             }
             console.warn(`[Scraper] HTTP ${response.status} for ${url}`);
+            // If rate-limited (429), back off before trying next proxy
+            if (response.status === 429) {
+                console.warn(`[Scraper] Rate limited (429), backing off 2s before next proxy...`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
         } catch (error) {
             console.warn(`[Scraper] Fetch error for ${url}:`, error);
         }
