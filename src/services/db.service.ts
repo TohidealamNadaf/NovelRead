@@ -263,6 +263,17 @@ class DatabaseService {
     }
 
     async getDB() {
+        if (this.db) {
+            try {
+                const isConfigured = await this.db.isDBOpen();
+                if (!isConfigured.result) {
+                    await this.db.open();
+                }
+            } catch (e) {
+                console.error("[DB] Failed to verify/reopen DB, re-initializing", e);
+                this.db = null;
+            }
+        }
         if (!this.db) await this.initialize();
         return this.db;
     }
@@ -312,130 +323,220 @@ class DatabaseService {
     }
     // ---------------------
 
+    // --- Write Queue Implementation ---
+    private writeQueue: Promise<any> = Promise.resolve();
+
+    private enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
+        // Chain the operation to the end of the queue
+        const nextOperation = this.writeQueue.then(() => operation()).catch(err => {
+            console.error("DB Write Error:", err);
+            throw err; // Re-throw to caller
+        });
+
+        // Update the queue pointer, catching errors so the queue doesn't stall
+        this.writeQueue = nextOperation.catch(() => { });
+
+        return nextOperation;
+    }
+
     async addNovel(novel: Novel, skipSave = false) {
-        console.log("Adding novel to DB:", novel);
-        const db = await this.getDB();
-        if (!db) {
-            console.error("DB not initialized in addNovel");
-            return;
-        }
-        // Single UPSERT: insert if new, update metadata (but preserve lastReadChapterId) if existing
-        await db.run(`
-            INSERT INTO novels (id, title, author, coverUrl, sourceUrl, category, status, summary, lastReadChapterId, totalChapters, lastFetchedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                title = COALESCE(excluded.title, title),
-                author = COALESCE(excluded.author, author),
-                coverUrl = COALESCE(excluded.coverUrl, coverUrl),
-                sourceUrl = COALESCE(excluded.sourceUrl, sourceUrl),
-                summary = COALESCE(excluded.summary, summary),
-                status = COALESCE(excluded.status, status),
-                category = COALESCE(excluded.category, category),
-                totalChapters = COALESCE(excluded.totalChapters, totalChapters),
-                lastFetchedAt = COALESCE(excluded.lastFetchedAt, lastFetchedAt);
-        `, [
-            novel.id,
-            novel.title,
-            novel.author || 'Unknown',
-            novel.coverUrl || null,
-            novel.sourceUrl,
-            novel.category || 'Unknown',
-            novel.status || 'Ongoing',
-            novel.summary || null,
-            novel.totalChapters || 0,
-            novel.lastFetchedAt || Math.floor(Date.now() / 1000)
-        ]);
-        if (!skipSave) {
-            await this.save();
-        }
-        console.log(`[dbService] addNovel complete for ${novel.title} (${novel.id}). Category: ${novel.category}`);
+        return this.enqueueWrite(async () => {
+            console.log("Adding novel to DB:", novel);
+            const db = await this.getDB();
+            if (!db) {
+                console.error("DB not initialized in addNovel");
+                return;
+            }
+            // Single UPSERT: insert if new, update metadata (but preserve lastReadChapterId) if existing
+            await db.run(`
+                INSERT INTO novels (id, title, author, coverUrl, sourceUrl, category, status, summary, lastReadChapterId, totalChapters, lastFetchedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title = COALESCE(excluded.title, title),
+                    author = COALESCE(excluded.author, author),
+                    coverUrl = COALESCE(excluded.coverUrl, coverUrl),
+                    sourceUrl = COALESCE(excluded.sourceUrl, sourceUrl),
+                    summary = COALESCE(excluded.summary, summary),
+                    status = COALESCE(excluded.status, status),
+                    category = COALESCE(excluded.category, category),
+                    totalChapters = COALESCE(excluded.totalChapters, totalChapters),
+                    lastFetchedAt = COALESCE(excluded.lastFetchedAt, lastFetchedAt);
+            `, [
+                novel.id,
+                novel.title,
+                novel.author || 'Unknown',
+                novel.coverUrl || null,
+                novel.sourceUrl,
+                novel.category || 'Unknown',
+                novel.status || 'Ongoing',
+                novel.summary || null,
+                novel.totalChapters || 0,
+                novel.lastFetchedAt || Math.floor(Date.now() / 1000)
+            ]);
+            if (!skipSave) {
+                await this.save();
+            }
+            console.log(`[dbService] addNovel complete for ${novel.title} (${novel.id}). Category: ${novel.category}`);
+        });
     }
 
     async addChapter(chapter: Chapter) {
-        const db = await this.getDB();
-        if (!db) return;
+        return this.enqueueWrite(async () => {
+            const db = await this.getDB();
+            if (!db) return;
 
-        let contentPath = chapter.contentPath;
+            let contentPath = chapter.contentPath;
 
-        // Save content to FS if provided
-        if (chapter.content) {
-            try {
-                contentPath = await this.saveChapterContent(chapter.novelId, chapter.id, chapter.content);
-            } catch (e) {
-                console.error(`[DB] Failed to save chapter content to FS for ${chapter.id}`, e);
-                // Fallback? ensure we don't block metadata save
+            // Save content to FS if provided
+            if (chapter.content) {
+                try {
+                    contentPath = await this.saveChapterContent(chapter.novelId, chapter.id, chapter.content);
+                } catch (e) {
+                    console.error(`[DB] Failed to save chapter content to FS for ${chapter.id}`, e);
+                    // Fallback? ensure we don't block metadata save
+                }
             }
-        }
 
-        // Preserve existing isRead status if the chapter already exists
-        const existingResult = await db.query('SELECT isRead FROM chapters WHERE id = ?', [chapter.id]);
-        const existing = existingResult.values && existingResult.values.length > 0 ? existingResult.values[0] : null;
-        const isRead = existing && existing.isRead !== undefined ? existing.isRead : 0;
+            // Preserve existing isRead status if the chapter already exists
+            const existingResult = await db.query('SELECT isRead FROM chapters WHERE id = ?', [chapter.id]);
+            const existing = existingResult.values && existingResult.values.length > 0 ? existingResult.values[0] : null;
+            const isRead = existing && existing.isRead !== undefined ? existing.isRead : 0;
 
-        const query = `
-        INSERT OR REPLACE INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-    `;
-        await db.run(query, [
-            chapter.id,
-            chapter.novelId,
-            chapter.title,
-            null, // content is now NULL
-            contentPath || null,
-            chapter.orderIndex,
-            chapter.audioPath || null,
-            isRead,
-            chapter.date || null
-        ]);
-        await this.save();
+            const query = `
+            INSERT OR REPLACE INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+        `;
+            await db.run(query, [
+                chapter.id,
+                chapter.novelId,
+                chapter.title,
+                null, // content is now NULL
+                contentPath || null,
+                chapter.orderIndex,
+                chapter.audioPath || null,
+                isRead,
+                chapter.date || null
+            ]);
+            await this.save();
+        });
     }
 
     async addChapters(chapters: Chapter[]) {
-        const db = await this.getDB();
-        if (!db || chapters.length === 0) return;
+        return this.enqueueWrite(async () => {
+            const db = await this.getDB();
+            if (!db || chapters.length === 0) return;
 
-        console.log(`[dbService] Bulk adding ${chapters.length} chapters...`);
+            console.log(`[dbService] Bulk adding ${chapters.length} chapters...`);
 
-        // 1. Save all content to FS in parallel (or batches)
-        const updatedChapters = await Promise.all(chapters.map(async (ch) => {
-            if (ch.content) {
-                try {
-                    const path = await this.saveChapterContent(ch.novelId, ch.id, ch.content);
-                    return { ...ch, contentPath: path, content: null };
-                } catch (e) {
-                    console.error(`[DB] Failed to save content for ${ch.id}`, e);
-                    return ch;
+            // 1. Save all content to FS in parallel (or batches)
+            const updatedChapters = await Promise.all(chapters.map(async (ch) => {
+                if (ch.content) {
+                    try {
+                        const path = await this.saveChapterContent(ch.novelId, ch.id, ch.content);
+                        return { ...ch, contentPath: path, content: null };
+                    } catch (e) {
+                        console.error(`[DB] Failed to save content for ${ch.id}`, e);
+                        return ch;
+                    }
                 }
-            }
-            return ch;
-        }));
-
-        try {
-            const set = updatedChapters.map(chapter => ({
-                statement: `
-                    INSERT OR REPLACE INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT isRead FROM chapters WHERE id = ?), 0), ?);
-                `,
-                values: [
-                    chapter.id,
-                    chapter.novelId,
-                    chapter.title,
-                    null, // content column cleared
-                    chapter.contentPath || null,
-                    chapter.orderIndex,
-                    chapter.audioPath || null,
-                    chapter.id, // for COALESCE subquery
-                    chapter.date || null
-                ]
+                return ch;
             }));
 
-            await db.executeSet(set);
-            await this.save();
-            console.log(`[dbService] Bulk insert complete.`);
-        } catch (error) {
-            console.error('[dbService] Bulk insert failed:', error);
-        }
+            try {
+                const set = updatedChapters.map(chapter => ({
+                    statement: `
+                        INSERT OR REPLACE INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT isRead FROM chapters WHERE id = ?), 0), ?);
+                    `,
+                    values: [
+                        chapter.id,
+                        chapter.novelId,
+                        chapter.title,
+                        null, // content column cleared
+                        chapter.contentPath || null,
+                        chapter.orderIndex,
+                        chapter.audioPath || null,
+                        chapter.id, // for COALESCE subquery
+                        chapter.date || null
+                    ]
+                }));
+
+                await db.executeSet(set);
+                await this.save();
+                console.log(`[dbService] Bulk insert complete.`);
+            } catch (error) {
+                console.error('[dbService] Bulk insert failed:', error);
+            }
+        });
     }
+
+    async updateNovelMetadata(id: string, metadata: Partial<Novel>) {
+        return this.enqueueWrite(async () => {
+            const db = await this.getDB();
+            if (!db) return;
+
+            try {
+                const fields = [];
+                const values = [];
+
+                if (metadata.title) { fields.push('title = ?'); values.push(metadata.title); }
+                if (metadata.author) { fields.push('author = ?'); values.push(metadata.author); }
+                if (metadata.coverUrl) { fields.push('coverUrl = ?'); values.push(metadata.coverUrl); }
+                if (metadata.summary) { fields.push('summary = ?'); values.push(metadata.summary); }
+                if (metadata.status) { fields.push('status = ?'); values.push(metadata.status); }
+                if (metadata.category) { fields.push('category = ?'); values.push(metadata.category); }
+                if (metadata.totalChapters !== undefined) { fields.push('totalChapters = ?'); values.push(metadata.totalChapters); }
+                if (metadata.lastFetchedAt !== undefined) { fields.push('lastFetchedAt = ?'); values.push(metadata.lastFetchedAt); }
+
+                if (fields.length === 0) return;
+
+                values.push(id);
+                const query = `UPDATE novels SET ${fields.join(', ')} WHERE id = ?`;
+                await db.run(query, values);
+                await this.save();
+            } catch (e) {
+                console.error(`Failed to update metadata for ${id}`, e);
+            }
+        });
+    }
+
+    async deleteNovel(id: string) {
+        return this.enqueueWrite(async () => {
+            const db = await this.getDB();
+            if (!db) return;
+
+            try {
+                // Delete cover image if it's local
+                const novel = await this.getNovel(id);
+                if (novel && novel.coverUrl && !novel.coverUrl.startsWith('http')) {
+                    try {
+                        // Assuming cover is stored in cache directory, but paths might vary.
+                        // For now strict filesystem cleanup is complex, rely on explicit paths if known.
+                    } catch (e) { }
+                }
+
+                // Delete all chapter content files
+                try {
+                    await Filesystem.rmdir({
+                        path: `novels/${id}`,
+                        directory: Directory.Data,
+                        recursive: true
+                    });
+                } catch (e) {
+                    // Ignore if directory doesn't exist
+                }
+
+                await db.run('DELETE FROM novels WHERE id = ?', [id]);
+                // Cascase delete handled by DB schema for chapters
+                await this.save();
+                console.log(`Deleted novel ${id}`);
+            } catch (e) {
+                console.error(`Failed to delete novel ${id}`, e);
+            }
+        });
+    }
+
+
 
     async getStats(): Promise<{ chaptersRead: number, novelsCount: number }> {
         const db = await this.getDB();
@@ -585,60 +686,7 @@ n.*,
         return result.values && result.values.length > 0 ? (result.values[0] as Novel) : null;
     }
 
-    async updateNovelMetadata(id: string, metadata: Partial<Novel>) {
-        const db = await this.getDB();
-        if (!db) return;
 
-        try {
-            const fields = [];
-            const values = [];
-
-            if (metadata.title) { fields.push('title = ?'); values.push(metadata.title); }
-            if (metadata.author) { fields.push('author = ?'); values.push(metadata.author); }
-            if (metadata.coverUrl) { fields.push('coverUrl = ?'); values.push(metadata.coverUrl); }
-            if (metadata.summary) { fields.push('summary = ?'); values.push(metadata.summary); }
-            if (metadata.status) { fields.push('status = ?'); values.push(metadata.status); }
-            if (metadata.category) { fields.push('category = ?'); values.push(metadata.category); }
-
-            if (fields.length === 0) return;
-
-            const query = `UPDATE novels SET ${fields.join(', ')} WHERE id = ? `;
-            values.push(id);
-
-            await db.run(query, values);
-            await this.save();
-        } catch (e) {
-            console.error("Failed to update novel metadata", e);
-            throw e;
-        }
-    }
-
-    async deleteNovel(id: string) {
-        const db = await this.getDB();
-        if (!db) return;
-
-        try {
-            // 1. Delete FS content
-            try {
-                const dir = await this.getNovelDir(id);
-                await Filesystem.rmdir({
-                    path: dir,
-                    directory: Directory.Data,
-                    recursive: true
-                });
-            } catch (fsErr) {
-                console.warn(`[FS] Failed to delete novel directory for ${id}`, fsErr);
-            }
-
-            // 2. Delete DB records & Save
-            await db.run('DELETE FROM chapters WHERE novelId = ?', [id]);
-            await db.run('DELETE FROM novels WHERE id = ?', [id]);
-            await this.save();
-        } catch (e) {
-            console.error("Failed to delete novel", e);
-            throw e;
-        }
-    }
 
     async getNextChapter(novelId: string, currentOrderIndex: number): Promise<Chapter | null> {
         const db = await this.getDB();
@@ -661,44 +709,48 @@ n.*,
     }
 
     async updateReadingProgress(novelId: string, chapterId: string) {
-        const db = await this.getDB();
-        if (!db) return;
+        return this.enqueueWrite(async () => {
+            const db = await this.getDB();
+            if (!db) return;
 
-        try {
-            // Update novel's lastReadChapterId and timestamp
-            const res = await db.run('UPDATE novels SET lastReadChapterId = ?, lastReadAt = ? WHERE id = ?', [chapterId, Date.now(), novelId]);
+            try {
+                // Update novel's lastReadChapterId and timestamp
+                const res = await db.run('UPDATE novels SET lastReadChapterId = ?, lastReadAt = ? WHERE id = ?', [chapterId, Date.now(), novelId]);
 
-            // Fallback for Live novels (not in DB)
-            const changes = res.changes?.changes || 0;
-            if (changes === 0 && typeof localStorage !== 'undefined') {
-                localStorage.setItem(`lastRead:${novelId}`, chapterId);
-                localStorage.setItem(`lastReadAt:${novelId}`, Date.now().toString());
+                // Fallback for Live novels (not in DB)
+                const changes = res.changes?.changes || 0;
+                if (changes === 0 && typeof localStorage !== 'undefined') {
+                    localStorage.setItem(`lastRead:${novelId}`, chapterId);
+                    localStorage.setItem(`lastReadAt:${novelId}`, Date.now().toString());
+                }
+
+                // Mark chapter as read
+                await db.run('UPDATE chapters SET isRead = 1 WHERE id = ?', [chapterId]);
+                await this.save();
+            } catch (e) {
+                console.error("Failed to update reading progress", e);
             }
-
-            // Mark chapter as read
-            await db.run('UPDATE chapters SET isRead = 1 WHERE id = ?', [chapterId]);
-            await this.save();
-        } catch (e) {
-            console.error("Failed to update reading progress", e);
-        }
+        });
     }
 
     async updateChapterContent(novelId: string, chapterId: string, content: string) {
-        const db = await this.getDB();
-        if (!db) return;
+        return this.enqueueWrite(async () => {
+            const db = await this.getDB();
+            if (!db) return;
 
-        try {
-            // 1. Save to Filesystem
-            const contentPath = await this.saveChapterContent(novelId, chapterId, content);
+            try {
+                // 1. Save to Filesystem
+                const contentPath = await this.saveChapterContent(novelId, chapterId, content);
 
-            // 2. Update DB: set contentPath and clear legacy content column
-            await db.run('UPDATE chapters SET contentPath = ?, content = NULL WHERE id = ? AND novelId = ?', [contentPath, chapterId, novelId]);
-            await this.save();
-            console.log(`Chapter ${chapterId} content updated successfully to ${contentPath}`);
-        } catch (e) {
-            console.error("Failed to update chapter content", e);
-            throw e;
-        }
+                // 2. Update DB: set contentPath and clear legacy content column
+                await db.run('UPDATE chapters SET contentPath = ?, content = NULL WHERE id = ? AND novelId = ?', [contentPath, chapterId, novelId]);
+                await this.save();
+                console.log(`Chapter ${chapterId} content updated successfully to ${contentPath}`);
+            } catch (e) {
+                console.error("Failed to update chapter content", e);
+                throw e;
+            }
+        });
     }
 
     async getSummary(chapterId: string, type: 'extractive' | 'events'): Promise<string | null> {
@@ -717,17 +769,19 @@ n.*,
     }
 
     async saveSummary(chapterId: string, type: 'extractive' | 'events', text: string) {
-        const db = await this.getDB();
-        if (!db) return;
-        try {
-            await db.run(
-                'INSERT OR REPLACE INTO chapter_summaries (chapterId, summaryType, summaryText) VALUES (?, ?, ?)',
-                [chapterId, type, text]
-            );
-            await this.save();
-        } catch (e) {
-            console.error("Failed to save summary", e);
-        }
+        return this.enqueueWrite(async () => {
+            const db = await this.getDB();
+            if (!db) return;
+            try {
+                await db.run(
+                    'INSERT OR REPLACE INTO chapter_summaries (chapterId, summaryType, summaryText) VALUES (?, ?, ?)',
+                    [chapterId, type, text]
+                );
+                await this.save();
+            } catch (e) {
+                console.error("Failed to save summary", e);
+            }
+        });
     }
 }
 

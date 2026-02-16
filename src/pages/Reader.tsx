@@ -23,12 +23,42 @@ export const Reader = () => {
     const [chapter, setChapter] = useState<Chapter | null>(null);
     const [novel, setNovel] = useState<Novel | null>(null);
     const [loading, setLoading] = useState(true);
+    // Chapter Sidebar State
+    const [showChapterSidebar, setShowChapterSidebar] = useState(false);
+    const [allChapters, setAllChapters] = useState<Chapter[]>([]);
+
+    // Live browsing mode indicators
+    const isLiveMode = !!location.state?.liveMode || novelId?.startsWith('live-');
 
     // Unified Navigation State (Hybrid/Live/Offline)
     const [navChapters, setNavChapters] = useState<(Chapter | any)[]>(
         location.state?.chapters ? [...location.state.chapters] : []
     );
-    const [navIndex, setNavIndex] = useState<number>(location.state?.currentIndex ?? -1);
+    // Derived Navigation Index
+    const navIndex = useMemo(() => {
+        if (!navChapters.length) return -1;
+
+        const idToFind = isLiveMode ? (location.state?.chapterUrl || chapterId) : chapterId;
+
+        // Priority 1: ID match
+        let idx = navChapters.findIndex(c => c.id === idToFind);
+
+        // Priority 2: URL/AudioPath match
+        if (idx === -1 && isLiveMode) {
+            idx = navChapters.findIndex(c => c.url === idToFind || c.audioPath === idToFind);
+        }
+
+        // Priority 3: Stable ID partial match
+        if (idx === -1 && typeof idToFind === 'string' && idToFind.includes('-ch-')) {
+            const match = idToFind.match(/-ch-(\d+)$/);
+            if (match) {
+                const orderIdx = parseInt(match[1], 10);
+                if (orderIdx >= 0 && orderIdx < navChapters.length) return orderIdx;
+            }
+        }
+
+        return idx;
+    }, [navChapters, chapterId, isLiveMode, location.state?.chapterUrl]);
 
     // Derived Navigation (Primary source of truth for continuity)
     const prevChapter = useMemo(() => {
@@ -45,11 +75,11 @@ export const Reader = () => {
         return null;
     }, [navChapters, navIndex]);
 
-    // Live browsing mode indicators
-    const isLiveMode = !!location.state?.liveMode || novelId?.startsWith('live-');
+
     const [liveError, setLiveError] = useState('');
     const [isSavingOffline, setIsSavingOffline] = useState(false);
     const [isChapterSaved, setIsChapterSaved] = useState(false);
+    const [readChapterIds, setReadChapterIds] = useState<Set<string>>(new Set());
 
     // Visual indicators state (Decoupled from core gesture logic)
     const [pullDistance, setPullDistance] = useState(0);
@@ -73,9 +103,18 @@ export const Reader = () => {
     const [summaryData, setSummaryData] = useState<{ extractive: string; events: string[] } | null>(null);
     const [isSummarizing, setIsSummarizing] = useState(false);
 
-    // Chapter Sidebar State
-    const [showChapterSidebar, setShowChapterSidebar] = useState(false);
-    const [allChapters, setAllChapters] = useState<Chapter[]>([]);
+    const sidebarChapters = useMemo(() => {
+        const source = navChapters.length > 0 ? navChapters : allChapters;
+        return source.map(ch => ({
+            ...ch,
+            isRead: readChapterIds.has(ch.id) ||
+                (ch.audioPath && readChapterIds.has(ch.audioPath)) ||
+                ch.isRead ||
+                0
+        }));
+    }, [navChapters, allChapters, readChapterIds]);
+
+
     const edgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
     const [isEdgeSwiping, setIsEdgeSwiping] = useState(false);
 
@@ -109,9 +148,6 @@ export const Reader = () => {
         // Sync nav state from router immediately to prevent gesture break during sync
         if (location.state?.chapters) {
             setNavChapters([...location.state.chapters]);
-            if (typeof location.state.currentIndex === 'number') {
-                setNavIndex(location.state.currentIndex);
-            }
         }
 
         // Sync with global audio state
@@ -234,18 +270,29 @@ export const Reader = () => {
                 // Fetch all local chapters for the sidebar initially
                 const localChapters = await dbService.getChapters(nid);
                 setAllChapters(localChapters);
+                const ids = new Set<string>();
+                localChapters.filter(c => c.isRead).forEach(c => {
+                    ids.add(c.id);
+                    if (c.audioPath) ids.add(c.audioPath);
+                });
+                setReadChapterIds(ids);
 
                 // Restore navigation state if missing (Continue button flow)
                 if (navChapters.length === 0 && localChapters.length > 0) {
                     const index = localChapters.findIndex(c => c.id === cid);
                     if (index !== -1) {
                         setNavChapters(localChapters);
-                        setNavIndex(index);
                     }
                 }
 
                 // Update reading progress (marks chapter as read + updates lastReadChapterId)
                 await dbService.updateReadingProgress(nid, cid);
+                setReadChapterIds(prev => {
+                    const next = new Set(prev);
+                    next.add(cid);
+                    if (cData.audioPath) next.add(cData.audioPath);
+                    return next;
+                });
 
                 // Show content immediately — mark loading as done BEFORE background sync
                 setLoading(false);
@@ -268,22 +315,18 @@ export const Reader = () => {
                             const currentIndex = webChapters.findIndex(ch => ch.url === cData.audioPath || ch.title === cData.title);
                             if (currentIndex !== -1) {
                                 setNavChapters(webChapters);
-                                setNavIndex(currentIndex);
                             } else if (navChapters.length === 0) {
                                 setNavChapters(localChapters);
-                                setNavIndex(cData.orderIndex);
                             }
                         }
                     }).catch(syncErr => {
                         console.warn("[Reader] Background sync failed", syncErr);
                         if (navChapters.length === 0) {
                             setNavChapters(localChapters);
-                            setNavIndex(cData.orderIndex);
                         }
                     });
                 } else if (navChapters.length === 0) {
                     setNavChapters(localChapters);
-                    setNavIndex(cData.orderIndex);
                 }
             }
         } catch (error) {
@@ -324,6 +367,17 @@ export const Reader = () => {
 
         try {
             await dbService.initialize();
+
+            // Sync Read Status
+            if (stableNovelId) {
+                const dbChapters = await dbService.getChapters(stableNovelId);
+                const ids = new Set<string>();
+                dbChapters.filter(c => c.isRead).forEach(c => {
+                    ids.add(c.id);
+                    if (c.audioPath) ids.add(c.audioPath);
+                });
+                setReadChapterIds(ids);
+            }
 
             // Attempt to restore Novel info from DB if missing
             if (!currentSourceUrl && stableNovelId) {
@@ -389,9 +443,7 @@ export const Reader = () => {
                 }
             }
 
-            if (currentIdx !== -1) {
-                setNavIndex(currentIdx);
-            }
+
 
             // --- END RECOVERY ---
 
@@ -511,12 +563,18 @@ export const Reader = () => {
                     } as any);
                 }
                 await dbService.updateReadingProgress(stableNovelId, chapterStableId);
+                setReadChapterIds(prev => {
+                    const next = new Set(prev);
+                    next.add(chapterStableId);
+                    if (chapterUrl) next.add(chapterUrl);
+                    return next;
+                });
                 console.log(`[Reader] Progress updated for library novel: ${stableNovelId}`);
             }
 
             // Sync back to unified state
             setNavChapters(currentLiveChapters);
-            setNavIndex(currentIdx);
+
 
         } catch (error) {
             console.error('Failed to load live chapter:', error);
@@ -737,11 +795,9 @@ export const Reader = () => {
                 const result = summarizerService.summarize(textContent);
                 setSummaryData(result);
 
-                // 3. Save to DB
-                await Promise.all([
-                    dbService.saveSummary(chapter.id, 'extractive', result.extractive),
-                    dbService.saveSummary(chapter.id, 'events', JSON.stringify(result.events))
-                ]);
+                // 3. Save to DB sequentially
+                await dbService.saveSummary(chapter.id, 'extractive', result.extractive);
+                await dbService.saveSummary(chapter.id, 'events', JSON.stringify(result.events));
             }
         } catch (error) {
             console.error("Summary generation failed", error);
@@ -839,6 +895,8 @@ export const Reader = () => {
             </div>
         );
     }
+
+
 
     return (
         <div
@@ -1203,34 +1261,45 @@ export const Reader = () => {
             <ChapterSidebar
                 isOpen={showChapterSidebar}
                 onClose={() => setShowChapterSidebar(false)}
-                chapters={allChapters}
+                chapters={sidebarChapters}
                 currentChapterId={isLiveMode ? (location.state?.chapterUrl || '') : (chapterId || '')}
-                currentIndex={navIndex}
+                currentIndex={navIndex >= 0 ? navIndex : undefined}
                 novelTitle={novel?.title || ''}
-                onSelectChapter={(ch) => {
-                    // Find the correct index within allChapters (which is what the sidebar shows)
-                    const sidebarIndex = allChapters.findIndex(c => c.id === ch.id);
-                    const correctIndex = sidebarIndex >= 0 ? sidebarIndex : 0;
+                onSelectChapter={(_, index) => {
+                    const sourceList = navChapters.length > 0 ? navChapters : allChapters;
+
+                    // Source of Truth: Trust the Virtual List Index
+                    // The index passed here comes directly from the sidebar's map function
+                    // and corresponds 1:1 with our source list.
+                    const correctIndex = index;
+
+                    const target = sourceList[correctIndex];
+
+                    const targetUrl =
+                        target?.url ||
+                        target?.audioPath ||
+                        target?.id ||
+                        '';
 
                     if (isLiveMode) {
-                        navigate(`/read/live/${encodeURIComponent(ch.id)}`, {
+                        navigate(`/read/live/${encodeURIComponent(targetUrl)}`, {
                             state: {
                                 liveMode: true,
-                                chapterUrl: ch.id,
-                                chapterTitle: ch.title,
+                                chapterUrl: targetUrl,
+                                chapterTitle: target?.title,
                                 novelTitle: location.state?.novelTitle,
                                 novelCoverUrl: location.state?.novelCoverUrl,
-                                chapters: [...allChapters],
-                                currentIndex: correctIndex,
+                                chapters: [...sourceList],
+                                currentIndex: correctIndex, // Pass validated index
                             },
                             replace: true
                         });
                     } else {
-                        navigate(`/read/${novelId}/${ch.id}`, {
+                        navigate(`/read/${novelId}/${target.id}`, {
                             state: {
                                 ...location.state,
-                                chapters: [...allChapters],
-                                currentIndex: correctIndex,
+                                chapters: [...sourceList],
+                                currentIndex: correctIndex, // Pass validated index
                                 liveMode: isLiveMode
                             },
                             replace: true

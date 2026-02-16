@@ -13,7 +13,7 @@ interface ChapterSidebarProps {
     currentChapterId: string;
     currentIndex?: number; // Optional explicit index for more reliable matching
     novelTitle: string;
-    onSelectChapter: (chapter: Chapter) => void;
+    onSelectChapter: (chapter: Chapter, index: number) => void;
 }
 
 // Memoized Row Component for Virtualization
@@ -115,7 +115,7 @@ export const ChapterSidebar = ({
         if (isOpen && currentIndex !== -1 && parentRef.current) {
             rowVirtualizer.scrollToIndex(currentIndex, { align: 'center' });
         }
-    }, [isOpen]); // Only run when isOpen changes to true
+    }, [isOpen, currentIndex]); // Auto-scroll on open AND index change
 
     const scrollHelpers = {
         toTop: () => rowVirtualizer.scrollToIndex(0, { align: 'start' }),
@@ -227,7 +227,7 @@ export const ChapterSidebar = ({
                                                 transform: `translateY(${virtualRow.start}px)`,
                                             }}
                                             onClick={() => {
-                                                onSelectChapter(chapter);
+                                                onSelectChapter(chapter, virtualRow.index);
                                                 onClose();
                                             }}
                                         />
