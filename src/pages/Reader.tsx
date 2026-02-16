@@ -314,7 +314,12 @@ export const Reader = () => {
                         if (navChapters.length === 0 || webHasMore) {
                             const currentIndex = webChapters.findIndex(ch => ch.url === cData.audioPath || ch.title === cData.title);
                             if (currentIndex !== -1) {
-                                setNavChapters(webChapters);
+                                setNavChapters(webChapters.map((ch, idx) => ({
+                                    ...ch,
+                                    id: ch.url,
+                                    novelId: nid,
+                                    orderIndex: idx
+                                } as any)));
                             } else if (navChapters.length === 0) {
                                 setNavChapters(localChapters);
                             }
@@ -355,7 +360,14 @@ export const Reader = () => {
         let currentLiveChapters = (location.state?.chapters || (navChapters.length > 0 ? navChapters : [])) as any[];
 
         // SANITIZE: Remove any null/undefined entries that might have polluted the list
-        currentLiveChapters = currentLiveChapters.filter(c => !!c);
+        // AND NORMALIZE: Ensure all chapters have an ID (crucial for read status)
+        currentLiveChapters = currentLiveChapters.filter(c => !!c).map((c, i) => ({
+            ...c,
+            id: c.id || c.url, // Ensure ID exists
+            novelId: novelId || 'live',
+            orderIndex: c.orderIndex ?? i,
+            url: c.url || c.contentPath // Ensure URL exists
+        }));
 
         let currentIdx = (location.state?.currentIndex ?? (navIndex !== -1 ? navIndex : -1)) as number;
 
@@ -363,6 +375,11 @@ export const Reader = () => {
         if (!stableNovelId || stableNovelId === 'null') {
             // Fallback to generating
             stableNovelId = getStableNovelId();
+        }
+
+        // Re-map novelId now that we have stableNovelId (if it was missing)
+        if (stableNovelId) {
+            currentLiveChapters.forEach(c => c.novelId = stableNovelId!);
         }
 
         try {
@@ -414,7 +431,12 @@ export const Reader = () => {
                 console.log("[Reader] Missing navChapters in state, fetching live index...");
                 try {
                     const novelData = await scraperService.fetchNovelFast(currentSourceUrl);
-                    currentLiveChapters = novelData.chapters;
+                    currentLiveChapters = novelData.chapters.map((c, i) => ({
+                        ...c,
+                        id: c.url,
+                        novelId: stableNovelId!,
+                        orderIndex: i
+                    } as any));
                     currentIdx = currentLiveChapters.findIndex(ch =>
                         ch.url === chapterId ||
                         ch.id === chapterId ||
