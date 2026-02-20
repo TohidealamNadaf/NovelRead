@@ -44,34 +44,24 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Decode Keystore
-        env:
-          ENCODED_STRING: ${{ secrets.KEYSTORE_BASE64 }}
+      - name: Cache debug keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
+      - name: Create debug keystore if missing
         run: |
-          mkdir -p ~/.android
-          echo $ENCODED_STRING | base64 -di > ~/.android/release.keystore
+          if [ ! -f ~/.android/debug.keystore ]; then
+            mkdir -p ~/.android
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 36500 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
-      - name: Build Release APK
-        run: cd android && ./gradlew assembleRelease
+      - name: Build with Gradle
+        run: cd android && ./gradlew assembleDebug
 
-      - name: Sign APK
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          cd android/app/build/outputs/apk/release
-          build_tools_version=$(ls $ANDROID_HOME/build-tools | sort -V | tail -n1)
-          $ANDROID_HOME/build-tools/$build_tools_version/apksigner sign --ks ~/.android/release.keystore --ks-key-alias $KEY_ALIAS --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD app-release-unsigned.apk
-
-      - name: Zipalign APK
-        run: |
-          cd android/app/build/outputs/apk/release
-          build_tools_version=$(ls $ANDROID_HOME/build-tools | sort -V | tail -n1)
-          $ANDROID_HOME/build-tools/$build_tools_version/zipalign -f 4 app-release-unsigned.apk app-release.apk
-
-      - name: Upload Release APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
