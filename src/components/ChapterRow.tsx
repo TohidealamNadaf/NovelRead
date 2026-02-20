@@ -37,7 +37,7 @@ export const ChapterRow = memo(({
                         {index}
                     </span>
                     <div className="flex flex-col min-w-0">
-                        <h3 className={`text-sm font-bold truncate dark:text-slate-100 ${isRead ? 'opacity-60 font-normal' : ''}`}>
+                        <h3 className={`text-sm font-bold line-clamp-2 dark:text-slate-100 ${isRead ? 'opacity-60 font-normal' : ''}`}>
                             {chapter.title}
                         </h3>
                         {/* Show date if available (mainly for Live chapters) */}

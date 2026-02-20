@@ -16,27 +16,23 @@ interface ChapterSidebarProps {
     onSelectChapter: (chapter: Chapter, index: number) => void;
 }
 
-// Memoized Row Component for Virtualization
 const ChapterRow = memo(({
     chapter,
     index,
     isCurrent,
     isRead,
-    style,
     onClick
 }: {
     chapter: Chapter;
     index: number;
     isCurrent: boolean;
     isRead: boolean | undefined;
-    style: React.CSSProperties;
     onClick: () => void;
 }) => (
     <button
         onClick={onClick}
-        style={style}
         className={clsx(
-            "absolute top-0 left-0 w-full text-left px-4 py-3 border-b border-slate-100 dark:border-white/5 transition-colors flex items-center gap-3",
+            "w-full text-left px-4 py-3 border-b border-slate-100 dark:border-white/5 transition-colors flex items-center gap-3",
             isCurrent
                 ? "bg-primary/10 border-l-4 border-l-primary"
                 : "hover:bg-slate-50 dark:hover:bg-white/5 active:bg-slate-100 dark:active:bg-white/10"
@@ -60,7 +56,7 @@ const ChapterRow = memo(({
 
         {/* Chapter Title */}
         <span className={clsx(
-            "flex-1 text-sm line-clamp-1",
+            "flex-1 text-sm line-clamp-2",
             isCurrent
                 ? "font-bold text-primary"
                 : isRead
@@ -216,21 +212,29 @@ export const ChapterSidebar = ({
                                         : chapter.id === currentChapterId;
 
                                     return (
-                                        <ChapterRow
+                                        <div
                                             key={virtualRow.key}
-                                            chapter={chapter}
-                                            index={virtualRow.index}
-                                            isCurrent={isCurrent}
-                                            isRead={!!chapter.isRead}
+                                            data-index={virtualRow.index}
+                                            ref={rowVirtualizer.measureElement}
                                             style={{
-                                                height: `${virtualRow.size}px`,
+                                                position: 'absolute',
+                                                top: 0,
+                                                left: 0,
+                                                width: '100%',
                                                 transform: `translateY(${virtualRow.start}px)`,
                                             }}
-                                            onClick={() => {
-                                                onSelectChapter(chapter, virtualRow.index);
-                                                onClose();
-                                            }}
-                                        />
+                                        >
+                                            <ChapterRow
+                                                chapter={chapter}
+                                                index={virtualRow.index}
+                                                isCurrent={isCurrent}
+                                                isRead={!!chapter.isRead}
+                                                onClick={() => {
+                                                    onSelectChapter(chapter, virtualRow.index);
+                                                    onClose();
+                                                }}
+                                            />
+                                        </div>
                                     );
                                 })}
                             </div>
