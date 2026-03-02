@@ -56,7 +56,7 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading }: SummaryMod
             >
                 {/* Drag Handle */}
                 <motion.div
-                    className="w-full flex justify-center pt-3 pb-1 cursor-grab active:cursor-grabbing touch-none"
+                    className="w-full flex justify-center pt-1 pb-0 cursor-grab active:cursor-grabbing touch-none"
                     onPan={(_e, info) => {
                         const vh = window.innerHeight;
                         const maxH = vh * 0.95;
@@ -84,7 +84,7 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading }: SummaryMod
                 </motion.div>
 
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-white/5">
+                <div className="flex items-center justify-between pt-1 px-4 pb-4 border-b border-gray-100 dark:border-white/5">
                     <div className="flex items-center gap-2 text-primary">
                         <Sparkles size={18} />
                         <h3 className="font-bold text-lg">Quick Chapter Overview</h3>
