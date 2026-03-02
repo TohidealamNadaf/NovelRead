@@ -5,7 +5,7 @@ import { FooterNavigation } from '../components/FooterNavigation';
 import { Header } from '../components/Header';
 import { dbService } from '../services/db.service';
 import { useNavigate } from 'react-router-dom';
-import { ActionSheet, ActionSheetSelection } from '@capacitor/action-sheet';
+import { ActionSheet, ActionSheetButtonStyle } from '@capacitor/action-sheet';
 import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Preferences } from '@capacitor/preferences';
 import { Filesystem, Directory } from '@capacitor/filesystem';
@@ -131,7 +131,7 @@ export const Profile = () => {
                 options: [
                     { title: 'Take Photo' },
                     { title: 'Choose from Gallery' },
-                    { title: 'Cancel', style: ActionSheetSelection.Cancel }
+                    { title: 'Cancel', style: ActionSheetButtonStyle.Cancel }
                 ]
             });
 
