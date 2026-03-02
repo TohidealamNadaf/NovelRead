@@ -660,6 +660,10 @@ export class ScraperService {
             }
         }
 
+        if (!title && allChapters.length === 0) {
+            throw new Error('Failed to fetch novel metadata and chapters. Device might be offline or source is blocking requests.');
+        }
+
         return {
             title: title || 'Unknown Title',
             author: author || 'Unknown Author',
@@ -835,6 +839,10 @@ export class ScraperService {
             if (currentUrl) await new Promise(r => setTimeout(r, 300));
         }
 
+        if (!title && allChapters.length === 0) {
+            throw new Error('Failed to fetch novel metadata and chapters. Device might be offline or source is blocking requests.');
+        }
+
         return {
             title: title || 'Unknown Title',
             author: author || 'Unknown Author',
@@ -852,7 +860,20 @@ export class ScraperService {
                 let text = $(elem).text();
                 text = text.replace(/(\[[^\]]+\])/g, '<span class="smart-system">$1</span>');
                 text = text.replace(/(\([^\)]+\))/g, '<span class="smart-note">$1</span>');
-                text = text.replace(/(^|\s|>)(')([^']{2,}?)(')(?=$|\s|<|[.,;:?!])/g, '$1<span class="smart-thought">$2$3$4</span>');
+
+                // Enhanced Thought Regex: Handles standard quotes ' ' and smart quotes ‘ ’
+                // Looks for opening quote (start of line, space, or standard punctuation before)
+                // Captures contents (at least 2 chars, non-greedy)
+                // Looks for closing quote (followed by end of line, space, or standard punctuation)
+                text = text.replace(/(^|\s|[([<])(['‘])(.*?)(['’])(?=$|\s|[.,;:?!\])>])/g, function (match, p1, p2, p3, p4) {
+                    // Prevent replacing text that looks like a contraction (e.g., 'tis) or plural possessives (e.g., dogs')
+                    // by ensuring there's actual content and it doesn't immediately touch word characters illegally
+                    if (p3.trim().length > 1) {
+                        return `${p1}<span class="smart-thought">${p2}${p3}${p4}</span>`;
+                    }
+                    return match;
+                });
+
                 text = text.replace(/(^|\s|>)(\*)([^*]+)(\*)(?=$|\s|<|[.,;:?!])/g, '$1<span class="smart-sfx">$2$3$4</span>');
                 $(elem).replaceWith(text);
             }

@@ -1,6 +1,6 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { X, FileText, List, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import clsx from 'clsx';
 
 interface SummaryModalProps {
@@ -13,12 +13,36 @@ interface SummaryModalProps {
 export const SummaryModal = ({ isOpen, onClose, summary, isLoading }: SummaryModalProps) => {
     const [activeTab, setActiveTab] = useState<'overview' | 'events'>('overview');
 
+    // Height tracking values
+    const getVh = () => typeof window !== 'undefined' ? window.innerHeight : 800;
+    const MIN_HEIGHT = 400;
+
+    // Set dynamic base min tracking depending on screen height
+    const heightRaw = useMotionValue(Math.max(MIN_HEIGHT, getVh() * 0.4));
+
+    // Clamp the pixel height to visually bounded percentage values
+    const height = useTransform(heightRaw, (h) => {
+        const vh = getVh();
+        const bounded = Math.min(Math.max(h, vh * 0.4), vh * 0.95);
+        return `${bounded}px`;
+    });
+
+    // Reset tracking when opened
+    useEffect(() => {
+        if (isOpen) {
+            heightRaw.set(Math.max(MIN_HEIGHT, getVh() * 0.4));
+        }
+    }, [isOpen, heightRaw]);
+
     if (!isOpen) return null;
 
+    // Helper to safely split newlines regardless of OS
+    const summaryParagraphs = summary?.extractive?.split(/\n+/).filter(p => p.trim().length > 0) || [];
+
     return (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-0 sm:p-4">
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-0 sm:p-4 pointer-events-none">
             <div
-                className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity pointer-events-auto"
                 onClick={onClose}
             />
 
@@ -27,8 +51,38 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading }: SummaryMod
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
                 transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                className="w-full max-w-lg bg-white dark:bg-[#1a182b] rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[85vh] z-50 overflow-hidden"
+                style={{ height }}
+                className="w-full max-w-lg bg-white dark:bg-[#1a182b] rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col z-50 overflow-hidden pointer-events-auto"
             >
+                {/* Drag Handle */}
+                <motion.div
+                    className="w-full flex justify-center pt-3 pb-1 cursor-grab active:cursor-grabbing touch-none"
+                    onPan={(_e, info) => {
+                        const vh = window.innerHeight;
+                        const maxH = vh * 0.95;
+                        const minH = Math.max(400, vh * 0.4);
+
+                        // info.delta.y is negative when dragging up.
+                        // So subtracting it INCREASES the height.
+                        let newHeight = heightRaw.get() - info.delta.y;
+
+                        // Clamp the internal value so it doesn't run away outside visual bounds
+                        newHeight = Math.min(Math.max(newHeight, minH - 20), maxH + 20);
+
+                        heightRaw.set(newHeight);
+                    }}
+                    onPanEnd={(_e, info) => {
+                        const minH = Math.max(400, window.innerHeight * 0.4);
+
+                        // Close if thrown down fast or pushed below minimum size
+                        if (info.velocity.y > 600 || heightRaw.get() < minH - 10) {
+                            onClose();
+                        }
+                    }}
+                >
+                    <div className="w-8 h-1 bg-gray-300 dark:bg-white/20 rounded-full" />
+                </motion.div>
+
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-white/5">
                     <div className="flex items-center gap-2 text-primary">
@@ -43,12 +97,6 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading }: SummaryMod
                     </button>
                 </div>
 
-                {/* Info Banner */}
-                <div className="bg-primary/5 px-4 py-2 border-b border-primary/10">
-                    <p className="text-[10px] text-primary/80 font-medium text-center uppercase tracking-wide">
-                        Auto-selected excerpts • Generated locally
-                    </p>
-                </div>
 
                 {/* Tabs */}
                 <div className="flex p-2 gap-2 bg-gray-50 dark:bg-black/20">
@@ -95,9 +143,17 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading }: SummaryMod
                                     exit={{ opacity: 0, x: 10 }}
                                     className="prose prose-sm dark:prose-invert prose-p:leading-relaxed"
                                 >
-                                    <p className="text-gray-700 dark:text-gray-300 first-letter:text-2xl first-letter:font-bold first-letter:text-primary first-letter:float-left first-letter:mr-1">
-                                        {summary.extractive}
-                                    </p>
+                                    {summaryParagraphs.map((paragraph, idx) => (
+                                        <p
+                                            key={idx}
+                                            className={clsx(
+                                                "text-gray-700 dark:text-gray-300 mb-4",
+                                                idx === 0 && "first-letter:text-2xl first-letter:font-bold first-letter:text-primary first-letter:float-left first-letter:mr-1"
+                                            )}
+                                        >
+                                            {paragraph.trim()}
+                                        </p>
+                                    ))}
                                 </motion.div>
                             ) : (
                                 <motion.div
@@ -125,6 +181,6 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading }: SummaryMod
                     )}
                 </div>
             </motion.div>
-        </div>
+        </div >
     );
 };

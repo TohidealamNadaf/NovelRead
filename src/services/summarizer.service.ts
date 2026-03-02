@@ -1,135 +1,79 @@
 export class SummarizerService {
-    // text cleaning regex
-    private static readonly STOP_WORDS = new Set([
-        'a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 'as', 'what',
-        'when', 'where', 'how', 'who', 'whom', 'which', 'this', 'that', 'these',
-        'those', 'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'shall',
-        'should', 'can', 'could', 'may', 'might', 'must', 'of', 'at', 'by',
-        'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during',
-        'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in',
-        'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once',
-        'here', 'there', 'why', 'how', 'all', 'any', 'both', 'each', 'few',
-        'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only',
-        'own', 'same', 'so', 'than', 'too', 'very', 's', 't', 'can', 'will',
-        'just', 'don', 'should', 'now'
-    ]);
-
     /**
-     * Main entry point to summarize text.
+     * Main entry point to summarize text using the Gemini 2.5 Flash API.
      * Returns both an extractive summary paragraph and a list of key event bullets.
      */
-    public summarize(text: string): { extractive: string, events: string[] } {
-        if (!text || text.length < 500) {
+    public async generateSummary(chapterTitle: string, text: string, apiKey: string): Promise<{ extractive: string, events: string[] }> {
+        // Fallback for extremely short texts
+        if (!text || text.length < 200) {
             return {
                 extractive: text || "",
                 events: []
             };
         }
 
-        // 1. Segment text into sentences
-        const sentences = this.segmentSentences(text);
-        if (sentences.length === 0) return { extractive: "", events: [] };
+        try {
+            // Clean the text slightly to save tokens
+            const cleanText = text.replace(/\s+/g, ' ').trim();
+            // Truncate massively long text just in case (e.g. 50k chars is well within context limits but good for safety)
+            const safeText = cleanText.substring(0, 100000);
 
-        // 2. Extract keywords and calculate frequencies
-        const wordFreq = this.calculateWordFrequencies(sentences);
+            const prompt = `You are an expert novel summarizer.
+Analyze the following chapter content titled "${chapterTitle}".
+Return a strict JSON object with two keys:
+1. "extractive": A brief, engaging multi-paragraph summary (max 2-3 short paragraphs). Keep it concise so it doesn't read like a full chapter. If important characters are speaking, include critical conversational dialogue/talking if necessary for better understanding. Separate paragraphs with a double newline (\\n\\n).
+2. "events": An array of strings, where each string is a concise bullet point of a key action, revelation, or event that occurred. (3-6 bullet points)
 
-        // 3. Score sentences
-        const scoredSentences = sentences.map((sentence, index) => {
-            const score = this.scoreSentence(sentence, index, sentences.length, wordFreq);
-            return { ...sentence, score };
-        });
+Output ONLY valid JSON. Do not use Markdown formatting for the JSON block itself.
 
-        // 4. Select top sentences for Extractive Summary (Top 15%)
-        // Sort by score descending
-        const sortedByScore = [...scoredSentences].sort((a, b) => b.score - a.score);
+Chapter Content:
+${safeText}`;
 
-        const summaryCount = Math.max(3, Math.ceil(sentences.length * 0.15));
-        const topSentences = sortedByScore.slice(0, summaryCount);
-
-        // Sort back by original index to preserve flow
-        const summarySentences = topSentences.sort((a, b) => a.index - b.index);
-        const extractive = summarySentences.map(s => s.text).join(' ');
-
-        // 5. Select items for Key Events (Top 5-8 items, distinct from summary if possible)
-        // We simply take the very highest scoring ones that are "action-oriented" (heuristic: verb presence?)
-        // For simplicity, we use the top scoring ones but formatted as bullets.
-        const eventCount = Math.min(8, Math.max(3, Math.ceil(sentences.length * 0.05)));
-        const eventSentences = sortedByScore.slice(0, eventCount).sort((a, b) => a.index - b.index);
-        const events = eventSentences.map(s => s.text);
-
-        return { extractive, events };
-    }
-
-    private segmentSentences(text: string): { text: string; index: number }[] {
-        // Simple segmentation: split by . ! ? followed by space or end of string
-        // Also handling quotes slightly
-        const cleanText = text.replace(/\s+/g, ' ').trim();
-        const matches = cleanText.match(/[^.!?]+[.!?]+(?:\s|$)/g);
-
-        if (!matches) return [{ text: cleanText, index: 0 }];
-
-        return matches
-            .map((s, i) => ({ text: s.trim(), index: i }))
-            .filter(s => s.text.length > 20); // Filter out tiny fragments
-    }
-
-    private calculateWordFrequencies(sentences: { text: string }[]): Map<string, number> {
-        const freq = new Map<string, number>();
-
-        sentences.forEach(s => {
-            const words = s.text.toLowerCase().split(/[\s,.!?;:"'()]+/);
-            words.forEach(w => {
-                if (w.length > 2 && !SummarizerService.STOP_WORDS.has(w) && !/^\d+$/.test(w)) {
-                    freq.set(w, (freq.get(w) || 0) + 1);
-                }
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{
+                            text: prompt
+                        }]
+                    }],
+                    generationConfig: {
+                        temperature: 0.3,
+                        responseMimeType: "application/json",
+                    }
+                })
             });
-        });
 
-        return freq;
-    }
-
-    private scoreSentence(
-        sentence: { text: string },
-        index: number,
-        totalSentences: number,
-        wordFreq: Map<string, number>
-    ): number {
-        const words = sentence.text.toLowerCase().split(/[\s,.!?;:"'()]+/);
-        let validWordCount = 0;
-        let wordScore = 0;
-
-        // Keyword Score
-        words.forEach(w => {
-            if (wordFreq.has(w)) {
-                wordScore += wordFreq.get(w)!;
-                validWordCount++;
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error("Gemini API Error:", errorData);
+                throw new Error("Failed to generate summary from Gemini API.");
             }
-        });
 
-        if (validWordCount === 0) return 0;
+            const data = await response.json();
+            const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
-        // Normalize by length (density)
-        let totalScore = wordScore / words.length;
+            if (!textResponse) {
+                throw new Error("Invalid response structure from Gemini API.");
+            }
 
-        // Position Bias
-        const position = index / totalSentences;
-        if (position < 0.2) {
-            totalScore *= 1.2; // Boost intro
-        } else if (position > 0.8) {
-            totalScore *= 1.1; // Slight boost outro
+            const parsed = JSON.parse(textResponse);
+            return {
+                extractive: parsed.extractive || "Unable to extract summary.",
+                events: Array.isArray(parsed.events) ? parsed.events : []
+            };
+
+        } catch (error) {
+            console.error("SummarizerService.generateSummary Error:", error);
+            // Fallback object on failure
+            return {
+                extractive: "Failed to generate summary due to an error.",
+                events: ["Please check your internet connection.", "Ensure your API key is valid in settings.", "Try again later."]
+            };
         }
-
-        // Length Penalty
-        if (words.length < 6) totalScore *= 0.5; // Too short
-        if (words.length > 40) totalScore *= 0.8; // Too long / run-on
-
-        // Dialogue Penalty (Heuristic: contains quotes)
-        if (sentence.text.includes('"') || sentence.text.includes('“') || sentence.text.includes('”')) {
-            totalScore *= 0.8; // Reduce dialogue priority for summary
-        }
-
-        return totalScore;
     }
 }
 

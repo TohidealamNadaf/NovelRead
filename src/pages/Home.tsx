@@ -99,7 +99,7 @@ export const Home = () => {
     const rowVirtualizer = useVirtualizer({
         count: rowCount,
         getScrollElement: () => containerRef.current,
-        estimateSize: () => 180, // Height of card row + gap
+        estimateSize: () => 220, // Height of card row + gap
         overscan: 5,
     });
 
@@ -259,15 +259,16 @@ export const Home = () => {
                                 return (
                                     <div
                                         key={virtualRow.key}
+                                        data-index={virtualRow.index}
+                                        ref={rowVirtualizer.measureElement}
                                         style={{
                                             position: 'absolute',
                                             top: 0,
                                             left: 0,
                                             width: '100%',
-                                            height: `${virtualRow.size}px`,
                                             transform: `translateY(${virtualRow.start}px)`,
                                         }}
-                                        className="grid grid-cols-4 gap-2"
+                                        className="grid grid-cols-4 gap-3 pb-6"
                                     >
                                         {rowItems.map((novel) => (
                                             <Link

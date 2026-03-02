@@ -18,17 +18,47 @@ export const DiscoverList = () => {
     const [items, setItems] = useState<any[]>([]); // Renamed from novels to items
     const [searchQuery, setSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [rankingType, setRankingType] = useState<'overall' | 'ratings' | 'most-read' | 'most-review'>('overall');
-    const [page, setPage] = useState(1);
+    const [rankingType, setRankingType] = useState<'overall' | 'ratings' | 'most-read' | 'most-review'>(() => {
+        return (sessionStorage.getItem(`dlRankType_${category}_${mode}`) as any) || 'overall';
+    });
+    const [page, setPage] = useState(() => {
+        return parseInt(sessionStorage.getItem(`dlPage_${category}_${mode}`) || '1', 10);
+    });
     const [hasMore, setHasMore] = useState(true);
     const isLoadingRef = useRef(false);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+    // Save scroll position when navigating away
+    const handleScroll = () => {
+        if (scrollContainerRef.current) {
+            sessionStorage.setItem(`dlScroll_${category}_${mode}`, scrollContainerRef.current.scrollTop.toString());
+        }
+    };
+
+    // Restore scroll position after items load
+    useEffect(() => {
+        if (!isLoading && items.length > 0 && scrollContainerRef.current) {
+            const savedScroll = sessionStorage.getItem(`dlScroll_${category}_${mode}`);
+            if (savedScroll) {
+                scrollContainerRef.current.scrollTop = parseInt(savedScroll, 10);
+            }
+        }
+    }, [isLoading, items.length, category, mode]);
 
     useEffect(() => {
         if (isLoadingRef.current) return;
-        setPage(1);
-        setItems([]); // Clear previous items
-        loadCategoryData(1, rankingType);
-    }, [category, rankingType, mode]);
+        // Don't arbitrarily reset to 1 here since we want to restore page
+        sessionStorage.setItem(`dlPage_${category}_${mode}`, page.toString());
+        sessionStorage.setItem(`dlRankType_${category}_${mode}`, rankingType);
+
+        loadCategoryData(page, rankingType);
+    }, [category, rankingType, mode, page]);
+
+    const handleRankTypeChange = (newType: any) => {
+        setRankingType(newType);
+        setPage(1); // Reset page on filter change
+        sessionStorage.setItem(`dlScroll_${category}_${mode}`, '0'); // Reset scroll
+    };
 
     const loadCategoryData = async (pageNum: number, rankType: any = 'overall') => {
         let pageTitle = 'Discover';
@@ -121,9 +151,11 @@ export const DiscoverList = () => {
     const handlePageChange = (direction: 'next' | 'prev') => {
         const nextPage = direction === 'next' ? page + 1 : Math.max(1, page - 1);
         setPage(nextPage);
-        loadCategoryData(nextPage, rankingType);
+        sessionStorage.setItem(`dlScroll_${category}_${mode}`, '0'); // Reset scroll for new page
         // Scroll to top
-        document.querySelector('.flex-1.overflow-y-auto')?.scrollTo({ top: 0, behavior: 'smooth' });
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
     };
 
     const filteredItems = items.filter(n => n.title.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -173,7 +205,7 @@ export const DiscoverList = () => {
                         ].map(type => (
                             <button
                                 key={type.id}
-                                onClick={() => setRankingType(type.id as any)}
+                                onClick={() => handleRankTypeChange(type.id)}
                                 className={`flex-none px-4 py-1.5 rounded-full text-xs font-bold transition-all border ${rankingType === type.id
                                     ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20'
                                     : 'bg-white dark:bg-[#1c1c1e] text-slate-500 border-slate-200 dark:border-white/5 active:bg-slate-50 dark:active:bg-white/5'
@@ -187,7 +219,11 @@ export const DiscoverList = () => {
             </div>
 
             {/* Grid Content - Independent Scroll */}
-            <div className="flex-1 overflow-y-auto px-4 pt-2 pb-32">
+            <div
+                ref={scrollContainerRef}
+                onScroll={handleScroll}
+                className="flex-1 overflow-y-auto px-4 pt-2 pb-32"
+            >
                 {isLoading ? (
                     <div className="flex flex-col items-center justify-center py-20 opacity-50">
                         <RefreshCw size={40} className="animate-spin mb-4 text-primary" />

@@ -1,0 +1,9 @@
+=== NovelFire Ranking ===
+  .rank-novels: 1 items
+  First item: title="Shadow Slave" img="/server-1/shadow-slave.jpg" author=""
+
+=== NovelBin Ranking ===
+  .list-novel: 3
+  .row items: 31
+  Valid items (with cover): 20
+  First: title="Dimensional Keeper: All My Skills Are at" cover="https://images.novelbin.me/novel_200_89/dimensiona" author="ShinGotLost"

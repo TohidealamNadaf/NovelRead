@@ -18,6 +18,7 @@ export interface AppSettings {
     // System
     downloadLocation: 'internal' | 'external';
     scraperProxy: string | null;
+    summarizerApiKey: string | null;
     cloudSync: boolean;
 
     // AI Audio
@@ -41,6 +42,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     pageFlipAnimation: false,
     downloadLocation: 'internal',
     scraperProxy: null,
+    summarizerApiKey: null,
     cloudSync: true,
     ttsVoice: null,
     ttsRate: 1.2,

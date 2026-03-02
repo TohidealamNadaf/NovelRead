@@ -1,0 +1,94 @@
+Container .list-novel found: 3
+Items found: 81
+
+Parsed novels: 30
+  [0] Raft Survival: Billionfold Reward System
+      url: https://novelbin.me/novel-book/raft-survival-billionfold-rew
+      cover: https://images.novelbin.me/novel_200_89/raft-survival-billio
+  [1] Turns Out, I’m In A Villain Clan!
+      url: https://novelbin.me/novel-book/turns-out-im-in-a-villain-cla
+      cover: https://images.novelbin.me/novel_200_89/turns-out-im-in-a-vi
+  [2] My Longevity Simulation
+      url: https://novelbin.me/novel-book/my-longevity-simulation
+      cover: https://images.novelbin.me/novel_200_89/my-longevity-simulat
+  [3] Immortality Through Array Formations
+      url: https://novelbin.me/novel-book/immortality-through-array-for
+      cover: https://images.novelbin.me/novel_200_89/immortality-through-
+  [4] Rebirth as a Tiger: Sister is the Reborn Empress!
+      url: https://novelbin.me/novel-book/rebirth-as-a-tiger-sister-is-
+      cover: https://images.novelbin.me/novel_200_89/rebirth-as-a-tiger-s
+  [5] Apocalypse: King of Zombies
+      url: https://novelbin.me/novel-book/apocalypse-king-of-zombies
+      cover: https://images.novelbin.me/novel_200_89/apocalypse-king-of-z
+  [6] NTR: Mommy Will Help You!
+      url: https://novelbin.me/novel-book/ntr-mommy-will-help-you
+      cover: https://images.novelbin.me/novel_200_89/ntr-mommy-will-help-
+  [7] God-Tier Extraction Talent: Reincarnated in a Game
+      url: https://novelbin.me/novel-book/god-tier-extraction-talent-re
+      cover: https://images.novelbin.me/novel_200_89/god-tier-extraction-
+  [8] Longevity, starting from being a chicken raising s
+      url: https://novelbin.me/novel-book/longevity-starting-from-being
+      cover: https://images.novelbin.me/novel_200_89/longevity-starting-f
+  [9] System: My Doomsday Train
+      url: https://novelbin.me/novel-book/system-my-doomsday-train
+      cover: https://images.novelbin.me/novel_200_89/system-my-doomsday-t
+  [10] Top-Class Comprehension: Start with Basic Fist Tec
+      url: https://novelbin.me/novel-book/top-class-comprehension-start
+      cover: https://images.novelbin.me/novel_200_89/top-class-comprehens
+  [11] Titan King: Ascension of the Giant
+      url: https://novelbin.me/novel-book/titan-king-ascension-of-the-g
+      cover: https://images.novelbin.me/novel_200_89/titan-king-ascension
+  [12] The Glorious Evolution
+      url: https://novelbin.me/novel-book/the-glorious-evolution
+      cover: https://images.novelbin.me/novel_200_89/the-glorious-evoluti
+  [13] Raising My Trash Ability into a Broken SSS+ Rank S
+      url: https://novelbin.me/novel-book/raising-my-trash-ability-into
+      cover: https://images.novelbin.me/novel_200_89/raising-my-trash-abi
+  [14] Dimensional Keeper: All My Skills Are at Level 100
+      url: https://novelbin.me/novel-book/dimensional-keeper-all-my-ski
+      cover: https://images.novelbin.me/novel_200_89/dimensional-keeper-a
+  [15] Immortality Starts With Investment
+      url: https://novelbin.me/novel-book/immortality-starts-with-inves
+      cover: https://images.novelbin.me/novel_200_89/immortality-starts-w
+  [16] Steady Cultivation: Starting With the Perk “Work H
+      url: https://novelbin.me/novel-book/steady-cultivation-starting-w
+      cover: https://images.novelbin.me/novel_200_89/steady-cultivation-s
+  [17] Follow the path of Dao from infancy
+      url: https://novelbin.me/novel-book/follow-the-path-of-dao-from-i
+      cover: https://images.novelbin.me/novel_200_89/follow-the-path-of-d
+  [18] Rebirth: Encyclopedia System
+      url: https://novelbin.me/novel-book/rebirth-encyclopedia-system
+      cover: https://images.novelbin.me/novel_200_89/rebirth-encyclopedia
+  [19] Pain Immunity: Worried the Villains Aren’t Twisted
+      url: https://novelbin.me/novel-book/pain-immunity-worried-the-vil
+      cover: https://images.novelbin.me/novel_200_89/pain-immunity-worrie
+  [20] Catastrophic necromancer
+      url: https://novelbin.me/novel-book/catastrophic-necromancer
+      cover: 
+  [21] Follow the path of Dao from infancy
+      url: https://novelbin.me/novel-book/follow-the-path-of-dao-from-i
+      cover: 
+  [22] Lord of the Mysteries
+      url: https://novelbin.me/novel-book/lord-of-the-mysteries
+      cover: 
+  [23] Immortality Through Array Formations
+      url: https://novelbin.me/novel-book/immortality-through-array-for
+      cover: 
+  [24] Longevity by Picking up Attributes in the Battlefi
+      url: https://novelbin.me/novel-book/longevity-by-picking-up-attri
+      cover: 
+  [25] Reverend Insanity
+      url: https://novelbin.me/novel-book/reverend-insanity
+      cover: 
+  [26] Super Gene
+      url: https://novelbin.me/novel-book/super-gene
+      cover: 
+  [27] Reincarnation Of The Strongest Sword God
+      url: https://novelbin.me/novel-book/reincarnation-of-the-stronges
+      cover: 
+  [28] War Sovereign Soaring The Heavens
+      url: https://novelbin.me/novel-book/war-sovereign-soaring-the-hea
+      cover: 
+  [29] Turns Out, I’m In A Villain Clan!
+      url: https://novelbin.me/novel-book/turns-out-im-in-a-villain-cla
+      cover: 

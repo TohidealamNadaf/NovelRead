@@ -1,0 +1,44 @@
+Total /novel-book/ links: 50
+.novel-item: 0
+.list-novel: 3
+.list-novel > .row: 31
+
+--- .list-novel structure ---
+child[0]: <DIV> class="header-list"
+  HTML: 
+                        <h2>HOT NOVELS </h2>
+
+
+                        <div class="filter"><a href="https://novelbin.me/sort/novelbin-hot/completed">Show Completed
+                                Novels Only</a></div>
+
+
+                    
+child[1]: <DIV> class="row"
+  HTML: 
+                        <div class="col-xs-3">
+                            <div><img data-src="https://images.novelbin.me/novel_200_89/raft-survival-billionfold-reward-system.jpg" class="cover lazy" alt="Raft Survival: Billionfold Reward System"></div>
+                        </div>
+                        <div class="col-xs-7">
+                            <div><span class="glyphicon glyphicon-book"></span>
+                                <h3 class="novel-title"><a href="https://novelbin.me/nov
+
+--- Images with data-src ---
+img[0]: data-src=https://images.novelbin.me/novel_200_89/raft-survival-billionfold-reward-system.jpg
+  src=undefined
+  class=cover lazy
+  parent class=undefined
+img[1]: data-src=https://images.novelbin.me/novel_200_89/turns-out-im-in-a-villain-clan.jpg
+  src=undefined
+  class=cover lazy
+  parent class=undefined
+img[2]: data-src=https://images.novelbin.me/novel_200_89/my-longevity-simulation.jpg
+  src=undefined
+  class=cover lazy
+  parent class=undefined
+
+--- Testing parseNovelsList selectors ---
+  [class*="item"]: 10
+  a[href*="/novel-book/"]: 50
+  .col-xs-12: 16
+  .list-novel .row: 31

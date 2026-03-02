@@ -1,0 +1,22 @@
+{
+  "NovelBin": {
+    "success": false,
+    "reason": "Blocked by Cloudflare",
+    "htmlLength": 7388
+  },
+  "NovelFire_Exact": {
+    "success": false,
+    "reason": "Unknown",
+    "htmlLength": 0
+  },
+  "NovelFire_Short": {
+    "success": false,
+    "reason": "Unknown",
+    "htmlLength": 0
+  },
+  "NovelFire_Short_Cors": {
+    "success": false,
+    "reason": "Unknown",
+    "htmlLength": 103
+  }
+}

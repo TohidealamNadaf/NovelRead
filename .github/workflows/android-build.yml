@@ -3,8 +3,6 @@ name: Android Build
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -35,30 +33,24 @@ jobs:
       - name: Build web assets
         run: npm run build
 
-      - name: Install Capacitor CLI
-        run: npm install -D @capacitor/cli
-
       - name: Sync Capacitor
         run: npx cap sync android
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Cache debug keystore
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore-v1
-
-      - name: Create debug keystore if missing
+      - name: Decode signing keystore
         run: |
-          if [ ! -f ~/.android/debug.keystore ]; then
-            mkdir -p ~/.android
-            keytool -genkeypair -v -keystore ~/.android/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 36500 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
-          fi
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+
+      - name: Set signing environment variables
+        run: |
+          echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
+          echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
+          echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
 
       - name: Build with Gradle
-        run: cd android && ./gradlew assembleDebug
+        run: cd android && ./gradlew clean assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

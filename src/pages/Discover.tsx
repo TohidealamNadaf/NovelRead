@@ -57,7 +57,9 @@ export const Discover = () => {
     const [showSyncModal, setShowSyncModal] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const [mode, setMode] = useState<'novels' | 'manhwa'>('novels');
+    const [mode, setMode] = useState<'novels' | 'manhwa'>(() => {
+        return (sessionStorage.getItem('discoverTabMode') as 'novels' | 'manhwa') || 'novels';
+    });
     const [manhwaData, setManhwaData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
     const [isLoadingManhwa, setIsLoadingManhwa] = useState(false);
     const [novelSearchResults, setNovelSearchResults] = useState<NovelMetadata[]>([]);
@@ -106,10 +108,11 @@ export const Discover = () => {
 
     // Load Manhwa Data when switching tabs
     useEffect(() => {
+        sessionStorage.setItem('discoverTabMode', mode);
         if (mode === 'manhwa' && !manhwaData) {
             loadManhwaData();
         }
-    }, [mode]);
+    }, [mode, manhwaData]);
 
     const loadHomeData = async () => {
         try {

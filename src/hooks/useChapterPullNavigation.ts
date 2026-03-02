@@ -142,9 +142,9 @@ export const useChapterPullNavigation = ({
                 return;
             }
 
-            // 3. Update Progress
+            // 3. Update Progress (Clamp to avoid wild values during rapid scrolls)
             onPulling?.(
-                Math.abs(diffY),
+                Math.max(0, Math.min(Math.abs(diffY), window.innerHeight)),
                 state === 'pulling-prev' ? 'prev' : 'next'
             );
         },
@@ -159,8 +159,10 @@ export const useChapterPullNavigation = ({
 
         isTouchingRef.current = false;
 
-        const absDiff = Math.abs(diffYRef.current);
+        // Ensure visual state resets immediately
         onPulling?.(0, 'none');
+
+        const absDiff = Math.abs(diffYRef.current);
 
         if (state === 'idle') return;
 
@@ -199,7 +201,11 @@ export const useChapterPullNavigation = ({
         isTouchingRef.current = false;
         diffYRef.current = 0;
         setState('idle');
-        onPulling?.(0, 'none');
+
+        // Ensure visual indicators reset completely
+        if (onPulling) {
+            onPulling(0, 'none');
+        }
     }, [onPulling]);
 
     return {

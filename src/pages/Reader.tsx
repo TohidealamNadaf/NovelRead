@@ -14,6 +14,7 @@ import { summarizerService } from '../services/summarizer.service';
 import { Header } from '../components/Header';
 import { useChapterPullNavigation } from '../hooks/useChapterPullNavigation';
 import { ChapterSidebar } from '../components/ChapterSidebar';
+import { ReaderScroller } from '../components/ReaderScroller';
 
 export const Reader = () => {
     const navigate = useNavigate();
@@ -809,17 +810,33 @@ export const Reader = () => {
                     events: JSON.parse(cachedEventsStr)
                 });
             } else {
+                // Check for API Key
+                if (!settings.summarizerApiKey) {
+                    setSummaryData({
+                        extractive: "AI Summarization requires a free Google Gemini API Key.",
+                        events: [
+                            "Open the app Settings",
+                            "Scroll down to Advanced > AI Summarizer Key",
+                            "Tap the link to get your free key and paste it there."
+                        ]
+                    });
+                    setIsSummarizing(false);
+                    return;
+                }
+
                 // 2. Generate if not found (strip HTML for processing)
                 const div = document.createElement('div');
                 div.innerHTML = chapter.content;
                 const textContent = div.textContent || div.innerText || '';
 
-                const result = summarizerService.summarize(textContent);
+                const result = await summarizerService.generateSummary(chapter.title, textContent, settings.summarizerApiKey);
                 setSummaryData(result);
 
-                // 3. Save to DB sequentially
-                await dbService.saveSummary(chapter.id, 'extractive', result.extractive);
-                await dbService.saveSummary(chapter.id, 'events', JSON.stringify(result.events));
+                // 3. Save to DB sequentially only if it actually generated something
+                if (result.events.length > 0 && !result.extractive.includes("Failed to generate")) {
+                    await dbService.saveSummary(chapter.id, 'extractive', result.extractive);
+                    await dbService.saveSummary(chapter.id, 'events', JSON.stringify(result.events));
+                }
             }
         } catch (error) {
             console.error("Summary generation failed", error);
@@ -940,6 +957,9 @@ export const Reader = () => {
                 }
             />
 
+            {/* Fast Scroller Custom Handle */}
+            <ReaderScroller containerRef={scrollContainerRef} isVisible={!showSettings && !showChapterSidebar && !showSummary} />
+
             {/* Edge swipe gesture is now handled on the main reading area below */}
 
             {/* Main Reading Area */}
@@ -961,103 +981,116 @@ export const Reader = () => {
                     }
                 }}
             >
-                {/* Pull to Previous Indicator */}
-                {pullDistance > 10 && (
-                    <motion.div
-                        style={{ height: pullDistance, opacity: Math.min(pullDistance / PULL_THRESHOLD, 1) }}
-                        className="flex flex-col items-center justify-end pb-4 overflow-hidden pointer-events-none"
-                    >
+                <div
+                    className="relative w-full"
+                    style={{
+                        transform: `translateY(-${pushDistance}px)`,
+                        transition: pushDistance === 0 ? 'transform 0.3s ease-out' : 'none'
+                    }}
+                >
+                    {/* Pull to Previous Indicator */}
+                    {pullDistance > 10 && (
                         <motion.div
-                            animate={{ y: pullDistance > PULL_THRESHOLD ? [0, -4, 0] : 0 }}
-                            className="flex flex-col items-center gap-1.5"
+                            style={{ height: pullDistance, opacity: Math.min(pullDistance / PULL_THRESHOLD, 1) }}
+                            className="flex flex-col items-center justify-end pb-4 overflow-hidden pointer-events-none"
                         >
-                            <ChevronDown className={clsx("transition-all duration-300", pullDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
-                            <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pullDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
-                                {pullDistance > PULL_THRESHOLD
-                                    ? (prevChapter ? "Release" : "At Start")
-                                    : (prevChapter ? "Pull for Prev" : "First Chapter")}
-                            </p>
-                        </motion.div>
-                    </motion.div>
-                )}
-
-                <AnimatePresence mode="wait" initial={false} custom={navigationDirection}>
-                    <motion.div
-                        key={chapter.id}
-                        custom={navigationDirection}
-                        variants={{
-                            initial: (direction: string) => ({
-                                opacity: 0,
-                                y: direction === 'next' ? 100 : direction === 'prev' ? -100 : 0,
-                            }),
-                            animate: { opacity: 1, y: 0 },
-                            exit: (direction: string) => ({
-                                opacity: 0,
-                                y: direction === 'next' ? -100 : direction === 'prev' ? 100 : 0,
-                            })
-                        }}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                        transition={{ type: "spring", damping: 25, stiffness: 180 }}
-                        className={clsx("max-w-2xl mx-auto space-y-6 reader-text", font === 'serif' ? 'font-serif' : font === 'sans' ? 'font-sans' : '')}
-                        style={{
-                            fontSize: `${fontSize}rem`,
-                            fontFamily: font === 'comfortable' ? 'Georgia, "Merriweather", "Palatino Linotype", "Book Antiqua", Inter, Roboto, serif' : undefined
-                        }}
-                    >
-                        <div id="reader-content-container" dangerouslySetInnerHTML={{ __html: chapter.content || '' }} />
-
-                        {/* End of Chapter - Next Chapter Hint */}
-                        {nextChapter && (
-                            <div
-                                className="mt-12 mb-8 flex flex-col items-center gap-3 pt-8 border-t border-dashed border-slate-300 dark:border-slate-700 cursor-pointer active:opacity-70 transition-opacity"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleNextChapter();
-                                }}
+                            <motion.div
+                                animate={{ y: pullDistance > PULL_THRESHOLD ? [0, -4, 0] : 0 }}
+                                className="flex flex-col items-center gap-1.5"
                             >
-                                <p className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-widest font-semibold">Tap or swipe up for next chapter</p>
-                                <div className="flex flex-col items-center animate-bounce">
-                                    <ChevronDown size={24} className="text-primary" />
-                                </div>
-                                <p className="text-sm text-slate-500 dark:text-slate-400 text-center max-w-xs line-clamp-1 font-medium">
-                                    {nextChapter.title}
+                                <ChevronDown className={clsx("transition-all duration-300", pullDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
+                                <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pullDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
+                                    {pullDistance > PULL_THRESHOLD
+                                        ? (prevChapter ? "Release" : "At Start")
+                                        : (prevChapter ? "Pull for Prev" : "First Chapter")}
                                 </p>
-                            </div>
-                        )}
-
-                        {/* End of Novel Indicator */}
-                        {!nextChapter && (
-                            <div className="mt-12 mb-8 flex flex-col items-center gap-3 pt-8 border-t border-dashed border-slate-300 dark:border-slate-700">
-                                <p className="text-sm text-slate-500 dark:text-slate-400 font-semibold">🎉 You've reached the end!</p>
-                                <p className="text-xs text-slate-400 dark:text-slate-500">No more chapters available</p>
-                            </div>
-                        )}
-                    </motion.div>
-                </AnimatePresence>
-
-
-
-                {/* Pull Up to Next Indicator */}
-                {pushDistance > 10 && (
-                    <motion.div
-                        style={{ height: pushDistance, opacity: Math.min(pushDistance / PULL_THRESHOLD, 1) }}
-                        className="flex flex-col items-center justify-start pt-4 overflow-hidden pointer-events-none"
-                    >
-                        <motion.div
-                            animate={{ y: pushDistance > PULL_THRESHOLD ? [0, 4, 0] : 0 }}
-                            className="flex flex-col items-center gap-1.5"
-                        >
-                            <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pushDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
-                                {pushDistance > PULL_THRESHOLD
-                                    ? (nextChapter ? "Release" : "At End")
-                                    : (nextChapter ? "Pull for Next" : "End of Story")}
-                            </p>
-                            <ChevronUp className={clsx("transition-all duration-300", pushDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
+                            </motion.div>
                         </motion.div>
-                    </motion.div>
-                )}
+                    )}
+
+                    <AnimatePresence mode="wait" initial={false} custom={navigationDirection}>
+                        <motion.div
+                            key={chapter.id}
+                            custom={navigationDirection}
+                            variants={{
+                                initial: (direction: string) => ({
+                                    opacity: 0,
+                                    y: direction === 'next' ? 100 : direction === 'prev' ? -100 : 0,
+                                }),
+                                animate: { opacity: 1, y: 0 },
+                                exit: (direction: string) => ({
+                                    opacity: 0,
+                                    y: direction === 'next' ? -100 : direction === 'prev' ? 100 : 0,
+                                })
+                            }}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            transition={{ type: "spring", damping: 25, stiffness: 180 }}
+                            className={clsx("max-w-2xl mx-auto space-y-6 reader-text", font === 'serif' ? 'font-serif' : font === 'sans' ? 'font-sans' : '')}
+                            style={{
+                                fontSize: `${fontSize}rem`,
+                                fontFamily: font === 'comfortable' ? 'Georgia, "Merriweather", "Palatino Linotype", "Book Antiqua", Inter, Roboto, serif' : undefined
+                            }}
+                        >
+                            <div id="reader-content-container" dangerouslySetInnerHTML={{ __html: chapter.content || '' }} />
+
+                            {/* End of Chapter - Next Chapter Hint */}
+                            {nextChapter && (
+                                <div
+                                    className="mt-12 mb-8 flex flex-col items-center gap-3 pt-8 border-t border-dashed border-slate-300 dark:border-slate-700 cursor-pointer active:opacity-70 transition-opacity"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleNextChapter();
+                                    }}
+                                >
+                                    <p className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-widest font-semibold">Tap or swipe up for next chapter</p>
+                                    <div className="flex flex-col items-center animate-bounce">
+                                        <ChevronDown size={24} className="text-primary" />
+                                    </div>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400 text-center max-w-xs line-clamp-1 font-medium">
+                                        {nextChapter.title}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* End of Novel Indicator */}
+                            {!nextChapter && (
+                                <div className="mt-12 mb-8 flex flex-col items-center gap-3 pt-8 border-t border-dashed border-slate-300 dark:border-slate-700">
+                                    <p className="text-sm text-slate-500 dark:text-slate-400 font-semibold">🎉 You've reached the end!</p>
+                                    <p className="text-xs text-slate-400 dark:text-slate-500">No more chapters available</p>
+                                </div>
+                            )}
+                        </motion.div>
+                    </AnimatePresence>
+
+                    {/* Pull Up to Next Indicator */}
+                    {pushDistance > 10 && (
+                        <motion.div
+                            style={{
+                                position: 'absolute',
+                                left: 0,
+                                right: 0,
+                                bottom: `-${pushDistance}px`,
+                                height: pushDistance,
+                                opacity: Math.min(pushDistance / PULL_THRESHOLD, 1)
+                            }}
+                            className="flex flex-col items-center justify-start pt-4 overflow-hidden pointer-events-none"
+                        >
+                            <motion.div
+                                animate={{ y: pushDistance > PULL_THRESHOLD ? [0, 4, 0] : 0 }}
+                                className="flex flex-col items-center gap-1.5"
+                            >
+                                <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pushDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
+                                    {pushDistance > PULL_THRESHOLD
+                                        ? (nextChapter ? "Release" : "At End")
+                                        : (nextChapter ? "Pull for Next" : "End of Story")}
+                                </p>
+                                <ChevronUp className={clsx("transition-all duration-300", pushDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </div>
 
                 {/* Extra Padding Removed */}
             </div>

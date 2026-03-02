@@ -1,3 +1,16 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+plugins {
+    // Allows Gradle to auto-download missing JDKs (like Java 21) locally
+    id "org.gradle.toolchains.foojay-resolver-convention" version "0.8.0"
+}
+
 include ':app'
 include ':capacitor-cordova-android-plugins'
 project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')

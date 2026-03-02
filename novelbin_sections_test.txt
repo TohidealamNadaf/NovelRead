@@ -1,0 +1,15 @@
+
+=== Testing latest: https://novelbin.me/sort/novelbin-daily-update ===
+  Found container: .list-novel
+  Found items inside: 31
+  Valid novels parsed: 20
+
+=== Testing completed: https://novelbin.me/sort/novelbin-complete ===
+  Found container: .list-novel
+  Found items inside: 31
+  Valid novels parsed: 20
+
+=== Testing home: https://novelbin.me/ ===
+  Found container: .list-novel
+  Found items inside: 29
+  Valid novels parsed: 0

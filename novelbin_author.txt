@@ -1,0 +1,16 @@
+First .row has children: 3
+author from .author: 宇宙无敌暴龙烧鹅
+author from .book-author: 
+
+col-xs-7 HTML:
+
+                            <div><span class="glyphicon glyphicon-book"></span>
+                                <h3 class="novel-title"><a href="https://novelbin.me/novel-book/wait-how-did-my-digital-girlfriend-become-a-sword-immortal" title="Wait, How Did My Digital Girlfriend Become a Sword Immortal?">Wait, How Did My Digital Girlfriend Become a Sword Immortal?</a></h3>
+
+                                <span class="label-title label-hot"></span>
+
+                                <span class="a
+
+All spans in row:
+  span[2] class="author" text="宇宙无敌暴龙烧鹅"
+  span[4] class="chr-text chapter-title" text="Chapter 795: Do you have a wife?"
