@@ -20,6 +20,7 @@ export class SummarizerService {
 
             const prompt = `You are an expert novel summarizer.
 Analyze the following chapter content titled "${chapterTitle}".
+Match the tone, mood, and atmosphere of the original text (e.g., if the chapter is dark and intense, the summary should be as well; if it's light and humorous, mirror that style).
 Return a strict JSON object with two keys:
 1. "extractive": A brief, engaging multi-paragraph summary (max 2-3 short paragraphs). Keep it concise so it doesn't read like a full chapter. If important characters are speaking, include critical conversational dialogue/talking if necessary for better understanding. Separate paragraphs with a double newline (\\n\\n).
 2. "events": An array of strings, where each string is a concise bullet point of a key action, revelation, or event that occurred. (3-6 bullet points)
