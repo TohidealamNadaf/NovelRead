@@ -5,6 +5,7 @@ import { FooterNavigation } from '../components/FooterNavigation';
 import { Header } from '../components/Header';
 import { dbService } from '../services/db.service';
 import { useNavigate } from 'react-router-dom';
+import { ActionSheet, ActionSheetSelection } from '@capacitor/action-sheet';
 import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Preferences } from '@capacitor/preferences';
 import { Filesystem, Directory } from '@capacitor/filesystem';
@@ -111,24 +112,45 @@ export const Profile = () => {
 
     const handleCamera = async () => {
         try {
+            if (Capacitor.getPlatform() === 'web') {
+                const image = await CapCamera.getPhoto({
+                    quality: 90,
+                    allowEditing: true,
+                    resultType: CameraResultType.DataUrl,
+                    source: CameraSource.Prompt,
+                });
+                if (image.dataUrl) {
+                    setProfileImage(image.dataUrl);
+                    await saveProfile(profileName, image.dataUrl);
+                }
+                return;
+            }
+
+            const result = await ActionSheet.showActions({
+                title: 'Change Profile Photo',
+                options: [
+                    { title: 'Take Photo' },
+                    { title: 'Choose from Gallery' },
+                    { title: 'Cancel', style: ActionSheetSelection.Cancel }
+                ]
+            });
+
+            if (result.index === 2) return;
+
+            const source = result.index === 0 ? CameraSource.Camera : CameraSource.Photos;
             const image = await CapCamera.getPhoto({
                 quality: 90,
                 allowEditing: true,
-                resultType: CameraResultType.DataUrl, // Get DataURL first to write to file
-                source: CameraSource.Prompt,
-                promptLabelHeader: 'Change Profile Photo',
-                promptLabelPhoto: 'Choose from Gallery',
-                promptLabelPicture: 'Take Photo'
+                resultType: CameraResultType.DataUrl,
+                source: source
             });
 
             if (image.dataUrl) {
-                // Determine logic: We display the dataUrl immediately for UX
                 setProfileImage(image.dataUrl);
-                // We save it (which will write to file and save path)
                 await saveProfile(profileName, image.dataUrl);
             }
         } catch (e) {
-            console.error("Camera cancelled or failed", e);
+            console.error("Photo selection failed", e);
         }
     };
 
