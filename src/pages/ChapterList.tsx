@@ -97,11 +97,32 @@ export const ChapterList = () => {
     });
 
     // --- Virtualizer ---
+    const listContainerRef = useRef<HTMLDivElement>(null);
+    const [listOffset, setListOffset] = useState(0);
+
+    const checkOffset = useCallback(() => {
+        if (listContainerRef.current) {
+            setListOffset(listContainerRef.current.offsetTop);
+        }
+    }, []);
+
+    useEffect(() => {
+        checkOffset();
+        window.addEventListener('resize', checkOffset);
+        return () => window.removeEventListener('resize', checkOffset);
+    }, [checkOffset]);
+
+    useEffect(() => {
+        const timer = setTimeout(checkOffset, 100);
+        return () => clearTimeout(timer);
+    }, [isSynopsisExpanded, checkOffset, novel?.summary]);
+
     const rowVirtualizer = useVirtualizer({
         count: filteredChapters.length,
         getScrollElement: () => parentRef.current,
         estimateSize: () => 73,
         overscan: 8,
+        scrollMargin: listOffset,
     });
 
     // --- Scroll Restoration ---
@@ -412,6 +433,7 @@ export const ChapterList = () => {
 
                 {/* Virtualized Chapter List */}
                 <div
+                    ref={listContainerRef}
                     style={{
                         height: `${rowVirtualizer.getTotalSize()}px`,
                         width: '100%',
