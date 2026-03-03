@@ -6,7 +6,11 @@ import clsx from 'clsx';
 interface SummaryModalProps {
     isOpen: boolean;
     onClose: () => void;
-    summary: { extractive: string; events: string[] } | null;
+    summary: {
+        extractive: string;
+        events: string[];
+        structuredOverview?: { header: string; intro: string; bullets: string[] }[];
+    } | null;
     isLoading: boolean;
 }
 
@@ -143,17 +147,51 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading }: SummaryMod
                                     exit={{ opacity: 0, x: 10 }}
                                     className="prose prose-sm dark:prose-invert prose-p:leading-relaxed"
                                 >
-                                    {summaryParagraphs.map((paragraph, idx) => (
-                                        <p
-                                            key={idx}
-                                            className={clsx(
-                                                "text-gray-700 dark:text-gray-300 mb-4",
-                                                idx === 0 && "first-letter:text-2xl first-letter:font-bold first-letter:text-primary first-letter:float-left first-letter:mr-1"
-                                            )}
-                                        >
-                                            {paragraph.trim()}
-                                        </p>
-                                    ))}
+                                    {summary.structuredOverview && summary.structuredOverview.length > 0 ? (
+                                        <div className="space-y-6">
+                                            {summary.structuredOverview.map((section, idx) => (
+                                                <div key={idx} className="space-y-3">
+                                                    <h4 className="text-lg font-bold text-gray-900 dark:text-white border-b border-gray-200 dark:border-white/10 pb-1">{section.header}</h4>
+                                                    <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">{section.intro}</p>
+                                                    {section.bullets && section.bullets.length > 0 && (
+                                                        <ul className="space-y-2 mt-2">
+                                                            {section.bullets.map((bullet, bIdx) => {
+                                                                const parts = bullet.split(':');
+                                                                if (parts.length > 1 && parts[0].length < 50) {
+                                                                    const title = parts.shift();
+                                                                    const desc = parts.join(':');
+                                                                    return (
+                                                                        <li key={bIdx} className="flex gap-3 items-start text-sm text-gray-700 dark:text-gray-300 leading-relaxed ml-2">
+                                                                            <div className="mt-1.5 min-w-[5px] h-[5px] rounded-full bg-primary/60 shrink-0" />
+                                                                            <div><span className="font-semibold text-gray-900 dark:text-gray-100">{title}:</span>{desc}</div>
+                                                                        </li>
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <li key={bIdx} className="flex gap-3 items-start text-sm text-gray-700 dark:text-gray-300 leading-relaxed ml-2">
+                                                                        <div className="mt-1.5 min-w-[5px] h-[5px] rounded-full bg-primary/60 shrink-0" />
+                                                                        <div>{bullet}</div>
+                                                                    </li>
+                                                                );
+                                                            })}
+                                                        </ul>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        summaryParagraphs.map((paragraph, idx) => (
+                                            <p
+                                                key={idx}
+                                                className={clsx(
+                                                    "text-gray-700 dark:text-gray-300 mb-4",
+                                                    idx === 0 && "first-letter:text-2xl first-letter:font-bold first-letter:text-primary first-letter:float-left first-letter:mr-1"
+                                                )}
+                                            >
+                                                {paragraph.trim()}
+                                            </p>
+                                        ))
+                                    )}
                                 </motion.div>
                             ) : (
                                 <motion.div

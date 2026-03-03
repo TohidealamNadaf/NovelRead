@@ -3,7 +3,15 @@ export class SummarizerService {
      * Main entry point to summarize text using the Gemini 2.5 Flash API.
      * Returns both an extractive summary paragraph and a list of key event bullets.
      */
-    public async generateSummary(chapterTitle: string, text: string, apiKey: string): Promise<{ extractive: string, events: string[] }> {
+    public async generateSummary(
+        chapterTitle: string,
+        text: string,
+        apiKey: string
+    ): Promise<{
+        extractive: string,
+        events: string[],
+        structuredOverview?: { header: string, intro: string, bullets: string[] }[]
+    }> {
         // Fallback for extremely short texts
         if (!text || text.length < 200) {
             return {
@@ -21,9 +29,13 @@ export class SummarizerService {
             const prompt = `You are an expert novel summarizer.
 Analyze the following chapter content titled "${chapterTitle}".
 Match the tone, mood, and atmosphere of the original text (e.g., if the chapter is dark and intense, the summary should be as well; if it's light and humorous, mirror that style).
-Return a strict JSON object with two keys:
-1. "extractive": A brief, engaging multi-paragraph summary (max 2-3 short paragraphs). Keep it concise so it doesn't read like a full chapter. If important characters are speaking, include critical conversational dialogue/talking if necessary for better understanding. Separate paragraphs with a double newline (\\n\\n).
-2. "events": An array of strings, where each string is a concise bullet point of a key action, revelation, or event that occurred. (3-6 bullet points)
+Return a strict JSON object with THREE keys:
+1. "structuredOverview": An array of section objects representing the summary. Each object must have:
+   - "header": A thematic title for the section (e.g. "The Betrayal of Allies and Sects").
+   - "intro": A short introductory paragraph for the section.
+   - "bullets": An array of strings, where each string is a detailed bullet point with an entity/subject and description.
+2. "extractive": A brief fallback string summarizing the chapter.
+3. "events": An array of strings, where each string is a concise bullet point of a key action, revelation, or event that occurred. (3-6 bullet points)
 
 Output ONLY valid JSON. Do not use Markdown formatting for the JSON block itself.
 
@@ -64,7 +76,8 @@ ${safeText}`;
             const parsed = JSON.parse(textResponse);
             return {
                 extractive: parsed.extractive || "Unable to extract summary.",
-                events: Array.isArray(parsed.events) ? parsed.events : []
+                events: Array.isArray(parsed.events) ? parsed.events : [],
+                structuredOverview: Array.isArray(parsed.structuredOverview) ? parsed.structuredOverview : undefined
             };
 
         } catch (error) {
