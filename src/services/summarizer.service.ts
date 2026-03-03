@@ -31,9 +31,10 @@ Analyze the following chapter content titled "${chapterTitle}".
 Match the tone, mood, and atmosphere of the original text (e.g., if the chapter is dark and intense, the summary should be as well; if it's light and humorous, mirror that style).
 Return a strict JSON object with THREE keys:
 1. "structuredOverview": An array of section objects representing the summary. Each object must have:
-   - "header": A thematic title for the section (e.g. "The Betrayal of Allies and Sects").
-   - "intro": A short introductory paragraph for the section.
-   - "bullets": An array of strings, where each string is a detailed bullet point with an entity/subject and description.
+   - "header": A thematic title for the section (max 4-6 words).
+   - "intro": A very short, single-sentence introductory paragraph for the section.
+   - "bullets": An array of strings (max 2-3 bullets per section). Each string is a brief, one-sentence bullet point with an entity/subject and description.
+CRITICAL INSTRUCTION: The total output must be extremely concise. Do NOT exceed 3 sections total. Keep the entire summary roughly the same length as a few short paragraphs.
 2. "extractive": A brief fallback string summarizing the chapter.
 3. "events": An array of strings, where each string is a concise bullet point of a key action, revelation, or event that occurred. (3-6 bullet points)
 
