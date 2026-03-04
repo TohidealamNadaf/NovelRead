@@ -199,14 +199,46 @@ export const Settings = () => {
 
                     <h2 className="ios-section-title">Advanced</h2>
                     <div className="bg-white dark:bg-[#1c1c1e] border-y border-slate-200 dark:border-white/5">
+                        {/* Groq API Key (Primary - Recommended) */}
+                        <div className="p-4 border-b border-slate-200 dark:border-white/5">
+                            <div className="flex items-center gap-3 mb-2">
+                                <div className="flex size-8 items-center justify-center rounded-lg bg-green-500 text-white">
+                                    <BrainCircuit size={18} />
+                                </div>
+                                <div className="flex-1">
+                                    <h3 className="text-[15px] font-medium text-slate-900 dark:text-white">Groq API Key <span className="text-[10px] text-green-500 font-bold ml-1">RECOMMENDED</span></h3>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">Fast & free AI summarization (Llama 3.3 70B).</p>
+                                </div>
+                            </div>
+                            <div className="mt-3">
+                                <input
+                                    type="password"
+                                    placeholder="Paste your Groq API Key here"
+                                    value={settings.groqApiKey || ''}
+                                    onChange={(e) => settingsService.updateSettings({ groqApiKey: e.target.value })}
+                                    className="w-full bg-slate-100 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-green-500/50 transition-all font-mono"
+                                />
+                                <div className="flex justify-end mt-2">
+                                    <a
+                                        href="https://console.groq.com/keys"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-[11px] text-green-500 hover:underline font-medium"
+                                    >
+                                        Get a free Groq API key →
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        {/* Gemini API Key (Fallback) */}
                         <div className="p-4 border-b border-slate-200 dark:border-white/5 disabled:opacity-50">
                             <div className="flex items-center gap-3 mb-2">
                                 <div className="flex size-8 items-center justify-center rounded-lg bg-blue-500 text-white">
                                     <BrainCircuit size={18} />
                                 </div>
                                 <div className="flex-1">
-                                    <h3 className="text-[15px] font-medium text-slate-900 dark:text-white">AI Summarizer Key</h3>
-                                    <p className="text-[11px] text-slate-500 mt-0.5">Required for chapter summaries.</p>
+                                    <h3 className="text-[15px] font-medium text-slate-900 dark:text-white">Gemini API Key <span className="text-[10px] text-slate-400 font-bold ml-1">FALLBACK</span></h3>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">Used if Groq key is not provided.</p>
                                 </div>
                             </div>
                             <div className="mt-3">

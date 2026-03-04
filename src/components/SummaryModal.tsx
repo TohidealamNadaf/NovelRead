@@ -12,9 +12,10 @@ interface SummaryModalProps {
         structuredOverview?: { header: string; intro: string; bullets: string[] }[];
     } | null;
     isLoading: boolean;
+    onReload?: () => void;
 }
 
-export const SummaryModal = ({ isOpen, onClose, summary, isLoading }: SummaryModalProps) => {
+export const SummaryModal = ({ isOpen, onClose, summary, isLoading, onReload }: SummaryModalProps) => {
     const [activeTab, setActiveTab] = useState<'overview' | 'events'>('overview');
 
     // Height tracking values
@@ -93,12 +94,30 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading }: SummaryMod
                         <Sparkles size={18} />
                         <h3 className="font-bold text-lg">Quick Chapter Overview</h3>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
-                    >
-                        <X size={20} className="text-gray-500" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                        {onReload && (
+                            <button
+                                onClick={onReload}
+                                disabled={isLoading}
+                                className={clsx(
+                                    "p-2 rounded-full transition-colors",
+                                    isLoading ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-100 dark:hover:bg-white/5"
+                                )}
+                                title="Regenerate Summary"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={clsx("text-gray-500", isLoading && "animate-spin")}>
+                                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                                    <path d="M21 3v5h-5" />
+                                </svg>
+                            </button>
+                        )}
+                        <button
+                            onClick={onClose}
+                            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+                        >
+                            <X size={20} className="text-gray-500" />
+                        </button>
+                    </div>
                 </div>
 
 

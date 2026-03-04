@@ -789,20 +789,30 @@ export const Reader = () => {
         }
     };
 
-    const handleShowSummary = async () => {
+    const handleShowSummary = async (forceReload: boolean = false) => {
         if (!chapter || !chapter.content) return;
 
         setShowSettings(false);
         setShowSummary(true);
 
-        // Check if we already have it in memory or DB
-        if (summaryData && summaryData.extractive) return;
+        // Check if we already have it in memory or DB (unless forcing reload)
+        if (!forceReload && summaryData && summaryData.extractive) return;
 
         setIsSummarizing(true);
+        if (forceReload) {
+            // Also explicitly clear the state so the user sees it loading
+            setSummaryData(null);
+        }
+
         try {
             // 1. Check DB for cached summary
-            const cachedExtractive = await dbService.getSummary(chapter.id, 'extractive');
-            const cachedEventsStr = await dbService.getSummary(chapter.id, 'events');
+            let cachedExtractive = null;
+            let cachedEventsStr = null;
+
+            if (!forceReload) {
+                cachedExtractive = await dbService.getSummary(chapter.id, 'extractive');
+                cachedEventsStr = await dbService.getSummary(chapter.id, 'events');
+            }
 
             if (cachedExtractive && cachedEventsStr) {
                 setSummaryData({
@@ -810,14 +820,14 @@ export const Reader = () => {
                     events: JSON.parse(cachedEventsStr)
                 });
             } else {
-                // Check for API Key
-                if (!settings.summarizerApiKey) {
+                // Check for API Key (either Groq or Gemini)
+                if (!settings.summarizerApiKey && !settings.groqApiKey) {
                     setSummaryData({
-                        extractive: "AI Summarization requires a free Google Gemini API Key.",
+                        extractive: "AI Summarization requires a free API Key (Groq recommended).",
                         events: [
                             "Open the app Settings",
-                            "Scroll down to Advanced > AI Summarizer Key",
-                            "Tap the link to get your free key and paste it there."
+                            "Scroll down to Advanced",
+                            "Get a free API key from Groq (recommended) or Google AI Studio and paste it there."
                         ]
                     });
                     setIsSummarizing(false);
@@ -829,7 +839,7 @@ export const Reader = () => {
                 div.innerHTML = chapter.content;
                 const textContent = div.textContent || div.innerText || '';
 
-                const result = await summarizerService.generateSummary(chapter.title, textContent, settings.summarizerApiKey);
+                const result = await summarizerService.generateSummary(chapter.title, textContent, settings.summarizerApiKey || '', settings.groqApiKey);
                 setSummaryData(result);
 
                 // 3. Save to DB sequentially only if it actually generated something
@@ -1184,7 +1194,7 @@ export const Reader = () => {
                                         <span className="text-[11px]">Contents</span>
                                     </button>
                                     <button
-                                        onClick={handleShowSummary}
+                                        onClick={() => handleShowSummary()}
                                         className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 font-semibold border border-indigo-200 dark:border-indigo-800 transition-colors active:scale-95"
                                     >
                                         <Sparkles size={20} />
@@ -1318,6 +1328,7 @@ export const Reader = () => {
                 onClose={() => setShowSummary(false)}
                 summary={summaryData}
                 isLoading={isSummarizing}
+                onReload={() => handleShowSummary(true)}
             />
 
             {/* Chapter Sidebar */}
