@@ -51,7 +51,7 @@ export const ManhwaDiscoverSection = memo(({
                                 className="carousel-item flex-none w-[85%] aspect-[16/9] relative rounded-2xl overflow-hidden shadow-xl snap-center shrink-0 cursor-pointer active:scale-[0.98] transition-transform"
                                 onClick={() => navigate('/import', { state: { initialUrl: manga.sourceUrl } })}
                             >
-                                <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url('${manga.coverUrl}')` }}></div>
+                                <div className="absolute inset-0 bg-cover bg-center bg-slate-300 dark:bg-[#2b2839]" style={{ backgroundImage: `url('${manga.coverUrl}')` }}></div>
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
                                 <div className="absolute bottom-4 left-4 right-4 text-left">
                                     <span className="bg-primary/90 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider mb-2 inline-block">TRENDING</span>
@@ -79,13 +79,22 @@ export const ManhwaDiscoverSection = memo(({
                             >
                                 <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg border border-slate-100 dark:border-white/5">
                                     {manga.coverUrl ? (
-                                        <img
-                                            src={manga.coverUrl}
-                                            className="absolute inset-0 w-full h-full object-cover"
-                                            alt={manga.title}
-                                            loading={idx < 4 ? "eager" : "lazy"}
-                                            decoding="async"
-                                        />
+                                        <>
+                                            <img
+                                                src={manga.coverUrl}
+                                                className="absolute inset-0 w-full h-full object-cover"
+                                                alt={manga.title}
+                                                loading={idx < 4 ? "eager" : "lazy"}
+                                                decoding="async"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                    (e.target as HTMLImageElement).parentElement!.querySelector('.img-fallback')?.classList.remove('hidden');
+                                                }}
+                                            />
+                                            <div className="img-fallback hidden absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
+                                                <BookOpen className="text-4xl text-slate-400" />
+                                            </div>
+                                        </>
                                     ) : (
                                         <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
                                             <BookOpen className="text-4xl text-slate-400" />
@@ -122,13 +131,22 @@ export const ManhwaDiscoverSection = memo(({
                             >
                                 <div className="aspect-[2/3] w-14 shrink-0 rounded-lg overflow-hidden shadow-md border border-slate-100 dark:border-white/10">
                                     {manga.coverUrl ? (
-                                        <img
-                                            src={manga.coverUrl}
-                                            className="w-full h-full object-cover"
-                                            alt={manga.title}
-                                            loading={idx < 4 ? "eager" : "lazy"}
-                                            decoding="async"
-                                        />
+                                        <>
+                                            <img
+                                                src={manga.coverUrl}
+                                                className="w-full h-full object-cover"
+                                                alt={manga.title}
+                                                loading={idx < 4 ? "eager" : "lazy"}
+                                                decoding="async"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                    (e.target as HTMLImageElement).parentElement!.querySelector('.img-fallback')?.classList.remove('hidden');
+                                                }}
+                                            />
+                                            <div className="img-fallback hidden w-full h-full bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center text-slate-400">
+                                                <BookOpen size={20} />
+                                            </div>
+                                        </>
                                     ) : (
                                         <div className="w-full h-full bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center text-slate-400">
                                             <BookOpen size={20} />
