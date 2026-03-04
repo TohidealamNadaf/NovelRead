@@ -261,6 +261,37 @@ export const Settings = () => {
                                 </div>
                             </div>
                         </div>
+                        {/* OpenRouter API Key (Second Fallback) */}
+                        <div className="p-4 border-b border-slate-200 dark:border-white/5">
+                            <div className="flex items-center gap-3 mb-2">
+                                <div className="flex size-8 items-center justify-center rounded-lg bg-purple-500 text-white">
+                                    <BrainCircuit size={18} />
+                                </div>
+                                <div className="flex-1">
+                                    <h3 className="text-[15px] font-medium text-slate-900 dark:text-white">OpenRouter API Key <span className="text-[10px] text-purple-500 font-bold ml-1">FALLBACK</span></h3>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">Free Llama & Gemma models. Used if Groq fails.</p>
+                                </div>
+                            </div>
+                            <div className="mt-3">
+                                <input
+                                    type="password"
+                                    placeholder="Paste your OpenRouter API Key here"
+                                    value={settings.openRouterApiKey || ''}
+                                    onChange={(e) => settingsService.updateSettings({ openRouterApiKey: e.target.value })}
+                                    className="w-full bg-slate-100 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all font-mono"
+                                />
+                                <div className="flex justify-end mt-2">
+                                    <a
+                                        href="https://openrouter.ai/keys"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-[11px] text-purple-500 hover:underline font-medium"
+                                    >
+                                        Get a free OpenRouter API key →
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                         <div className="ios-list-item cursor-pointer opacity-50">
                             <div className="flex size-8 items-center justify-center rounded-lg bg-orange-500 text-white">
                                 <Shield size={18} />

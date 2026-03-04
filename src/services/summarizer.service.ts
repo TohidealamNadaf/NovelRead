@@ -76,6 +76,65 @@ ${safeText}`;
     }
 
     /**
+     * Try OpenRouter API (free models — no payment needed).
+     * Uses OpenAI-compatible endpoint with free model variants.
+     */
+    private async tryOpenRouter(prompt: string, apiKey: string): Promise<SummaryResult> {
+        // Free models on OpenRouter (try multiple in case one is down)
+        const freeModels = [
+            'meta-llama/llama-3.3-70b-instruct:free',
+            'google/gemma-2-9b-it:free',
+            'meta-llama/llama-3.1-8b-instruct:free',
+        ];
+
+        let lastError: Error | null = null;
+
+        for (const model of freeModels) {
+            try {
+                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`,
+                        'HTTP-Referer': 'https://novelnest.app',
+                        'X-Title': 'NovelNest Reader',
+                    },
+                    body: JSON.stringify({
+                        model,
+                        messages: [
+                            { role: 'system', content: 'You are an expert novel summarizer. Always respond with valid JSON only.' },
+                            { role: 'user', content: prompt }
+                        ],
+                        temperature: 0.3,
+                        max_tokens: 2048,
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    console.warn(`OpenRouter model ${model} failed:`, response.status, err);
+                    lastError = new Error(`OpenRouter ${model} failed with status ${response.status}`);
+                    continue; // Try next free model
+                }
+
+                const data = await response.json();
+                const text = data.choices?.[0]?.message?.content;
+                if (!text) {
+                    lastError = new Error(`Empty response from OpenRouter ${model}`);
+                    continue;
+                }
+                console.log(`[Summarizer] OpenRouter model ${model} succeeded!`);
+                return this.parseResponse(text);
+            } catch (e) {
+                lastError = e as Error;
+                console.warn(`[Summarizer] OpenRouter model ${model} error:`, e);
+            }
+        }
+
+        throw lastError || new Error('All OpenRouter free models failed');
+    }
+
+    /**
      * Try Gemini API (gemini-2.0-flash — free tier: 15 RPM, 1M TPM).
      */
     private async tryGemini(prompt: string, apiKey: string): Promise<SummaryResult> {
@@ -119,13 +178,14 @@ ${safeText}`;
 
     /**
      * Main entry point. Tries providers in order with automatic fallback.
-     * Provider priority: Groq (if key provided) → Gemini (if key provided).
+     * Provider priority: Groq → OpenRouter → Gemini.
      */
     public async generateSummary(
         chapterTitle: string,
         text: string,
-        apiKey: string,
-        groqApiKey?: string | null
+        geminiApiKey: string,
+        groqApiKey?: string | null,
+        openRouterApiKey?: string | null
     ): Promise<SummaryResult> {
         // Fallback for extremely short texts
         if (!text || text.length < 200) {
@@ -137,7 +197,7 @@ ${safeText}`;
         const safeText = cleanText.substring(0, 30000);
         const prompt = this.buildPrompt(chapterTitle, safeText);
 
-        // Build provider list in priority order
+        // Build provider list in priority order: Groq → OpenRouter → Gemini
         const providers: { name: string; fn: () => Promise<SummaryResult> }[] = [];
 
         if (groqApiKey) {
@@ -147,20 +207,27 @@ ${safeText}`;
             });
         }
 
-        if (apiKey) {
+        if (openRouterApiKey) {
+            providers.push({
+                name: 'OpenRouter',
+                fn: () => this.tryOpenRouter(prompt, openRouterApiKey)
+            });
+        }
+
+        if (geminiApiKey) {
             providers.push({
                 name: 'Gemini',
-                fn: () => this.tryGemini(prompt, apiKey)
+                fn: () => this.tryGemini(prompt, geminiApiKey)
             });
         }
 
         if (providers.length === 0) {
             return {
-                extractive: "AI Summarization requires an API key. Add a free Groq or Gemini API key in Settings.",
+                extractive: "AI Summarization requires an API key. Add a free Groq, OpenRouter, or Gemini API key in Settings.",
                 events: [
                     "Open the app Settings",
-                    "Scroll down to Advanced > AI Summarizer Key",
-                    "Get a free API key from Groq (groq.com) or Google AI Studio and paste it there."
+                    "Scroll down to Advanced",
+                    "Get a free API key from Groq (recommended), OpenRouter, or Google AI Studio."
                 ]
             };
         }
@@ -176,7 +243,6 @@ ${safeText}`;
                 } catch (error) {
                     console.warn(`[Summarizer] ${provider.name} attempt ${attempt + 1} failed:`, error);
                     if (attempt === 0) {
-                        // Wait 3 seconds before retry
                         await new Promise(r => setTimeout(r, 3000));
                     }
                 }
@@ -190,7 +256,7 @@ ${safeText}`;
             events: [
                 "All AI providers returned errors.",
                 "Your API key may be rate-limited or invalid.",
-                "Try again in a minute, or check your API key in Settings."
+                "Try again in a minute, or add a different API key in Settings."
             ]
         };
     }

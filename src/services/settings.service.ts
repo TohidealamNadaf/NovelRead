@@ -20,6 +20,7 @@ export interface AppSettings {
     scraperProxy: string | null;
     summarizerApiKey: string | null;
     groqApiKey: string | null;
+    openRouterApiKey: string | null;
     cloudSync: boolean;
 
     // AI Audio
@@ -45,6 +46,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     scraperProxy: null,
     summarizerApiKey: null,
     groqApiKey: null,
+    openRouterApiKey: null,
     cloudSync: true,
     ttsVoice: null,
     ttsRate: 1.2,

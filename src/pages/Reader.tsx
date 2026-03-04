@@ -820,14 +820,14 @@ export const Reader = () => {
                     events: JSON.parse(cachedEventsStr)
                 });
             } else {
-                // Check for API Key (either Groq or Gemini)
-                if (!settings.summarizerApiKey && !settings.groqApiKey) {
+                // Check for API Key (either Groq, OpenRouter, or Gemini)
+                if (!settings.summarizerApiKey && !settings.groqApiKey && !settings.openRouterApiKey) {
                     setSummaryData({
                         extractive: "AI Summarization requires a free API Key (Groq recommended).",
                         events: [
                             "Open the app Settings",
                             "Scroll down to Advanced",
-                            "Get a free API key from Groq (recommended) or Google AI Studio and paste it there."
+                            "Get a free API key from Groq (recommended), OpenRouter, or Google AI Studio."
                         ]
                     });
                     setIsSummarizing(false);
@@ -839,7 +839,7 @@ export const Reader = () => {
                 div.innerHTML = chapter.content;
                 const textContent = div.textContent || div.innerText || '';
 
-                const result = await summarizerService.generateSummary(chapter.title, textContent, settings.summarizerApiKey || '', settings.groqApiKey);
+                const result = await summarizerService.generateSummary(chapter.title, textContent, settings.summarizerApiKey || '', settings.groqApiKey, settings.openRouterApiKey);
                 setSummaryData(result);
 
                 // 3. Save to DB sequentially only if it actually generated something
