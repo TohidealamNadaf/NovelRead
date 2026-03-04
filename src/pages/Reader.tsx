@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MoreHorizontal, Play, Pause, FastForward, Rewind, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download } from 'lucide-react';
+import { MoreHorizontal, Play, Pause, FastForward, Rewind, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -15,6 +15,7 @@ import { Header } from '../components/Header';
 import { useChapterPullNavigation } from '../hooks/useChapterPullNavigation';
 import { ChapterSidebar } from '../components/ChapterSidebar';
 import { ReaderScroller } from '../components/ReaderScroller';
+import { useAutoScroll } from '../hooks/useAutoScroll';
 
 export const Reader = () => {
     const navigate = useNavigate();
@@ -103,6 +104,15 @@ export const Reader = () => {
     const [showSummary, setShowSummary] = useState(false);
     const [summaryData, setSummaryData] = useState<{ extractive: string; events: string[] } | null>(null);
     const [isSummarizing, setIsSummarizing] = useState(false);
+
+    // Auto-Scroll
+    const {
+        isAutoScrolling,
+        speed: autoScrollSpeed,
+        setSpeed: setAutoScrollSpeed,
+        toggleAutoScroll,
+        stopAutoScroll,
+    } = useAutoScroll({ scrollContainerRef });
 
     const sidebarChapters = useMemo(() => {
         const source = navChapters.length > 0 ? navChapters : allChapters;
@@ -1239,6 +1249,57 @@ export const Reader = () => {
                                     )}
                                 </div>
 
+                                {/* Auto-Scroll Controls */}
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Auto Scroll</p>
+                                        <button
+                                            onClick={toggleAutoScroll}
+                                            className={clsx(
+                                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95",
+                                                isAutoScrolling
+                                                    ? "bg-primary/20 text-primary border border-primary/40"
+                                                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                                            )}
+                                        >
+                                            <ChevronsDown size={14} className={isAutoScrolling ? "animate-bounce" : ""} />
+                                            {isAutoScrolling ? 'Scrolling...' : 'Start'}
+                                        </button>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={() => setAutoScrollSpeed(Math.max(1, autoScrollSpeed - 1))}
+                                            disabled={autoScrollSpeed <= 1}
+                                            className={clsx("size-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 transition-colors active:scale-90", autoScrollSpeed <= 1 && "opacity-30")}
+                                        >
+                                            <Minus size={14} />
+                                        </button>
+                                        <div className="flex-1 relative">
+                                            <input
+                                                type="range"
+                                                min={1}
+                                                max={10}
+                                                step={1}
+                                                value={autoScrollSpeed}
+                                                onChange={(e) => setAutoScrollSpeed(Number(e.target.value))}
+                                                className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-slate-200 dark:bg-slate-700 accent-primary"
+                                            />
+                                            <div className="flex justify-between mt-1">
+                                                <span className="text-[9px] text-slate-400">Slow</span>
+                                                <span className="text-[11px] font-bold text-primary">{autoScrollSpeed}x</span>
+                                                <span className="text-[9px] text-slate-400">Fast</span>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setAutoScrollSpeed(Math.min(10, autoScrollSpeed + 1))}
+                                            disabled={autoScrollSpeed >= 10}
+                                            className={clsx("size-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 transition-colors active:scale-90", autoScrollSpeed >= 10 && "opacity-30")}
+                                        >
+                                            <Plus size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+
                                 {/* Font & Size */}
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="space-y-1.5">
@@ -1381,6 +1442,41 @@ export const Reader = () => {
                     }
                 }}
             />
+
+            {/* Auto-Scroll Floating Mini-Controller */}
+            <AnimatePresence>
+                {isAutoScrolling && !showSettings && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 20 }}
+                        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-white/90 dark:bg-[#1a182b]/90 backdrop-blur-xl rounded-full shadow-2xl border border-slate-200 dark:border-white/10 px-3 py-2"
+                    >
+                        <ChevronsDown size={16} className="text-primary animate-bounce shrink-0" />
+                        <button
+                            onClick={() => setAutoScrollSpeed(Math.max(1, autoScrollSpeed - 1))}
+                            disabled={autoScrollSpeed <= 1}
+                            className={clsx("size-7 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 transition-all active:scale-90", autoScrollSpeed <= 1 && "opacity-30")}
+                        >
+                            <Minus size={12} />
+                        </button>
+                        <span className="text-sm font-bold text-primary min-w-[28px] text-center">{autoScrollSpeed}x</span>
+                        <button
+                            onClick={() => setAutoScrollSpeed(Math.min(10, autoScrollSpeed + 1))}
+                            disabled={autoScrollSpeed >= 10}
+                            className={clsx("size-7 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 transition-all active:scale-90", autoScrollSpeed >= 10 && "opacity-30")}
+                        >
+                            <Plus size={12} />
+                        </button>
+                        <button
+                            onClick={stopAutoScroll}
+                            className="size-7 flex items-center justify-center rounded-full bg-red-500/10 text-red-500 transition-all active:scale-90"
+                        >
+                            <Pause size={12} className="fill-red-500" />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div >
     );
 };
