@@ -119,33 +119,39 @@ export const useChapterPullNavigation = ({
             const atTop = scrollTop <= BOUNDARY_TOLERANCE;
             const atBottom = scrollHeight - scrollTop - clientHeight <= BOUNDARY_TOLERANCE;
 
+            let currentState = state;
             // 1. Determine Intent (if idle)
-            if (state === 'idle') {
+            if (currentState === 'idle') {
                 if (diffY > 10 && atTop) {
                     setState('pulling-prev');
+                    currentState = 'pulling-prev';
                 } else if (diffY < -10 && atBottom) {
                     setState('pulling-next');
+                    currentState = 'pulling-next';
+                } else {
+                    return;
                 }
-                return;
             }
 
             // 2. Validate Movement Direction relative to current State
-            if (state === 'pulling-prev' && diffY < 0) {
+            if (currentState === 'pulling-prev' && diffY < 0) {
                 setState('idle');
                 onPulling?.(0, 'none');
                 return;
             }
 
-            if (state === 'pulling-next' && diffY > 0) {
+            if (currentState === 'pulling-next' && diffY > 0) {
                 setState('idle');
                 onPulling?.(0, 'none');
                 return;
             }
 
             // 3. Update Progress (Clamp to avoid wild values during rapid scrolls)
+            // Subtract threshold so it starts smooth from 0
+            const effectiveDiff = Math.max(0, Math.abs(diffY) - 10);
             onPulling?.(
-                Math.max(0, Math.min(Math.abs(diffY), window.innerHeight)),
-                state === 'pulling-prev' ? 'prev' : 'next'
+                Math.min(effectiveDiff, window.innerHeight),
+                currentState === 'pulling-prev' ? 'prev' : 'next'
             );
         },
         [state, onPulling, containerRef]

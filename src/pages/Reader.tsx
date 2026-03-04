@@ -699,7 +699,7 @@ export const Reader = () => {
     };
 
     // STABLE GESTURE NAVIGATION SYSTEM (FSM + Async Locking)
-    const { onTouchStart, onTouchMove, onTouchEnd } = useChapterPullNavigation({
+    const { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel } = useChapterPullNavigation({
         containerRef: scrollContainerRef,
         hasPrev: navIndex > 0 || !!prevChapter,
         hasNext: (navChapters.length > 0 && navIndex < navChapters.length - 1) || !!nextChapter,
@@ -970,8 +970,13 @@ export const Reader = () => {
                 onTouchMove={(e) => { handleEdgeTouchMove(e); if (!isEdgeSwiping) onTouchMove(e); }}
                 onTouchEnd={(e) => {
                     handleDoubleTap(e);
+                    const wasEdgeSwiping = isEdgeSwiping;
                     handleEdgeTouchEnd();
-                    if (!isEdgeSwiping) onTouchEnd();
+                    if (wasEdgeSwiping) {
+                        onTouchCancel();
+                    } else {
+                        onTouchEnd();
+                    }
                 }}
                 onClick={handleDoubleTap}
                 onScroll={(e) => {
@@ -984,29 +989,34 @@ export const Reader = () => {
                 <div
                     className="relative w-full"
                     style={{
-                        transform: `translateY(-${pushDistance}px)`,
-                        transition: pushDistance === 0 ? 'transform 0.3s ease-out' : 'none'
+                        transform: `translateY(calc(${pullDistance}px - ${pushDistance}px))`,
+                        transition: (pushDistance === 0 && pullDistance === 0) ? 'transform 0.3s ease-out' : 'none'
                     }}
                 >
                     {/* Pull to Previous Indicator */}
-                    {pullDistance > 10 && (
+                    <motion.div
+                        style={{
+                            position: 'absolute',
+                            left: 0,
+                            right: 0,
+                            top: `-${pullDistance}px`,
+                            height: pullDistance,
+                            opacity: Math.min(pullDistance / PULL_THRESHOLD, 1)
+                        }}
+                        className="flex flex-col items-center justify-end pb-4 overflow-hidden pointer-events-none"
+                    >
                         <motion.div
-                            style={{ height: pullDistance, opacity: Math.min(pullDistance / PULL_THRESHOLD, 1) }}
-                            className="flex flex-col items-center justify-end pb-4 overflow-hidden pointer-events-none"
+                            animate={{ y: pullDistance > PULL_THRESHOLD ? [0, -4, 0] : 0 }}
+                            className="flex flex-col items-center gap-1.5"
                         >
-                            <motion.div
-                                animate={{ y: pullDistance > PULL_THRESHOLD ? [0, -4, 0] : 0 }}
-                                className="flex flex-col items-center gap-1.5"
-                            >
-                                <ChevronDown className={clsx("transition-all duration-300", pullDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
-                                <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pullDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
-                                    {pullDistance > PULL_THRESHOLD
-                                        ? (prevChapter ? "Release" : "At Start")
-                                        : (prevChapter ? "Pull for Prev" : "First Chapter")}
-                                </p>
-                            </motion.div>
+                            <ChevronDown className={clsx("transition-all duration-300", pullDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
+                            <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pullDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
+                                {pullDistance > PULL_THRESHOLD
+                                    ? (prevChapter ? "Release" : "At Start")
+                                    : (prevChapter ? "Pull for Prev" : "First Chapter")}
+                            </p>
                         </motion.div>
-                    )}
+                    </motion.div>
 
                     <AnimatePresence mode="wait" initial={false} custom={navigationDirection}>
                         <motion.div
@@ -1065,31 +1075,29 @@ export const Reader = () => {
                     </AnimatePresence>
 
                     {/* Pull Up to Next Indicator */}
-                    {pushDistance > 10 && (
+                    <motion.div
+                        style={{
+                            position: 'absolute',
+                            left: 0,
+                            right: 0,
+                            bottom: `-${pushDistance}px`,
+                            height: pushDistance,
+                            opacity: Math.min(pushDistance / PULL_THRESHOLD, 1)
+                        }}
+                        className="flex flex-col items-center justify-start pt-4 overflow-hidden pointer-events-none"
+                    >
                         <motion.div
-                            style={{
-                                position: 'absolute',
-                                left: 0,
-                                right: 0,
-                                bottom: `-${pushDistance}px`,
-                                height: pushDistance,
-                                opacity: Math.min(pushDistance / PULL_THRESHOLD, 1)
-                            }}
-                            className="flex flex-col items-center justify-start pt-4 overflow-hidden pointer-events-none"
+                            animate={{ y: pushDistance > PULL_THRESHOLD ? [0, 4, 0] : 0 }}
+                            className="flex flex-col items-center gap-1.5"
                         >
-                            <motion.div
-                                animate={{ y: pushDistance > PULL_THRESHOLD ? [0, 4, 0] : 0 }}
-                                className="flex flex-col items-center gap-1.5"
-                            >
-                                <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pushDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
-                                    {pushDistance > PULL_THRESHOLD
-                                        ? (nextChapter ? "Release" : "At End")
-                                        : (nextChapter ? "Pull for Next" : "End of Story")}
-                                </p>
-                                <ChevronUp className={clsx("transition-all duration-300", pushDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
-                            </motion.div>
+                            <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pushDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
+                                {pushDistance > PULL_THRESHOLD
+                                    ? (nextChapter ? "Release" : "At End")
+                                    : (nextChapter ? "Pull for Next" : "End of Story")}
+                            </p>
+                            <ChevronUp className={clsx("transition-all duration-300", pushDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
                         </motion.div>
-                    )}
+                    </motion.div>
                 </div>
 
                 {/* Extra Padding Removed */}
