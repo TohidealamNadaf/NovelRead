@@ -79,14 +79,17 @@ export class ScraperService {
 
         let cleaned = raw.trim();
 
-        // 1. Remove leading numeric indices (e.g., "1 Chapter 1" -> "Chapter 1")
-        // Rule: Internal indexing is the only source of truth (index + 1)
-        cleaned = cleaned.replace(/^\d+[\s\.\-]+/g, '');
+        // 1. Remove leading standalone numeric index ONLY when followed by a chapter title
+        // e.g., "1 Chapter 1" → "Chapter 1", but keep "Chapter 1" as-is
+        cleaned = cleaned.replace(/^\d+[\s\.\-]+(Chapter\b)/gi, '$1');
 
         // 2. Remove timestamps (e.g., "1 day ago", "3 years ago")
-        // Use non-\b boundary to handle Cheerio concatenating text without spaces
-        // e.g., "Shadow Dance3 years ago" -> "Shadow Dance"
-        const timestampRegex = /\d+\s*(minute|hour|day|week|month|year)s?\s*ago/gi;
+        // CRITICAL: Cheerio often concatenates adjacent text nodes without spaces,
+        // e.g., "Chapter 101" + "1 year ago" becomes "Chapter 1011 year ago".
+        // A naive regex would match "1011 year ago" and destroy the chapter number.
+        // Strategy: Match timestamp only when preceded by a non-digit or start of string,
+        // and try from the rightmost match to avoid eating chapter digits.
+        const timestampRegex = /(?<=\D|^)\d{1,2}\s*(minute|hour|day|week|month|year)s?\s*ago/gi;
         cleaned = cleaned.replace(timestampRegex, '');
 
         // 3. Remove common UI labels/artifacts
@@ -156,7 +159,6 @@ export class ScraperService {
     private extractChaptersFromPage($: cheerio.CheerioAPI, baseUrl: string): ScrapedChapter[] {
         const chapters: ScrapedChapter[] = [];
         const seenLinks = new Set<string>();
-        const seenTitles = new Set<string>();
 
         const listSelectors = [
             '.chapter-list li', 'ul.chapter-list li', '.list-chapter li',
@@ -168,34 +170,65 @@ export class ScraperService {
             const items = $(sel);
             if (items.length > 0) {
                 items.each((_, el) => {
-                    // CRITICAL: NEVER call .text() on the container (el).
-                    // This violates the Semantic Anchor Extraction rule.
                     const anchor = $(el).find('a').first();
                     if (anchor.length === 0) return;
 
-                    const rawTitle = anchor.text();
                     const link = anchor.attr('href');
+                    if (!link) return;
 
-                    if (rawTitle && link) {
-                        // Extract date if present (e.g., "Chapter 1 - Test3 years ago" -> "3 years ago")
-                        // Relaxed regex: no \b boundary before digit to handle Cheerio concatenation
-                        const timestampRegex = /\d+\s*(minute|hour|day|week|month|year)s?\s*ago/gi;
-                        const dateMatch = rawTitle.match(timestampRegex);
-                        const chapterDate = dateMatch ? dateMatch[0] : undefined;
+                    // --- DOM-level title/date separation ---
+                    // Many sites (NovelFire, etc.) nest the date INSIDE the anchor tag,
+                    // so anchor.text() merges title+date: "Chapter 14 years ago"
+                    // Fix: Remove date elements from a clone BEFORE getting text.
 
-                        const cleanTitle = this.cleanChapterTitle(rawTitle);
-                        const fullUrl = this.resolveUrl(baseUrl, link);
-                        const normalizedTitle = cleanTitle.toLowerCase().replace(/\s+/g, '');
+                    // 1. Try to extract date from child elements first
+                    const dateSelectors = 'time, [class*="time"], [class*="date"], [class*="ago"], [class*="update"], small, .text-muted';
+                    const dateEl = anchor.find(dateSelectors).first();
+                    let chapterDate: string | undefined;
+                    if (dateEl.length > 0) {
+                        chapterDate = dateEl.text().trim() || undefined;
+                    }
 
-                        if (this.isValidChapterTitle(cleanTitle) && !seenLinks.has(fullUrl) && !seenTitles.has(normalizedTitle)) {
-                            chapters.push({
-                                title: cleanTitle,
-                                url: fullUrl,
-                                date: chapterDate
-                            });
-                            seenLinks.add(fullUrl);
-                            seenTitles.add(normalizedTitle);
+                    // 2. Get title from cloned anchor with date elements removed
+                    const clonedAnchor = anchor.clone();
+                    clonedAnchor.find(dateSelectors).remove();
+                    let rawTitle = clonedAnchor.text().trim();
+
+                    // 3. If no DOM-level date found, try regex on the full text as fallback
+                    if (!chapterDate && rawTitle) {
+                        const timestampRegex = /(\d{1,2}\s*(minute|hour|day|week|month|year)s?\s*ago)/gi;
+                        const fullText = anchor.text();
+                        const dateMatch = fullText.match(timestampRegex);
+                        if (dateMatch) {
+                            chapterDate = dateMatch[dateMatch.length - 1].trim();
+                            // Clean the timestamp from the title
+                            rawTitle = rawTitle.replace(timestampRegex, '').trim();
                         }
+                    }
+
+                    if (!rawTitle) rawTitle = anchor.text().trim();
+
+                    const cleanTitle = this.cleanChapterTitle(rawTitle);
+                    const fullUrl = this.resolveUrl(baseUrl, link);
+
+                    // 4. If title is ambiguous (just "Chapter" without a number),
+                    //    try to extract the chapter number from the URL
+                    let finalTitle = cleanTitle;
+                    if (/^Chapter$/i.test(finalTitle)) {
+                        const urlMatch = fullUrl.match(/chapter[_\-]?(\d+)/i);
+                        if (urlMatch) {
+                            finalTitle = `Chapter ${urlMatch[1]}`;
+                        }
+                    }
+
+                    // Only deduplicate by URL
+                    if (this.isValidChapterTitle(finalTitle) && !seenLinks.has(fullUrl)) {
+                        chapters.push({
+                            title: finalTitle,
+                            url: fullUrl,
+                            date: chapterDate
+                        });
+                        seenLinks.add(fullUrl);
                     }
                 });
                 if (chapters.length > 0) break;
@@ -206,17 +239,30 @@ export class ScraperService {
         if (chapters.length === 0) {
             $('a').each((_, el) => {
                 const anchor = $(el);
-                const rawTitle = anchor.text();
                 const link = anchor.attr('href');
 
-                if (rawTitle && link && (link.includes('chapter') || link.includes('ch-'))) {
-                    const cleanTitle = this.cleanChapterTitle(rawTitle);
-                    const fullUrl = this.resolveUrl(baseUrl, link);
+                if (!link || (!link.includes('chapter') && !link.includes('ch-'))) return;
 
-                    if (this.isValidChapterTitle(cleanTitle) && !seenLinks.has(fullUrl)) {
-                        chapters.push({ title: cleanTitle, url: fullUrl });
-                        seenLinks.add(fullUrl);
+                // Same DOM-level extraction
+                const dateSelectors = 'time, [class*="time"], [class*="date"], [class*="ago"], [class*="update"], small, .text-muted';
+                const clonedAnchor = anchor.clone();
+                clonedAnchor.find(dateSelectors).remove();
+                let rawTitle = clonedAnchor.text().trim() || anchor.text().trim();
+
+                const cleanTitle = this.cleanChapterTitle(rawTitle);
+                const fullUrl = this.resolveUrl(baseUrl, link);
+
+                let finalTitle = cleanTitle;
+                if (/^Chapter$/i.test(finalTitle)) {
+                    const urlMatch = fullUrl.match(/chapter[_\-]?(\d+)/i);
+                    if (urlMatch) {
+                        finalTitle = `Chapter ${urlMatch[1]}`;
                     }
+                }
+
+                if (this.isValidChapterTitle(finalTitle) && !seenLinks.has(fullUrl)) {
+                    chapters.push({ title: finalTitle, url: fullUrl });
+                    seenLinks.add(fullUrl);
                 }
             });
         }
