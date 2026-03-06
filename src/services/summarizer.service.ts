@@ -83,8 +83,8 @@ ${safeText}`;
         // Free models on OpenRouter (try multiple in case one is down)
         const freeModels = [
             'meta-llama/llama-3.3-70b-instruct:free',
-            'openrouter/free',
-            'qwen/qwen-2.5-72b-instruct:free',
+            'google/gemma-2-9b-it:free',
+            'meta-llama/llama-3.1-8b-instruct:free',
         ];
 
         let lastError: Error | null = null;
@@ -240,14 +240,8 @@ ${safeText}`;
                     const result = await provider.fn();
                     console.log(`[Summarizer] ${provider.name} succeeded!`);
                     return result;
-                } catch (error: any) {
-                    console.warn(`[Summarizer] ${provider.name} attempt ${attempt + 1} failed:`, error.message);
-
-                    if (error.message?.includes('429')) {
-                        console.warn(`[Summarizer] ${provider.name} rate limited. Moving to next immediately.`);
-                        break; // Skip retry if it's a hard rate limit
-                    }
-
+                } catch (error) {
+                    console.warn(`[Summarizer] ${provider.name} attempt ${attempt + 1} failed:`, error);
                     if (attempt === 0) {
                         await new Promise(r => setTimeout(r, 3000));
                     }

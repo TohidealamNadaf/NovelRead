@@ -125,8 +125,8 @@ ${text}`;
     private async callOpenRouter(prompt: string, apiKey: string): Promise<string> {
         const freeModels = [
             'meta-llama/llama-3.3-70b-instruct:free',
-            'openrouter/free',
-            'qwen/qwen-2.5-72b-instruct:free',
+            'google/gemma-2-9b-it:free',
+            'meta-llama/llama-3.1-8b-instruct:free',
         ];
 
         let lastError: Error | null = null;
@@ -211,22 +211,6 @@ ${text}`;
         return text.trim();
     }
 
-    private providerCooldowns: Record<string, number> = {};
-
-    private isProviderOnCooldown(name: string): boolean {
-        const cooldownUntil = this.providerCooldowns[name];
-        if (cooldownUntil && Date.now() < cooldownUntil) {
-            return true;
-        }
-        return false;
-    }
-
-    private setProviderCooldown(name: string) {
-        // Cooldown for 60 seconds after a rate limit or persistent failure
-        this.providerCooldowns[name] = Date.now() + 60000;
-        console.warn(`[Rewriter] Provider ${name} is now on cooldown for 60 seconds.`);
-    }
-
     /**
      * Rewrite a single chunk using the provider chain.
      */
@@ -237,31 +221,16 @@ ${text}`;
         const prompt = this.buildPrompt(chunk);
 
         for (const provider of providers) {
-            if (this.isProviderOnCooldown(provider.name)) {
-                console.log(`[Rewriter] Skipping ${provider.name} (on cooldown due to rate limits)`);
-                continue;
-            }
-
             for (let attempt = 0; attempt < 2; attempt++) {
                 try {
                     console.log(`[Rewriter] Trying ${provider.name} (attempt ${attempt + 1})...`);
                     const result = await provider.fn(prompt);
                     console.log(`[Rewriter] ${provider.name} succeeded!`);
                     return result;
-                } catch (error: any) {
-                    console.warn(`[Rewriter] ${provider.name} attempt ${attempt + 1} failed:`, error.message);
-
-                    // If it's a 429 rate limit, go immediately to cooldown and skip retries
-                    if (error.message?.includes('429')) {
-                        this.setProviderCooldown(provider.name);
-                        break; // Break the attempt loop to move to the next provider immediately
-                    }
-
+                } catch (error) {
+                    console.warn(`[Rewriter] ${provider.name} attempt ${attempt + 1} failed:`, error);
                     if (attempt === 0) {
                         await new Promise(r => setTimeout(r, 2000));
-                    } else {
-                        // Exhausted attempts due to other errors, apply short cooldown
-                        this.setProviderCooldown(provider.name);
                     }
                 }
             }
