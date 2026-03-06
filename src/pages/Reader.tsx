@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MoreHorizontal, Play, Pause, FastForward, Rewind, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus } from 'lucide-react';
+import { MoreHorizontal, Play, Pause, FastForward, Rewind, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus, WandSparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -16,6 +16,7 @@ import { useChapterPullNavigation } from '../hooks/useChapterPullNavigation';
 import { ChapterSidebar } from '../components/ChapterSidebar';
 import { ReaderScroller } from '../components/ReaderScroller';
 import { useAutoScroll } from '../hooks/useAutoScroll';
+import { rewriterService } from '../services/rewriter.service';
 
 export const Reader = () => {
     const navigate = useNavigate();
@@ -104,6 +105,10 @@ export const Reader = () => {
     const [showSummary, setShowSummary] = useState(false);
     const [summaryData, setSummaryData] = useState<{ extractive: string; events: string[] } | null>(null);
     const [isSummarizing, setIsSummarizing] = useState(false);
+
+    // Rewrite State
+    const [isRewriting, setIsRewriting] = useState(false);
+    const [rewriteProgress, setRewriteProgress] = useState('');
 
     // Auto-Scroll
     const {
@@ -799,6 +804,53 @@ export const Reader = () => {
         }
     };
 
+    const handleRewrite = async () => {
+        if (!chapter || !chapter.content) return;
+
+        // Check for API Key (either Groq, OpenRouter, or Gemini)
+        if (!settings.summarizerApiKey && !settings.groqApiKey && !settings.openRouterApiKey) {
+            setRewriteProgress('API Key Req.');
+            setTimeout(() => setRewriteProgress(''), 3000);
+            return;
+        }
+
+        setIsRewriting(true);
+        setRewriteProgress('Starting...');
+
+        try {
+            const newContent = await rewriterService.rewriteChapter(
+                chapter.content,
+                settings.summarizerApiKey || '',
+                settings.groqApiKey,
+                settings.openRouterApiKey,
+                (current, total) => setRewriteProgress(`${current}/${total}`)
+            );
+
+            if (newContent && newContent !== chapter.content) {
+                if (!isLiveMode) {
+                    // Update DB mapped content
+                    await dbService.updateChapterContent(chapter.novelId, chapter.id, newContent);
+                }
+                // Update local state
+                setChapter(prev => prev ? { ...prev, content: newContent } : null);
+                setRewriteProgress('Done!');
+                setTimeout(() => setRewriteProgress(''), 3000);
+            } else {
+                setRewriteProgress('No changes');
+                setTimeout(() => setRewriteProgress(''), 2000);
+            }
+        } catch (error: any) {
+            console.error('Rewrite failed:', error);
+            setRewriteProgress('Failed');
+            setTimeout(() => setRewriteProgress(''), 3000);
+        } finally {
+            setIsRewriting(false);
+            if (rewriteProgress === 'Starting...' || rewriteProgress.includes('/')) {
+                setRewriteProgress('');
+            }
+        }
+    };
+
     const handleShowSummary = async (forceReload: boolean = false) => {
         if (!chapter || !chapter.content) return;
 
@@ -1192,7 +1244,7 @@ export const Reader = () => {
                                 </div>
 
                                 {/* Quick Actions Grid */}
-                                <div className="grid grid-cols-3 gap-2.5">
+                                <div className="grid grid-cols-4 gap-2.5">
                                     <button
                                         onClick={() => {
                                             setShowSettings(false);
@@ -1209,6 +1261,20 @@ export const Reader = () => {
                                     >
                                         <Sparkles size={20} />
                                         <span className="text-[11px]">Summary</span>
+                                    </button>
+                                    <button
+                                        onClick={handleRewrite}
+                                        disabled={isRewriting || !chapter?.content}
+                                        className={clsx(
+                                            "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-semibold transition-colors active:scale-95",
+                                            isRewriting || rewriteProgress
+                                                ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
+                                                : "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800",
+                                            (!chapter?.content) && "opacity-30"
+                                        )}
+                                    >
+                                        {isRewriting ? <Loader2 size={20} className="animate-spin" /> : <WandSparkles size={20} />}
+                                        <span className="text-[11px] truncate w-full text-center px-1">{rewriteProgress || (isRewriting ? 'Rewriting...' : 'Rewrite')}</span>
                                     </button>
                                     {!isLiveMode && (
                                         <button
