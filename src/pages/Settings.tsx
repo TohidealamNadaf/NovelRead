@@ -230,6 +230,37 @@ export const Settings = () => {
                                 </div>
                             </div>
                         </div>
+                        {/* Mistral API Key (Fallback 1) */}
+                        <div className="p-4 border-b border-slate-200 dark:border-white/5">
+                            <div className="flex items-center gap-3 mb-2">
+                                <div className="flex size-8 items-center justify-center rounded-lg bg-orange-500 text-white">
+                                    <BrainCircuit size={18} />
+                                </div>
+                                <div className="flex-1">
+                                    <h3 className="text-[15px] font-medium text-slate-900 dark:text-white">Mistral API Key <span className="text-[10px] text-orange-500 font-bold ml-1">FALLBACK 1</span></h3>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">Reliable backup when Groq hits limits.</p>
+                                </div>
+                            </div>
+                            <div className="mt-3">
+                                <input
+                                    type="password"
+                                    placeholder="Paste your Mistral API Key here"
+                                    value={settings.mistralApiKey || ''}
+                                    onChange={(e) => settingsService.updateSettings({ mistralApiKey: e.target.value })}
+                                    className="w-full bg-slate-100 dark:bg-black/30 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all font-mono"
+                                />
+                                <div className="flex justify-end mt-2">
+                                    <a
+                                        href="https://console.mistral.ai/api-keys/"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-[11px] text-orange-500 hover:underline font-medium"
+                                    >
+                                        Get a free Mistral API key →
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                         {/* Gemini API Key (Fallback) */}
                         <div className="p-4 border-b border-slate-200 dark:border-white/5 disabled:opacity-50">
                             <div className="flex items-center gap-3 mb-2">

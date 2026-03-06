@@ -118,7 +118,38 @@ ${text}`;
 
         const data = await response.json();
         const text = data.choices?.[0]?.message?.content;
-        if (!text) throw new Error('Empty response from Groq');
+        if (!text) throw new Error('Empty response from Groq API');
+        return text.trim();
+    }
+
+    private async callMistral(prompt: string, apiKey: string): Promise<string> {
+        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: 'open-mistral-nemo',
+                messages: [
+                    { role: 'system', content: SYSTEM_PROMPT },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.1,
+                max_tokens: 8192,
+            }),
+            signal: AbortSignal.timeout(45000)
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            console.error('[Rewriter] Mistral Error:', response.status, err);
+            throw new Error(`Mistral API failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        const text = data.choices?.[0]?.message?.content;
+        if (!text) throw new Error('Empty response from Mistral API');
         return text.trim();
     }
 
@@ -249,6 +280,7 @@ ${text}`;
         htmlContent: string,
         geminiApiKey: string,
         groqApiKey?: string | null,
+        mistralApiKey?: string | null,
         openRouterApiKey?: string | null,
         onProgress?: (current: number, total: number) => void
     ): Promise<string> {
@@ -265,6 +297,9 @@ ${text}`;
         if (groqApiKey) {
             providers.push({ name: 'Groq', fn: (p) => this.callGroq(p, groqApiKey) });
         }
+        if (mistralApiKey) {
+            providers.push({ name: 'Mistral', fn: (p) => this.callMistral(p, mistralApiKey) });
+        }
         if (openRouterApiKey) {
             providers.push({ name: 'OpenRouter', fn: (p) => this.callOpenRouter(p, openRouterApiKey) });
         }
@@ -273,7 +308,7 @@ ${text}`;
         }
 
         if (providers.length === 0) {
-            throw new Error('No API keys configured. Add a Groq, OpenRouter, or Gemini key in Settings.');
+            throw new Error('No API keys configured. Add a Groq, Mistral, OpenRouter, or Gemini key in Settings.');
         }
 
         // 3. Chunk the text

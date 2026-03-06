@@ -807,8 +807,8 @@ export const Reader = () => {
     const handleRewrite = async () => {
         if (!chapter || !chapter.content) return;
 
-        // Check for API Key (either Groq, OpenRouter, or Gemini)
-        if (!settings.summarizerApiKey && !settings.groqApiKey && !settings.openRouterApiKey) {
+        // Check for API Key
+        if (!settings.summarizerApiKey && !settings.groqApiKey && !settings.openRouterApiKey && !settings.mistralApiKey) {
             setRewriteProgress('API Key Req.');
             setTimeout(() => setRewriteProgress(''), 3000);
             return;
@@ -822,6 +822,7 @@ export const Reader = () => {
                 chapter.content,
                 settings.summarizerApiKey || '',
                 settings.groqApiKey,
+                settings.mistralApiKey,
                 settings.openRouterApiKey,
                 (current, total) => setRewriteProgress(`${current}/${total}`)
             );
@@ -882,8 +883,8 @@ export const Reader = () => {
                     events: JSON.parse(cachedEventsStr)
                 });
             } else {
-                // Check for API Key (either Groq, OpenRouter, or Gemini)
-                if (!settings.summarizerApiKey && !settings.groqApiKey && !settings.openRouterApiKey) {
+                // Check for API Key
+                if (!settings.summarizerApiKey && !settings.groqApiKey && !settings.openRouterApiKey && !settings.mistralApiKey) {
                     setSummaryData({
                         extractive: "AI Summarization requires a free API Key (Groq recommended).",
                         events: [
@@ -901,7 +902,7 @@ export const Reader = () => {
                 div.innerHTML = chapter.content;
                 const textContent = div.textContent || div.innerText || '';
 
-                const result = await summarizerService.generateSummary(chapter.title, textContent, settings.summarizerApiKey || '', settings.groqApiKey, settings.openRouterApiKey);
+                const result = await summarizerService.generateSummary(chapter.title, textContent, settings.summarizerApiKey || '', settings.groqApiKey, settings.mistralApiKey, settings.openRouterApiKey);
                 setSummaryData(result);
 
                 // 3. Save to DB sequentially only if it actually generated something

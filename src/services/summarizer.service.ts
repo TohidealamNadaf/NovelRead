@@ -176,6 +176,38 @@ ${safeText}`;
         return this.parseResponse(text);
     }
 
+    private async tryMistral(prompt: string, apiKey: string): Promise<SummaryResult> {
+        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: 'open-mistral-nemo',
+                messages: [
+                    { role: 'system', content: 'You are an expert novel summarizer. Always respond with valid JSON only.' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.3,
+                max_tokens: 2048,
+                response_format: { type: 'json_object' }
+            }),
+            signal: AbortSignal.timeout(45000)
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            console.error('Mistral API Error:', response.status, err);
+            throw new Error(`Mistral API failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        const text = data.choices?.[0]?.message?.content;
+        if (!text) throw new Error('Empty response from Mistral API');
+        return this.parseResponse(text);
+    }
+
     /**
      * Main entry point. Tries providers in order with automatic fallback.
      * Provider priority: Groq → OpenRouter → Gemini.
@@ -185,6 +217,7 @@ ${safeText}`;
         text: string,
         geminiApiKey: string,
         groqApiKey?: string | null,
+        mistralApiKey?: string | null,
         openRouterApiKey?: string | null
     ): Promise<SummaryResult> {
         // Fallback for extremely short texts
@@ -207,6 +240,13 @@ ${safeText}`;
             });
         }
 
+        if (mistralApiKey) {
+            providers.push({
+                name: 'Mistral',
+                fn: () => this.tryMistral(prompt, mistralApiKey)
+            });
+        }
+
         if (openRouterApiKey) {
             providers.push({
                 name: 'OpenRouter',
@@ -223,11 +263,11 @@ ${safeText}`;
 
         if (providers.length === 0) {
             return {
-                extractive: "AI Summarization requires an API key. Add a free Groq, OpenRouter, or Gemini API key in Settings.",
+                extractive: "AI Summarization requires an API key. Add a free Groq, Mistral, OpenRouter, or Gemini API key in Settings.",
                 events: [
                     "Open the app Settings",
                     "Scroll down to Advanced",
-                    "Get a free API key from Groq (recommended), OpenRouter, or Google AI Studio."
+                    "Get a free API key from Groq, Mistral, OpenRouter, or Google AI Studio."
                 ]
             };
         }

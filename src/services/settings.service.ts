@@ -20,6 +20,7 @@ export interface AppSettings {
     scraperProxy: string | null;
     summarizerApiKey: string | null;
     groqApiKey: string | null;
+    mistralApiKey: string | null;
     openRouterApiKey: string | null;
     cloudSync: boolean;
 
@@ -46,6 +47,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     scraperProxy: null,
     summarizerApiKey: null,
     groqApiKey: null,
+    mistralApiKey: null,
     openRouterApiKey: null,
     cloudSync: true,
     ttsVoice: null,
