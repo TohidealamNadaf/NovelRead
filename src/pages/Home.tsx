@@ -3,7 +3,7 @@ import { FooterNavigation } from '../components/FooterNavigation';
 import { Header } from '../components/Header';
 import { dbService, type Novel } from '../services/db.service';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Bell, Plus, X, BookOpen, Clock } from 'lucide-react';
+import { Search, Bell, Plus, X, BookOpen, Clock, ArrowUp } from 'lucide-react';
 import { notificationService } from '../services/notification.service';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useProfileImage } from '../hooks/useProfileImage';
@@ -14,6 +14,7 @@ export const Home = () => {
     const [editMode, setEditMode] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
+    const [showScrollTop, setShowScrollTop] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const location = useLocation();
 
@@ -51,7 +52,13 @@ export const Home = () => {
     }, [novels]);
 
     const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-        sessionStorage.setItem('homeScroll', e.currentTarget.scrollTop.toString());
+        const scrollTop = e.currentTarget.scrollTop;
+        sessionStorage.setItem('homeScroll', scrollTop.toString());
+        setShowScrollTop(scrollTop > 500);
+    };
+
+    const scrollToTop = () => {
+        containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleDeleteNovel = async (novelId: string, e: React.MouseEvent) => {
@@ -106,7 +113,7 @@ export const Home = () => {
     const profileImage = useProfileImage();
 
     return (
-        <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark overflow-hidden">
+        <div className="relative h-screen w-full flex flex-col bg-background-light dark:bg-background-dark overflow-hidden">
             {/* Scrollable Content */}
             <div
                 ref={containerRef}
@@ -351,6 +358,17 @@ export const Home = () => {
                     )}
                 </div>
             </div>
+
+            {/* Scroll to Top Button */}
+            {showScrollTop && (
+                <button
+                    onClick={scrollToTop}
+                    className="absolute bottom-24 right-6 z-30 p-3 bg-primary text-white rounded-full shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all animate-in fade-in slide-in-from-bottom-4"
+                    aria-label="Scroll to top"
+                >
+                    <ArrowUp size={24} />
+                </button>
+            )}
 
             <FooterNavigation />
         </div >

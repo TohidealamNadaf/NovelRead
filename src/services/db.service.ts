@@ -575,7 +575,7 @@ n.*,
             FROM novels n
             LEFT JOIN chapters c ON n.id = c.novelId
             GROUP BY n.id
-            ORDER BY n.lastReadAt DESC, n.createdAt DESC;
+            ORDER BY COALESCE(n.lastReadAt, n.createdAt * 1000) DESC;
 `;
 
         const result = await db.query(query);
