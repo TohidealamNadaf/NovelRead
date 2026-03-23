@@ -407,7 +407,7 @@ export class ManhwaScraperService {
 
     async fetchNovel(url: string): Promise<NovelMetadata> {
         // ASURA SCANS
-        if (url.includes('asuracomic.net') || url.includes('asuratoon.com')) {
+        if (url.includes('asuracomic.net') || url.includes('asuratoon.com') || url.includes('asurascans.com')) {
             const data = await asuraScraperService.fetchMangaDetails(url);
             if (data) return data;
         }
@@ -567,8 +567,8 @@ export class ManhwaScraperService {
         try {
             const urlObj = new URL(url);
             const pathParts = urlObj.pathname.split('/').filter(Boolean);
-            // For Asura Scans: /series/slug
-            if (url.includes('asuracomic.net') && pathParts.length >= 2) {
+            // For Asura Scans: /comics/slug or /series/slug
+            if ((url.includes('asuracomic.net') || url.includes('asurascans.com')) && pathParts.length >= 2) {
                 slug = pathParts[1];
             } else if (url.includes('mangadex.org') && pathParts.length >= 2) {
                 slug = pathParts[1];
@@ -614,14 +614,10 @@ export class ManhwaScraperService {
             this.currentProgress.logs.push(`Saving ${novel.chapters.length} chapters...`);
             this.notifyListeners();
 
+            const chaptersToSave = [];
             for (let i = 0; i < novel.chapters.length; i++) {
                 const ch = novel.chapters[i];
-                this.currentProgress.current = i + 1;
-                this.currentProgress.currentTitle = ch.title;
-                this.currentProgress.logs.unshift(`✓ ${ch.title}`);
-                this.notifyListeners();
-
-                await dbService.addChapter({
+                chaptersToSave.push({
                     id: `${novelId}-ch-${i + 1}`,
                     novelId,
                     title: ch.title,
@@ -630,6 +626,13 @@ export class ManhwaScraperService {
                     audioPath: ch.url, // Store URL in audioPath for reference 
                     date: ch.date
                 });
+            }
+
+            if (chaptersToSave.length > 0) {
+                this.currentProgress.currentTitle = 'Writing to database...';
+                this.notifyListeners();
+                await dbService.addChapters(chaptersToSave);
+                this.currentProgress.current = chaptersToSave.length;
             }
 
             this.currentProgress.logs.unshift(`✅ Import complete! ${novel.chapters.length} chapters saved.`);
@@ -703,7 +706,7 @@ export class ManhwaScraperService {
 
     async fetchChapterImages(url: string): Promise<string> {
         // ASURA SCANS
-        if (url.includes('asuracomic.net') || url.includes('asuratoon.com')) {
+        if (url.includes('asuracomic.net') || url.includes('asuratoon.com') || url.includes('asurascans.com')) {
             const images = await asuraScraperService.fetchChapterImages(url);
             if (images.length === 0) return '<p>No images found.</p>';
             // Images from asura service are already sorted by filename number

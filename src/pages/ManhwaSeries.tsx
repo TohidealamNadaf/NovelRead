@@ -18,6 +18,8 @@ export const ManhwaSeries = () => {
     const [showFixedButton, setShowFixedButton] = useState(false);
     const [downloadingChapterIds, setDownloadingChapterIds] = useState<Set<string>>(new Set());
     const [failedChapterIds, setFailedChapterIds] = useState<Set<string>>(new Set());
+    const [inLibrary, setInLibrary] = useState(true);
+    const [remoteMetadata, setRemoteMetadata] = useState<any>(null); // Keep original metadata for import
 
     useEffect(() => {
         const handleScroll = () => {
@@ -37,11 +39,66 @@ export const ManhwaSeries = () => {
         const loadData = async () => {
             if (!novelId) return;
             setIsLoading(true);
+            setNovel(null);
+            setChapters([]);
+            setRemoteMetadata(null);
+            setInLibrary(false);
+            
             try {
-                const novelData = await dbService.getNovel(novelId);
-                const chapterData = await dbService.getChapters(novelId);
-                setNovel(novelData);
-                setChapters(chapterData);
+                let decodedId = decodeURIComponent(novelId);
+                const isRemoteUrl = decodedId.startsWith('http');
+
+                if (isRemoteUrl) {
+                    // Check if it's already in the DB by sourceUrl
+                    const allNovels = await dbService.getNovels();
+                    const existing = allNovels.find(n => n.sourceUrl === decodedId);
+                    
+                    if (existing) {
+                        const novelData = await dbService.getNovel(existing.id);
+                        const chapterData = await dbService.getChapters(existing.id);
+                        setNovel(novelData);
+                        setChapters(chapterData);
+                        setInLibrary(true);
+                    } else {
+                        // Fetch remotely for preview
+                        const metadata = await manhwaScraperService.fetchNovel(decodedId);
+                        if (metadata) {
+                            const adaptedNovel: Novel = {
+                                id: decodedId, // Temporary ID
+                                title: metadata.title,
+                                author: metadata.author,
+                                coverUrl: metadata.coverUrl,
+                                status: metadata.status,
+                                summary: metadata.summary,
+                                category: metadata.category || 'Manhwa',
+                                sourceUrl: decodedId,
+                                createdAt: Date.now()
+                            };
+
+                            const adaptedChapters: Chapter[] = metadata.chapters.map((ch, idx) => ({
+                                id: `${decodedId}-ch-${idx}`,
+                                novelId: decodedId,
+                                title: ch.title,
+                                content: '',
+                                orderIndex: idx,
+                                audioPath: ch.url, // URL stored here
+                                date: ch.date || '',
+                                isRead: 0
+                            }));
+
+                            setNovel(adaptedNovel);
+                            setChapters(adaptedChapters);
+                            setInLibrary(false);
+                            setRemoteMetadata(metadata);
+                        }
+                    }
+                } else {
+                    const novelData = await dbService.getNovel(novelId);
+                    const chapterData = await dbService.getChapters(novelId);
+                    setNovel(novelData);
+                    setChapters(chapterData);
+                    setInLibrary(true);
+                }
             } catch (error) {
                 console.error("Failed to load series data", error);
             } finally {
@@ -52,81 +109,115 @@ export const ManhwaSeries = () => {
         loadData();
     }, [novelId]);
 
-    // Background refresh for metadata if title is noisy
+    // Background refresh for metadata and chapters
     useEffect(() => {
         const refreshMetadata = async () => {
-            if (!novelId || !novel || !novel.sourceUrl || isLoading) return;
+            if (!novelId || !novel || !novel.sourceUrl || isLoading || !inLibrary) return;
+            if (!navigator.onLine) return;
 
-            const isNoisy = (t: string) => {
-                const u = t.toUpperCase();
-                return u === 'UNKNOWN TITLE' || u.includes('BETA SITE') || u.includes('READ ON OUR');
-            };
+            try {
+                console.log(`[ManhwaSeries] Checking for updates: ${novel.title}`);
+                const freshData = await manhwaScraperService.fetchNovel(novel.sourceUrl);
+                if (!freshData) return;
 
-            // Check for new chapters (Live Sync)
-            const checkForUpdates = async () => {
-                if (!novel.sourceUrl || !navigator.onLine) return;
+                // --- Always refresh metadata (title, cover, summary, etc.) ---
+                const isNoisy = (t: string) => {
+                    const u = t.toUpperCase();
+                    return u === 'UNKNOWN TITLE' || u.includes('BETA SITE') || u.includes('READ ON OUR') ||
+                        u === 'ASURA SCANS' || u === 'ASURACOMIC' || u.includes('ASURASCANS') ||
+                        u.includes('MANGA') && u.length < 15;
+                };
 
-                try {
-                    console.log(`[ManhwaSeries] Checking for updates: ${novel.title}`);
-                    const freshData = await manhwaScraperService.fetchNovel(novel.sourceUrl);
+                const shouldUpdateMeta = isNoisy(novel.title) ||
+                    !novel.coverUrl || novel.coverUrl.includes('placeholder') ||
+                    (freshData.title && freshData.title !== novel.title && !isNoisy(freshData.title));
 
-                    if (freshData && freshData.chapters.length > chapters.length) {
-                        console.log(`[ManhwaSeries] Found ${freshData.chapters.length - chapters.length} new chapters!`);
+                if (shouldUpdateMeta && !isNoisy(freshData.title)) {
+                    console.log(`[ManhwaSeries] Refreshing metadata: "${novel.title}" -> "${freshData.title}"`);
+                    await dbService.updateNovelMetadata(novelId, {
+                        title: freshData.title,
+                        author: freshData.author,
+                        coverUrl: freshData.coverUrl,
+                        status: freshData.status,
+                        summary: freshData.summary
+                    });
+                    setNovel(prev => prev ? {
+                        ...prev,
+                        title: freshData.title,
+                        author: freshData.author,
+                        coverUrl: freshData.coverUrl,
+                        status: freshData.status,
+                        summary: freshData.summary
+                    } : null);
+                }
 
-                        // Find new chapters
+                // --- Chapter sync ---
+                if (freshData.chapters.length > 0) {
+                    const freshCount = freshData.chapters.length;
+                    const localCount = chapters.length;
+                    const missingRatio = localCount > 0 ? freshCount / localCount : Infinity;
+
+                    // If the remote has significantly more chapters (>30% more), do a full re-sync
+                    if (missingRatio > 1.3 || (freshCount - localCount > 20)) {
+                        console.log(`[ManhwaSeries] Full re-sync: ${localCount} local vs ${freshCount} remote chapters`);
+
+                        // Delete all existing chapters and re-insert from fresh data
+                        await dbService.deleteChaptersByNovelId(novelId);
+
+                        const newChapterObjects: Chapter[] = [];
+                        for (let i = 0; i < freshData.chapters.length; i++) {
+                            const ch = freshData.chapters[i];
+                            const chapterObj: Chapter = {
+                                id: `${novelId}-ch-${i + 1}`,
+                                novelId,
+                                title: ch.title,
+                                content: '',
+                                orderIndex: i,
+                                audioPath: ch.url,
+                                date: ch.date || '',
+                                isRead: 0
+                            };
+                            newChapterObjects.push(chapterObj);
+                        }
+                        
+                        // Bulk insert to prevent UI freezing
+                        await dbService.addChapters(newChapterObjects);
+                        setChapters(newChapterObjects);
+                        console.log(`[ManhwaSeries] Full re-sync complete: ${newChapterObjects.length} chapters.`);
+
+                    } else if (freshCount > localCount) {
+                        // Just append new chapters
                         const existingUrls = new Set(chapters.map(c => c.audioPath));
                         const newChapters = freshData.chapters.filter(c => !existingUrls.has(c.url));
 
                         if (newChapters.length > 0) {
-                            // Add to DB
                             const startOrderIndex = chapters.length;
                             const newChapterObjects: Chapter[] = [];
 
                             for (let i = 0; i < newChapters.length; i++) {
                                 const ch = newChapters[i];
                                 const chapterObj: Chapter = {
-                                    id: `${novelId}-ch-${startOrderIndex + i + 1}`, // Generate ID
+                                    id: `${novelId}-ch-${startOrderIndex + i + 1}`,
                                     novelId,
                                     title: ch.title,
                                     content: '',
                                     orderIndex: startOrderIndex + i,
                                     audioPath: ch.url,
-                                    date: new Date().toISOString().split('T')[0], // Today's date for new sync
+                                    date: new Date().toISOString().split('T')[0],
                                     isRead: 0
                                 };
-                                await dbService.addChapter(chapterObj);
                                 newChapterObjects.push(chapterObj);
                             }
-
-                            // Update State
+                            
+                            // Bulk insert new appended chapters
+                            await dbService.addChapters(newChapterObjects);
                             setChapters(prev => [...prev, ...newChapterObjects]);
-                            console.log(`[ManhwaSeries] Synced ${newChapters.length} new chapters.`);
+                            console.log(`[ManhwaSeries] Appended ${newChapters.length} new chapters.`);
                         }
                     }
-                } catch (e) {
-                    console.error("[ManhwaSeries] Failed to check for updates", e);
                 }
-            };
-
-            checkForUpdates();
-
-            if (isNoisy(novel.title) && navigator.onLine) {
-                try {
-                    console.log(`[ManhwaSeries] Refreshing noisy title: ${novel.title}`);
-                    const freshData = await manhwaScraperService.fetchNovel(novel.sourceUrl);
-                    if (freshData && !isNoisy(freshData.title)) {
-                        await dbService.updateNovelMetadata(novelId, {
-                            title: freshData.title,
-                            author: freshData.author,
-                            coverUrl: freshData.coverUrl,
-                            status: freshData.status,
-                            summary: freshData.summary
-                        });
-                        setNovel(prev => prev ? { ...prev, ...freshData } : null);
-                    }
-                } catch (e) {
-                    console.error("Failed to background refresh metadata", e);
-                }
+            } catch (e) {
+                console.error("[ManhwaSeries] Failed to refresh", e);
             }
         };
 
@@ -134,12 +225,33 @@ export const ManhwaSeries = () => {
     }, [isLoading, novel?.id, novel?.title, novelId]);
 
     const handleChapterSelect = (chapter: Chapter) => {
-        if (!novelId) return;
+        if (!novelId || !inLibrary) {
+            alert("Please save the series to your library first to read chapters.");
+            return;
+        }
         navigate(`/manhwa/read/${novelId}/${chapter.id}`); // Using the new reader route
+    };
+
+    const handleToggleLibrary = () => {
+        if (inLibrary) {
+            alert("Already in library.");
+            return;
+        }
+        if (remoteMetadata && novel) {
+            manhwaScraperService.startImport(novel.sourceUrl!, remoteMetadata);
+            // Quick optimistic update to prevent multiple clicks
+            setInLibrary(true);
+            alert("Import started! It will appear in your library shortly.");
+            navigate('/'); // The library is actually at '/'
+        }
     };
 
     const handleReadNow = () => {
         if (!novel || chapters.length === 0) return;
+        if (!inLibrary) {
+            alert("Please save the series to your library first to read chapters.");
+            return;
+        }
 
         let targetChapter = chapters[0]; // Default to first
         if (novel.lastReadChapterId) {
@@ -249,8 +361,9 @@ export const ManhwaSeries = () => {
             <SeriesHero
                 novel={novel}
                 onReadNow={handleReadNow}
+                onToggleLibrary={handleToggleLibrary}
                 chapterCount={chapters.length}
-                inLibrary={true} // Hardcoded for now, assuming if in DB it's in library
+                inLibrary={inLibrary}
                 hasStartedReading={hasStartedReading}
             />
 

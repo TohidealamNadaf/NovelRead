@@ -64,6 +64,12 @@ export const Discover = () => {
     const [isLoadingManhwa, setIsLoadingManhwa] = useState(false);
     const [novelSearchResults, setNovelSearchResults] = useState<NovelMetadata[]>([]);
     const [isSearchingNovels, setIsSearchingNovels] = useState(false);
+    
+    // Manhwa Search State
+    const [manhwaSearchResults, setManhwaSearchResults] = useState<NovelMetadata[]>([]);
+    const [isSearchingManhwa, setIsSearchingManhwa] = useState(false);
+    const [manhwaSearchSource, setManhwaSearchSource] = useState<'mangadex' | 'asura'>('mangadex');
+    
     const [searchPerformed, setSearchPerformed] = useState(false);
     const [isOffline, setIsOffline] = useState(!navigator.onLine);
     const profileImage = useProfileImage();
@@ -186,7 +192,7 @@ export const Discover = () => {
     const performQuickScrape = async (url: string) => {
         const isManhwa = mode === 'manhwa' || url.includes('asura') || url.includes('mangadex');
         if (isManhwa) {
-            navigate('/import', { state: { initialUrl: url } });
+            navigate(`/manhwa/${encodeURIComponent(url)}`);
             return;
         }
         if (confirm("Start quick scrape for this novel?")) {
@@ -205,12 +211,22 @@ export const Discover = () => {
             if (searchQuery.startsWith('http')) {
                 await performQuickScrape(searchQuery);
             } else {
+                setSearchPerformed(true);
                 if (mode === 'manhwa') {
-                    navigate('/import', { state: { initialQuery: searchQuery } });
+                    // Search manhwas
+                    setIsSearchingManhwa(true);
+                    setManhwaSearchResults([]);
+                    try {
+                        const results = await manhwaScraperService.searchManga(searchQuery, manhwaSearchSource);
+                        setManhwaSearchResults(results);
+                    } catch (e) {
+                        console.error('Manhwa search failed:', e);
+                    } finally {
+                        setIsSearchingManhwa(false);
+                    }
                 } else {
                     // Search novels on NovelFire
                     setIsSearchingNovels(true);
-                    setSearchPerformed(true);
                     setNovelSearchResults([]);
                     try {
                         const results = await scraperService.searchNovels(searchQuery);
@@ -223,7 +239,7 @@ export const Discover = () => {
                 }
             }
         }
-    }, [searchQuery, mode, navigate]);
+    }, [searchQuery, mode, navigate, manhwaSearchSource]);
 
     return (
         <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark font-sans selection:bg-primary/30 overflow-hidden">
@@ -269,6 +285,13 @@ export const Discover = () => {
                             manhwaData={manhwaData}
                             isLoadingManhwa={isLoadingManhwa}
                             loadManhwaData={loadManhwaData}
+                            isSearchingManhwa={isSearchingManhwa}
+                            searchPerformed={searchPerformed}
+                            manhwaSearchResults={manhwaSearchResults}
+                            searchQuery={searchQuery}
+                            onClearSearch={() => { setSearchPerformed(false); setManhwaSearchResults([]); setSearchQuery(''); }}
+                            manhwaSearchSource={manhwaSearchSource}
+                            setManhwaSearchSource={setManhwaSearchSource}
                         />
                     )}
                 </div>

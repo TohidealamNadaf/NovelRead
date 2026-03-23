@@ -14,12 +14,12 @@ Analyze the following chapter content titled "${chapterTitle}".
 Match the tone, mood, and atmosphere of the original text (e.g., if the chapter is dark and intense, the summary should be as well; if it's light and humorous, mirror that style).
 Return a strict JSON object with THREE keys:
 1. "structuredOverview": An array of section objects representing the summary. Each object must have:
-   - "header": A thematic title for the section (max 4-6 words).
-   - "intro": A very short, single-sentence introductory paragraph for the section.
-   - "bullets": An array of strings (max 2-3 bullets per section). Each string is a brief, one-sentence bullet point with an entity/subject and description.
-CRITICAL INSTRUCTION: The total output must be extremely concise. Do NOT exceed 3 sections total. Keep the entire summary roughly the same length as a few short paragraphs.
-2. "extractive": A brief fallback string summarizing the chapter.
-3. "events": An array of strings, where each string is a concise bullet point of a key action, revelation, or event that occurred. (3-6 bullet points)
+   - "header": A thematic, descriptive title for the section (can be numbered, e.g., "1. The Chu Clan's Political Situation").
+   - "intro": A short introductory paragraph for the section (optional, can be empty if bullets suffice).
+   - "bullets": An array of strings providing a highly detailed, comprehensive breakdown of the events in this section.
+CRITICAL INSTRUCTION: Ensure the summary is comprehensive and captures all plot points, political nuances, character interactions, and setting details. Do NOT artificially limit the number of sections or bullet points; use as many as needed to fully summarize the chapter.
+2. "extractive": A brief fallback paragraph summarizing the overall chapter.
+3. "events": An array of strings, where each string is a clear bullet point of a key action, revelation, or event that occurred in the chapter. (No hard limit, capture all major events)
 
 Output ONLY valid JSON. Do not use Markdown formatting for the JSON block itself.
 

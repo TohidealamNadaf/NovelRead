@@ -55,9 +55,21 @@ export const SeriesHero: React.FC<SeriesHeroProps> = ({
                 <div className="absolute inset-0 bg-gradient-to-t from-background-light dark:from-background-dark via-background-light/20 dark:via-background-dark/20 to-transparent shadow-[inset_0_-120px_80px_-20px_rgba(0,0,0,0.5)] dark:shadow-[inset_0_-120px_80px_-20px_rgba(19,16,34,1)]"></div>
 
                 {/* Content Overlay */}
-                <div className="absolute bottom-0 left-0 right-0 p-6 flex flex-col gap-4">
-                    <div className="flex flex-wrap gap-2">
-                        {displayStatus && (
+                <div className="absolute bottom-0 left-0 right-0 p-6 flex flex-col justify-end">
+                    <div className="flex gap-4 items-end mb-4">
+                        {/* Foreground Thumbnail Poster */}
+                        <div className="w-[100px] sm:w-[120px] aspect-[2/3] rounded-md overflow-hidden bg-slate-800 shadow-xl flex-shrink-0 relative group">
+                            <img
+                                src={novel.coverUrl || 'https://via.placeholder.com/400x600?text=No+Cover'}
+                                alt={`${novel.title} Poster`}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                        </div>
+
+                        {/* Text Content */}
+                        <div className="flex flex-col gap-2 pb-1">
+                            <div className="flex flex-wrap gap-2">
+                                {displayStatus && (
                             <span className="px-2.5 py-1 rounded-md bg-primary text-white text-[10px] font-bold tracking-wider uppercase">
                                 {displayStatus}
                             </span>
@@ -82,9 +94,11 @@ export const SeriesHero: React.FC<SeriesHeroProps> = ({
                             <Eye size={18} />
                             <span>N/A</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <Book size={18} />
-                            <span>{chapterCount} Chs</span>
+                                <div className="flex items-center gap-1">
+                                    <Book size={18} />
+                                    <span>{chapterCount} Chs</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

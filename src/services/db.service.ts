@@ -421,6 +421,16 @@ class DatabaseService {
         });
     }
 
+    async deleteChaptersByNovelId(novelId: string) {
+        return this.enqueueWrite(async () => {
+            const db = await this.getDB();
+            if (!db) return;
+            await db.run('DELETE FROM chapters WHERE novelId = ?', [novelId]);
+            await this.save();
+            console.log(`[dbService] Deleted all chapters for novel: ${novelId}`);
+        });
+    }
+
     async addChapters(chapters: Chapter[]) {
         return this.enqueueWrite(async () => {
             const db = await this.getDB();

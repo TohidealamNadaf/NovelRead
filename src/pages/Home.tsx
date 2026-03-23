@@ -18,6 +18,34 @@ export const Home = () => {
     const containerRef = useRef<HTMLDivElement>(null);
     const location = useLocation();
 
+    // Long Press Edit Mode Tracking
+    const pressTimer = useRef<NodeJS.Timeout | null>(null);
+    const wasLongPressed = useRef(false);
+
+    const handlePointerDown = () => {
+        if (editMode) return;
+        wasLongPressed.current = false;
+        pressTimer.current = setTimeout(() => {
+            wasLongPressed.current = true;
+            setEditMode(true);
+            // Optionally provide haptic feedback
+            if (navigator.vibrate) navigator.vibrate(50);
+        }, 3000);
+    };
+
+    const handlePointerUpOrMove = () => {
+        if (pressTimer.current) {
+            clearTimeout(pressTimer.current);
+            pressTimer.current = null;
+        }
+    };
+
+    const preventLinkIfEdit = (e: React.MouseEvent) => {
+        if (wasLongPressed.current || editMode) {
+            e.preventDefault();
+        }
+    };
+
     // Scroll restoration
     useEffect(() => {
         const savedScroll = sessionStorage.getItem('homeScroll');
@@ -199,8 +227,16 @@ export const Home = () => {
                                 {continueReading.map(novel => (
                                     <Link
                                         key={'cont-' + novel.id}
-                                        to={novel.category === 'Manhwa' ? `/manhwa/${novel.id}` : `/novel/${novel.id}`}
+                                        to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${novel.id}` : `/novel/${novel.id}`)}
                                         className="snap-start shrink-0 w-32 flex flex-col gap-2 group"
+                                        onTouchStart={handlePointerDown}
+                                        onTouchEnd={handlePointerUpOrMove}
+                                        onTouchMove={handlePointerUpOrMove}
+                                        onMouseDown={handlePointerDown}
+                                        onMouseUp={handlePointerUpOrMove}
+                                        onMouseLeave={handlePointerUpOrMove}
+                                        onContextMenu={(e) => { e.preventDefault(); }}
+                                        onClick={preventLinkIfEdit}
                                     >
                                         <div className="relative aspect-[2/3] w-full rounded-lg overflow-hidden shadow-md ring-1 ring-black/5 dark:ring-white/10">
                                             <img
@@ -281,7 +317,15 @@ export const Home = () => {
                                             <Link
                                                 key={novel.id}
                                                 to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${novel.id}` : `/novel/${novel.id}`)}
-                                                className="flex flex-col gap-2 group relative w-full"
+                                                className={`flex flex-col gap-2 group relative w-full select-none ${editMode ? 'cursor-default' : 'cursor-pointer'}`}
+                                                onTouchStart={handlePointerDown}
+                                                onTouchEnd={handlePointerUpOrMove}
+                                                onTouchMove={handlePointerUpOrMove}
+                                                onMouseDown={handlePointerDown}
+                                                onMouseUp={handlePointerUpOrMove}
+                                                onMouseLeave={handlePointerUpOrMove}
+                                                onContextMenu={(e) => { e.preventDefault(); }}
+                                                onClick={preventLinkIfEdit}
                                             >
                                                 {/* Edit Mode Delete Badge */}
                                                 {editMode && (

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2, ChevronDown, Users, Search } from 'lucide-react';
+import { MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2, ChevronDown, Users } from 'lucide-react';
 import { scraperService, type NovelMetadata, type ScraperProgress } from '../services/scraper.service';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -16,16 +16,10 @@ export const Import = () => {
     const [novel, setNovel] = useState<NovelMetadata | null>(scraperService.activeNovelMetadata);
     const [scraping, setScraping] = useState(scraperService.isScraping);
     const [progress, setProgress] = useState<ScraperProgress>(scraperService.progress);
-    const [activeTab, setActiveTab] = useState<'novel' | 'manhwa' | 'search'>('novel');
+    const [activeTab, setActiveTab] = useState<'novel' | 'manhwa'>('novel');
     const [selectedPublisher, setSelectedPublisher] = useState<string>('');
     const [publisherLoading, setPublisherLoading] = useState(false);
     const [showPublisherDropdown, setShowPublisherDropdown] = useState(false);
-
-    // Search State
-    const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState<NovelMetadata[]>([]);
-    const [isSearching, setIsSearching] = useState(false);
-    const [selectedSource, setSelectedSource] = useState<'mangadex' | 'asura'>('mangadex');
     const [isImportComplete, setIsImportComplete] = useState(false);
 
     useEffect(() => {
@@ -87,9 +81,9 @@ export const Import = () => {
         };
     }, []);
 
-    // Handle initial URL or Search Query from navigation state
+    // Handle initial URL from navigation state
     useEffect(() => {
-        const state = location.state as { initialUrl?: string; initialQuery?: string };
+        const state = location.state as { initialUrl?: string };
         if (state) {
             if (state.initialUrl) {
                 setUrl(state.initialUrl);
@@ -97,13 +91,6 @@ export const Import = () => {
                 // Use a short delay or ensure handlePreview handles the updated url state
                 // handlePreview accepts an optional overrideUrl which is perfect here
                 handlePreview(state.initialUrl, true);
-            } else if (state.initialQuery) {
-                setSearchQuery(state.initialQuery);
-                setActiveTab('search');
-                // Trigger search after a tick to ensure state is updated
-                setTimeout(() => {
-                    handleSearch();
-                }, 100);
             }
         }
     }, [location.state]);
@@ -111,8 +98,6 @@ export const Import = () => {
     const resetImportState = () => {
         setUrl('');
         setNovel(null);
-        setSearchQuery('');
-        setSearchResults([]);
         setSelectedPublisher('');
         setIsImportComplete(false);
         scraperService.clearMetadata();
@@ -120,21 +105,6 @@ export const Import = () => {
         if (!scraperService.isScraping && !manhwaScraperService.isScraping) {
             scraperService.resetProgress?.();
             manhwaScraperService.resetProgress?.();
-        }
-    };
-
-    const handleSearch = async () => {
-        if (!searchQuery.trim()) return;
-        setIsSearching(true);
-        setSearchResults([]);
-        try {
-            const results = await manhwaScraperService.searchManga(searchQuery, selectedSource);
-            setSearchResults(results);
-        } catch (error) {
-            console.error(error);
-            alert('Search failed. Please try again.');
-        } finally {
-            setIsSearching(false);
         }
     };
 
@@ -149,8 +119,8 @@ export const Import = () => {
             // 1. If forced Manhwa (from Discover nav), use Manhwa service
             // 2. If URL matches known Manhwa domains, use Manhwa service
             // 3. Otherwise fallback to activeTab or default Scraper
-            const isManhwaUrl = targetUrl.includes('asuracomic') || targetUrl.includes('mangadex.org') || targetUrl.includes('comick.io');
-            const useManhwaService = forceManhwa || isManhwaUrl || activeTab === 'manhwa' || activeTab === 'search';
+            const isManhwaUrl = targetUrl.includes('asuracomic') || targetUrl.includes('mangadex.org') || targetUrl.includes('comick.io') || targetUrl.includes('asurascans.com');
+            const useManhwaService = forceManhwa || isManhwaUrl || activeTab === 'manhwa';
 
             const service = useManhwaService ? manhwaScraperService : scraperService;
             const data = await service.fetchNovel(targetUrl);
@@ -264,101 +234,10 @@ export const Import = () => {
                     >
                         Manhwa
                     </button>
-                    <button
-                        onClick={() => {
-                            setActiveTab('search');
-                            resetImportState();
-                        }}
-                        className={clsx(
-                            "flex-1 h-9 rounded-lg text-sm font-bold transition-all",
-                            activeTab === 'search'
-                                ? "bg-white dark:bg-[#3f3b54] text-primary shadow-sm"
-                                : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-300"
-                        )}
-                    >
-                        Search
-                    </button>
                 </div>
 
-                {/* Search / URL Input Section */}
+                {/* URL Input Section */}
                 <div className="mt-4 space-y-4">
-                    {activeTab === 'search' ? (
-                        <div className="flex flex-col gap-2 animate-in fade-in">
-                            <div className="flex items-center justify-between px-1">
-                                <label className="text-sm font-medium opacity-70">Search Manga</label>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => setSelectedSource('mangadex')}
-                                        className={clsx(
-                                            "text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors",
-                                            selectedSource === 'mangadex'
-                                                ? "bg-primary text-white border-primary"
-                                                : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                        )}
-                                    >
-                                        MangaDex
-                                    </button>
-                                    <button
-                                        onClick={() => setSelectedSource('asura')}
-                                        className={clsx(
-                                            "text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors",
-                                            selectedSource === 'asura'
-                                                ? "bg-primary text-white border-primary"
-                                                : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                        )}
-                                    >
-                                        Asura Scans
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="flex items-stretch bg-white dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54] overflow-hidden focus-within:ring-2 ring-primary/50 transition-all">
-                                <input
-                                    className="flex-1 bg-transparent border-none text-base p-4 focus:ring-0 placeholder:text-slate-400 dark:placeholder:text-[#a19db9] outline-none"
-                                    placeholder="Enter manga title (e.g. Solo Leveling)"
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            handleSearch();
-                                        }
-                                    }}
-                                />
-                                <button onClick={handleSearch} disabled={loading || isSearching} className="px-4 flex items-center justify-center text-primary border-l border-slate-100 dark:border-[#3f3b54] disabled:opacity-50">
-                                    {isSearching ? <Loader2 className="animate-spin" /> : <Search />}
-                                </button>
-                            </div>
-
-                            {/* Search Results */}
-                            {searchResults.length > 0 && (
-                                <div className="grid grid-cols-2 gap-3 mt-2">
-                                    {searchResults.map((result) => (
-                                        <div
-                                            key={result.sourceUrl || result.title}
-                                            onClick={() => {
-                                                if (result.sourceUrl) {
-                                                    setUrl(result.sourceUrl);
-                                                    setActiveTab('manhwa'); // Switch to Manhwa tab to preview
-                                                    handlePreview(result.sourceUrl);
-                                                }
-                                            }}
-                                            className="bg-white dark:bg-[#1d1c27] rounded-xl p-2 border border-slate-200 dark:border-[#3f3b54] active:scale-95 transition-transform cursor-pointer"
-                                        >
-                                            <div className="aspect-[2/3] bg-cover bg-center rounded-lg mb-2 shadow-sm" style={{ backgroundImage: `url('${result.coverUrl}')` }}></div>
-                                            <p className="font-bold text-xs line-clamp-2 leading-tight px-1">{result.title}</p>
-                                            <p className="text-[10px] opacity-60 px-1 mt-0.5">{result.author}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {searchResults.length === 0 && searchQuery && !isSearching && (
-                                <div className="text-center py-8 opacity-50 text-sm">
-                                    No results found
-                                </div>
-                            )}
-                        </div>
-                    ) : (
                         <div className="flex flex-col gap-2 animate-in fade-in">
                             <label className="text-sm font-medium opacity-70 px-1">Source URL</label>
                             <div className="flex items-stretch bg-white dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54] overflow-hidden focus-within:ring-2 ring-primary/50 transition-all">
@@ -383,7 +262,6 @@ export const Import = () => {
                                 </button>
                             </div>
                         </div>
-                    )}
                 </div>
 
                 {/* Preview Card */}
