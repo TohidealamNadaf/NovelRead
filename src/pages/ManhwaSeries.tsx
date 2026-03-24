@@ -20,20 +20,40 @@ export const ManhwaSeries = () => {
     const [failedChapterIds, setFailedChapterIds] = useState<Set<string>>(new Set());
     const [inLibrary, setInLibrary] = useState(true);
     const [remoteMetadata, setRemoteMetadata] = useState<any>(null); // Keep original metadata for import
+    
+    // Dynamic Header State
+    const [showHeader, setShowHeader] = useState(true);
+    const [lastScrollY, setLastScrollY] = useState(0);
 
     useEffect(() => {
         const handleScroll = () => {
-            // Show button when scrolled past the hero actions (around 450px)
-            if (window.scrollY > 450) {
+            const currentScrollY = window.scrollY;
+            
+            // 1. Show/Hide Fixed Read Button (Resume)
+            if (currentScrollY > 450) {
                 setShowFixedButton(true);
             } else {
                 setShowFixedButton(false);
             }
+
+            // 2. Dynamic Header Logic (Hide on scroll down, Show on scroll up)
+            if (currentScrollY < 10) {
+                // Always show at the very top
+                setShowHeader(true);
+            } else if (currentScrollY > lastScrollY && currentScrollY > 100) {
+                // Scrolling Down + passed threshold
+                setShowHeader(false);
+            } else if (currentScrollY < lastScrollY) {
+                // Scrolling Up
+                setShowHeader(true);
+            }
+
+            setLastScrollY(currentScrollY);
         };
 
-        window.addEventListener('scroll', handleScroll);
+        window.addEventListener('scroll', handleScroll, { passive: true });
         return () => window.removeEventListener('scroll', handleScroll);
-    }, []);
+    }, [lastScrollY]);
 
     useEffect(() => {
         const loadData = async () => {
@@ -349,14 +369,21 @@ export const ManhwaSeries = () => {
             exit={{ opacity: 0 }}
             className="min-h-screen bg-background-light dark:bg-background-dark pb-10"
         >
-            {/* Transparent Header with Gradient and Title */}
-            <Header
-                title={novel?.title || ''}
-                subtitle={novel?.category || 'Manhwa'}
-                transparent
-                showBack
-                className="fixed top-0 left-0 right-0 z-50 text-white bg-gradient-to-b from-black/80 via-black/40 to-transparent"
-            />
+            {/* Dynamic Animated Header */}
+            <motion.div
+                initial={false}
+                animate={{ y: showHeader ? 0 : -100 }}
+                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                className="fixed top-0 left-0 right-0 z-50 pointer-events-none"
+            >
+                <Header
+                    title={novel?.title || ''}
+                    subtitle={novel?.category || 'Manhwa'}
+                    transparent
+                    showBack
+                    className="text-white bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-auto"
+                />
+            </motion.div>
 
             <SeriesHero
                 novel={novel}

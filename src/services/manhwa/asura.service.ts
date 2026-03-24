@@ -102,9 +102,6 @@ export class AsuraScraperService {
         const latest: NovelMetadata[] = [];
         const seenUrls = new Set<string>();
 
-        // Helper: check if a string looks like a rating (e.g. "9.3", "9.4")
-        const isRating = (s: string) => /^\d+(\.\d+)?$/.test(s.trim());
-
         // Extract a single manhwa item from an anchor element
         const extractItem = (a: any, parentEl?: any): NovelMetadata | null => {
             const href = a.attr('href') || '';
@@ -125,11 +122,11 @@ export class AsuraScraperService {
                 || a.find('span.font-bold').first().text().trim();
 
             // If we got a rating as title, try harder
-            if (!title || isRating(title)) {
+            if (!title || this.isRating(title)) {
                 // Try all spans and find one that's not a rating
                 a.find('span').each((_: number, span: any) => {
                     const t = $(span).text().trim();
-                    if (t && !isRating(t) && !this.isNoiseTitle(t) && t.length > 2) {
+                    if (t && !this.isRating(t) && !this.isNoiseTitle(t) && t.length > 2) {
                         title = t;
                         return false; // break
                     }
@@ -137,12 +134,12 @@ export class AsuraScraperService {
             }
 
             // Final fallback: use the direct text 
-            if (!title || isRating(title)) {
+            if (!title || this.isRating(title)) {
                 title = a.text().trim().split('\n')[0].trim();
             }
 
             title = title.replace(/\s+/g, ' ').replace('MANHWA', '').replace('Poster', '').trim();
-            if (!title || this.isNoiseTitle(title) || isRating(title)) return null;
+            if (!title || this.isNoiseTitle(title) || this.isRating(title)) return null;
 
             // Cover: try img inside the anchor first
             let img = a.find('img').first();
@@ -279,20 +276,27 @@ export class AsuraScraperService {
 
             seenUrls.add(sourceUrl);
 
-            let title = a.find('span.font-bold').text().trim() ||
-                a.find('span.text-white').text().trim() ||
-                a.find('h3').text().trim() ||
-                a.find('.font-bold').first().text().trim() ||
-                a.find('.text-white').first().text().trim();
+            // Prioritize h3 for title (actual series title)
+            // On browse page, ratings are also in spans inside the first <a> tag
+            let title = a.find('h3').text().trim() ||
+                a.find('span.font-bold').filter((_, s) => !this.isRating($(s).text())).text().trim() ||
+                a.find('span.text-white').filter((_, s) => !this.isRating($(s).text())).text().trim();
 
-            const isNoise = (t: string) => this.isNoiseTitle(t);
+            // If the <a> tag was the cover image, find the title link nearby
+            if (!title || this.isRating(title)) {
+                const card = a.closest('.series-card, div');
+                title = card.find('h3').text().trim();
+            }
 
-            if (isNoise(title)) {
-                // Try to find a better title inside the anchor by removing noise elements
-                const tempA = a.clone();
-                tempA.find('span.status, .status, .type, .px-1, .absolute, .hidden, .text-xs, img').remove();
-                title = tempA.text().trim();
-                if (title.includes('\n')) title = title.split('\n')[0].trim();
+            if (this.isNoise(title) || this.isRating(title)) {
+                // Try harder
+                a.find('span').each((_, s) => {
+                    const t = $(s).text().trim();
+                    if (t && !this.isRating(t) && !this.isNoise(t) && t.length > 2) {
+                        title = t;
+                        return false;
+                    }
+                });
             }
 
             // Cleanup title (remove extra spaces/newlines, and noisy labels)
@@ -306,7 +310,7 @@ export class AsuraScraperService {
             const status = a.find('span.status, .status').text().trim() || 'Ongoing';
 
             // Final check: if it's still noise or empty, skip this entire entry
-            if (isNoise(title) || sourceUrl.includes('recruitment') || sourceUrl.includes('beta-site')) return;
+            if (this.isNoise(title) || sourceUrl.includes('recruitment') || sourceUrl.includes('beta-site')) return;
 
             const coverUrl = a.find('img').attr('src') ||
                 a.find('img').attr('data-src') || a.find('img').attr('data-lazy-src') || '';
@@ -340,6 +344,14 @@ export class AsuraScraperService {
             upper === 'POSTER' ||
             t.length < 2 ||
             t === 'Unknown Title';
+    }
+
+    private isNoise(t: string): boolean {
+        return this.isNoiseTitle(t);
+    }
+
+    private isRating(s: string): boolean {
+        return /^\d+(\.\d+)?$/.test(s.trim());
     }
 
     async fetchMangaDetails(url: string): Promise<NovelMetadata | null> {

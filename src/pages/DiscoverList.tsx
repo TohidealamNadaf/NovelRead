@@ -162,7 +162,7 @@ export const DiscoverList = () => {
 
     const handleItemClick = (item: any) => {
         if (mode === 'manhwa') {
-            navigate('/import', { state: { initialUrl: item.sourceUrl } });
+            navigate(`/manhwa/${encodeURIComponent(item.sourceUrl)}`);
         } else {
             navigate(`/novel/live-${encodeURIComponent(item.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`, { state: { liveMode: true, novel: item } });
         }
