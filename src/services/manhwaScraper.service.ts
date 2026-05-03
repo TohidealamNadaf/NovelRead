@@ -398,11 +398,8 @@ export class ManhwaScraperService {
     }
 
     // --- Search API ---
-    async searchManga(query: string, source: 'mangadex' | 'asura' = 'mangadex'): Promise<NovelMetadata[]> {
-        if (source === 'asura') {
-            return await asuraScraperService.searchManga(query);
-        }
-        return await mangaDexService.searchManga(query);
+    async searchManga(query: string, _source: 'mangadex' | 'asura' = 'asura'): Promise<NovelMetadata[]> {
+        return await asuraScraperService.searchManga(query);
     }
 
     async fetchNovel(url: string): Promise<NovelMetadata> {

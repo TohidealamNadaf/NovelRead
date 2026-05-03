@@ -68,7 +68,7 @@ export const Discover = () => {
     // Manhwa Search State
     const [manhwaSearchResults, setManhwaSearchResults] = useState<NovelMetadata[]>([]);
     const [isSearchingManhwa, setIsSearchingManhwa] = useState(false);
-    const [manhwaSearchSource, setManhwaSearchSource] = useState<'mangadex' | 'asura'>('mangadex');
+    
     
     const [searchPerformed, setSearchPerformed] = useState(false);
     const [isOffline, setIsOffline] = useState(!navigator.onLine);
@@ -190,7 +190,7 @@ export const Discover = () => {
     }, []);
 
     const performQuickScrape = async (url: string) => {
-        const isManhwa = mode === 'manhwa' || url.includes('asura') || url.includes('mangadex');
+        const isManhwa = mode === 'manhwa' || url.includes('asura');
         if (isManhwa) {
             navigate(`/manhwa/${encodeURIComponent(url)}`);
             return;
@@ -217,7 +217,7 @@ export const Discover = () => {
                     setIsSearchingManhwa(true);
                     setManhwaSearchResults([]);
                     try {
-                        const results = await manhwaScraperService.searchManga(searchQuery, manhwaSearchSource);
+                        const results = await manhwaScraperService.searchManga(searchQuery, 'asura');
                         setManhwaSearchResults(results);
                     } catch (e) {
                         console.error('Manhwa search failed:', e);
@@ -239,7 +239,7 @@ export const Discover = () => {
                 }
             }
         }
-    }, [searchQuery, mode, navigate, manhwaSearchSource]);
+    }, [searchQuery, mode, navigate]);
 
     return (
         <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark font-sans selection:bg-primary/30 overflow-hidden">
@@ -290,8 +290,6 @@ export const Discover = () => {
                             manhwaSearchResults={manhwaSearchResults}
                             searchQuery={searchQuery}
                             onClearSearch={() => { setSearchPerformed(false); setManhwaSearchResults([]); setSearchQuery(''); }}
-                            manhwaSearchSource={manhwaSearchSource}
-                            setManhwaSearchSource={setManhwaSearchSource}
                         />
                     )}
                 </div>

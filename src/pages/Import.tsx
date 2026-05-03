@@ -243,7 +243,7 @@ export const Import = () => {
                             <div className="flex items-stretch bg-white dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54] overflow-hidden focus-within:ring-2 ring-primary/50 transition-all">
                                 <input
                                     className="flex-1 bg-transparent border-none text-base p-4 focus:ring-0 placeholder:text-slate-400 dark:placeholder:text-[#a19db9] outline-none"
-                                    placeholder={activeTab === 'novel' ? "https://novelfire.com/..." : "https://mangadex.org/..."}
+                                    placeholder={activeTab === 'novel' ? "https://novelfire.com/..." : "https://asuracomic.net/..."}
                                     type="text"
                                     value={url}
                                     onChange={(e) => {

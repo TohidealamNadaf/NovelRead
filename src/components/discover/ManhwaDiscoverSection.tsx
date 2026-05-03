@@ -11,8 +11,6 @@ interface ManhwaDiscoverSectionProps {
     manhwaSearchResults?: any[];
     searchQuery?: string;
     onClearSearch?: () => void;
-    manhwaSearchSource?: 'mangadex' | 'asura';
-    setManhwaSearchSource?: (source: 'mangadex' | 'asura') => void;
 }
 
 export const ManhwaDiscoverSection = memo(({
@@ -23,9 +21,7 @@ export const ManhwaDiscoverSection = memo(({
     searchPerformed,
     manhwaSearchResults,
     searchQuery,
-    onClearSearch,
-    manhwaSearchSource,
-    setManhwaSearchSource
+    onClearSearch
 }: ManhwaDiscoverSectionProps) => {
     const navigate = useNavigate();
 
@@ -42,30 +38,6 @@ export const ManhwaDiscoverSection = memo(({
                 <div className="flex flex-col gap-4 px-4 py-2 animate-in fade-in">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-bold tracking-tight">Search Results</h3>
-                        {setManhwaSearchSource && (
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setManhwaSearchSource('mangadex')}
-                                    className={`text-[10px] font-bold px-3 py-1 rounded-full border transition-colors ${
-                                        manhwaSearchSource === 'mangadex'
-                                            ? "bg-primary text-white border-primary"
-                                            : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                    }`}
-                                >
-                                    MangaDex
-                                </button>
-                                <button
-                                    onClick={() => setManhwaSearchSource('asura')}
-                                    className={`text-[10px] font-bold px-3 py-1 rounded-full border transition-colors ${
-                                        manhwaSearchSource === 'asura'
-                                            ? "bg-primary text-white border-primary"
-                                            : "bg-transparent text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                    }`}
-                                >
-                                    Asura Scans
-                                </button>
-                            </div>
-                        )}
                     </div>
 
                     {isSearchingManhwa ? (
@@ -99,7 +71,7 @@ export const ManhwaDiscoverSection = memo(({
                                             </div>
                                             <div>
                                                 <p className="font-bold text-xs line-clamp-2 text-slate-900 dark:text-white leading-tight">{result.title}</p>
-                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">{result.author || manhwaSearchSource}</p>
+                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">{result.author || 'Asura Scans'}</p>
                                             </div>
                                         </div>
                                     ))}

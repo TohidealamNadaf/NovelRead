@@ -28,19 +28,20 @@ export const ManhwaReader = () => {
     const lastScrollY = useRef(0);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // Fetch Data
+    // Fetch Data — uses location.pathname in deps to guarantee re-fire on every route change
     useEffect(() => {
+        // Capture the current params from the URL at the time the effect fires
+        const currentNovelId = novelId;
+        const currentChapterId = chapterId;
 
         const loadData = async () => {
-            if (!novelId && !location.state?.chapterUrl) return;
+            if (!currentNovelId && !location.state?.chapterUrl) return;
 
-            // Don't set loading true here if we are just switching chapters to avoid full screen flash if we can avoid it,
-            // but for now, safety first.
             setIsLoading(true);
 
             try {
                 // Determine if we are in live mode
-                if (!novelId && location.state?.chapterUrl) {
+                if (!currentNovelId && location.state?.chapterUrl) {
                     // LIVE MODE
                     const state = location.state;
                     setNovelTitle(state.novelTitle || 'Unknown');
@@ -89,15 +90,17 @@ export const ManhwaReader = () => {
                     // ... (omitted for brevity, handled by WebtoonViewer or separate call)
                 } else {
                     // LOCAL MODE
+                    console.log(`[ManhwaReader] Loading chapter: novelId=${currentNovelId}, chapterId=${currentChapterId}`);
                     const [novel, ch, chapters] = await Promise.all([
-                        dbService.getNovel(novelId!),
-                        dbService.getChapter(novelId!, chapterId!),
-                        dbService.getChapters(novelId!)
+                        dbService.getNovel(currentNovelId!),
+                        dbService.getChapter(currentNovelId!, currentChapterId!),
+                        dbService.getChapters(currentNovelId!)
                     ]);
 
                     if (novel) setNovelTitle(novel.title);
                     if (ch) {
-                        // ... (Lazy load logic same as before) ...
+                        console.log(`[ManhwaReader] Loaded chapter: "${ch.title}" (id: ${ch.id}), audioPath: ${ch.audioPath}`);
+                        // Lazy load: If chapter is empty but has a source URL, fetch images now
                         if (!ch.content || ch.content.length < 50) {
                             if (ch.audioPath && ch.audioPath.startsWith('http')) {
                                 setIsLoading(true);
@@ -105,7 +108,7 @@ export const ManhwaReader = () => {
                                     const images = await manhwaScraperService.fetchChapterImages(ch.audioPath);
                                     if (images && images.length > 50) {
                                         ch.content = images;
-                                        await dbService.updateChapterContent(novelId!, ch.id, images);
+                                        await dbService.updateChapterContent(currentNovelId!, ch.id, images);
                                     }
                                 } catch (err) {
                                     console.error("Lazy load failed", err);
@@ -113,7 +116,10 @@ export const ManhwaReader = () => {
                             }
                         }
                         setChapter(ch);
-                        dbService.updateReadingProgress(novelId!, chapterId!);
+                        dbService.updateReadingProgress(currentNovelId!, currentChapterId!);
+                    } else {
+                        console.warn(`[ManhwaReader] Chapter not found in DB: ${currentChapterId}`);
+                        setChapter(null);
                     }
                     setAllChapters(chapters);
                 }
@@ -127,7 +133,7 @@ export const ManhwaReader = () => {
         };
 
         loadData();
-    }, [novelId, chapterId]);
+    }, [novelId, chapterId, location.pathname]);
 
     // Handle Scroll for Controls Visibility
     useEffect(() => {
@@ -155,8 +161,6 @@ export const ManhwaReader = () => {
                 try {
                     if (showControls) {
                         await StatusBar.show();
-                        // Optional: Ensure it overlays instead of resizing logic if needed, 
-                        // but default behavior is usually fine or handled by global config.
                     } else {
                         await StatusBar.hide();
                     }
@@ -187,8 +191,12 @@ export const ManhwaReader = () => {
         }
     };
 
-    const handleChapterSelect = (ch: Chapter) => {
-        navigate(`/manhwa/read/${novelId}/${ch.id}`, { replace: true });
+    const handleChapterSelect = (selectedChapter: Chapter) => {
+        // Close sidebar first to prevent state race conditions
+        setShowSidebar(false);
+        // Navigate to the selected chapter
+        console.log(`[ManhwaReader] Sidebar selected: "${selectedChapter.title}" (id: ${selectedChapter.id})`);
+        navigate(`/manhwa/read/${novelId}/${selectedChapter.id}`, { replace: true });
     };
 
     const handleToggleControls = () => {
@@ -261,19 +269,17 @@ export const ManhwaReader = () => {
                     onNext={handleNextChapter}
                     onHistory={() => setShowSidebar(true)}
                     hasNextChapter={hasNextChapter}
-                    // Theme toggle can be omitted for Webtoon mode usually (images dictate theme), 
-                    // but we can keep it if we want to affect surrounding UI.
                     isDarkMode={true}
                     onToggleTheme={() => { }}
                 />
             </div>
 
-            {/* Sidebar */}
+            {/* Sidebar — uses chapterId from URL (not stale chapter.id) for accurate highlighting */}
             <ChapterSidebar
                 isOpen={showSidebar}
                 onClose={() => setShowSidebar(false)}
                 chapters={allChapters}
-                currentChapterId={chapter.id}
+                currentChapterId={chapterId || ''}
                 novelTitle={novelTitle}
                 onSelectChapter={handleChapterSelect}
             />

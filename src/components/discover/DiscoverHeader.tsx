@@ -87,7 +87,7 @@ export const DiscoverHeader = memo(({
                         </div>
                         <input
                             className="flex w-full min-w-0 flex-1 border-none bg-transparent focus:outline-0 focus:ring-0 text-base font-normal placeholder:text-slate-500 dark:placeholder:text-[#a19db9] px-3"
-                            placeholder={mode === 'manhwa' ? "Search Asura/MangaDex..." : "Search titles or paste URL..."}
+                            placeholder={mode === 'manhwa' ? "Search Asura Scans..." : "Search titles or paste URL..."}
                             value={searchQuery}
                             id="search-input"
                             name="search-query"
