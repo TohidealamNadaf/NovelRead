@@ -619,11 +619,24 @@ export class ScraperService {
                         'Unknown'
                     );
 
-                    // Summary: meta[name="description"] is most reliable (synopsis may be ajax-loaded)
-                    summary = (
-                        $('meta[name="description"]').attr('content') || ''
-                    ).trim();
-                    summary = this.cleanSummary(summary);
+                    // Summary: Extract actual synopsis text, avoid generic SEO meta description
+                    let extractedSummary = (
+                        $('.summary .content').text().trim() ||
+                        $('.summary').text().replace(/^Summary\s*/i, '').trim() ||
+                        $('.summary__content').text().trim() ||
+                        $('.description').text().trim() ||
+                        $('#editdescription').text().trim() ||
+                        $('.book-info-desc').text().trim() ||
+                        $('.content').first().text().trim()
+                    );
+
+                    if (!extractedSummary) {
+                        const metaDesc = $('meta[name="description"]').attr('content') || '';
+                        if (!metaDesc.toLowerCase().includes('novel online free')) {
+                            extractedSummary = metaDesc;
+                        }
+                    }
+                    summary = this.cleanSummary(extractedSummary);
 
                     // Status: strong.ongoing or strong.status inside header-stats
                     status = (
@@ -779,10 +792,23 @@ export class ScraperService {
                 'Unknown'
             );
 
-            // Summary: meta[name="description"] is most reliable
-            const extractedSummary = (
-                $('meta[name="description"]').attr('content') || ''
-            ).trim();
+            // Summary: Extract actual synopsis text, avoid generic SEO meta description
+            let extractedSummary = (
+                $('.summary .content').text().trim() ||
+                $('.summary').text().replace(/^Summary\s*/i, '').trim() ||
+                $('.summary__content').text().trim() ||
+                $('.description').text().trim() ||
+                $('#editdescription').text().trim() ||
+                $('.book-info-desc').text().trim() ||
+                $('.content').first().text().trim()
+            );
+
+            if (!extractedSummary) {
+                const metaDesc = $('meta[name="description"]').attr('content') || '';
+                if (!metaDesc.toLowerCase().includes('novel online free')) {
+                    extractedSummary = metaDesc;
+                }
+            }
             const cleanedSummary = this.cleanSummary(extractedSummary);
 
             // Status: strong.ongoing in header-stats
