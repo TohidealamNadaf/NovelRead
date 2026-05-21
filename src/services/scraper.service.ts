@@ -1056,6 +1056,29 @@ export class ScraperService {
         return '<p>No images found.</p>';
     }
 
+    private isValidHtml(html: string): boolean {
+        if (!html || html.length < 500) return false;
+        // Cloudflare challenge page indicators
+        const blockedIndicators = [
+            'cf-browser-verification',
+            'Checking your browser',
+            'Just a moment',
+            'Enable JavaScript and cookies',
+            'Attention Required',
+            'Access denied',
+            '403 Forbidden',
+            'cf-challenge',
+            '_cf_chl',
+            'Verifying you are human'
+        ];
+        for (const indicator of blockedIndicators) {
+            if (html.includes(indicator)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     async fetchHtml(url: string, proxyUrl?: string): Promise<string> {
         if (!navigator.onLine) {
             console.warn('[Scraper] Device is offline, skipping fetchHtml');
@@ -1072,60 +1095,103 @@ export class ScraperService {
                 finalUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`;
             } else if (proxyUrl.includes('thingproxy')) {
                 finalUrl = `https://thingproxy.freeboard.io/fetch/${url}`;
+            } else if (proxyUrl.startsWith('/api/proxy')) {
+                finalUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
             } else {
                 finalUrl = `${proxyUrl}${encodeURIComponent(url)}`;
             }
         }
 
-        const options: { url: string; headers: Record<string, string>; connectTimeout: number; readTimeout: number } = {
-            url: finalUrl,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-            connectTimeout: 10000,
-            readTimeout: 10000
-        };
+        const proxyName = proxyUrl
+            ? (proxyUrl.startsWith('/') ? 'vite-proxy' : (proxyUrl.split('/')[2] || 'direct'))
+            : 'direct';
 
         try {
-            console.log(`[Scraper] [web] Fetching: ${finalUrl.substring(0, 100)}...`);
-            const response = await CapacitorHttp.get(options);
+            console.log(`[Scraper] Trying via ${proxyName} for URL: ${url.substring(0, 100)}...`);
 
-            if (response.status === 200 && response.data) {
-                console.log(`[Scraper] Response Status: 200 for ${url}`);
-                if (proxyUrl && proxyUrl.includes('allorigins.win')) {
-                    try {
-                        const json = JSON.parse(response.data);
-                        return json.contents || '';
-                    } catch {
-                        // Fall out to string check
+            let html = '';
+
+            // For Vite dev proxy (relative URL), use native fetch instead of CapacitorHttp
+            if (finalUrl.startsWith('/')) {
+                const response = await fetch(finalUrl, {
+                    headers: {
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     }
+                });
+                if (response.ok) {
+                    html = await response.text();
+                } else {
+                    console.warn(`[Scraper] ✗ HTTP ${response.status} via ${proxyName}`);
+                    return '';
                 }
+            } else {
+                // For native or direct full URL, use CapacitorHttp mimicking a real mobile browser
+                const options = {
+                    url: finalUrl,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.178 Mobile Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.5',
+                        'Referer': url.includes('novelfire.net') ? 'https://novelfire.net/' : 'https://google.com',
+                    },
+                    connectTimeout: 30000,
+                    readTimeout: 30000
+                };
 
-                if (typeof response.data === 'object') {
-                    return JSON.stringify(response.data);
+                const response = await CapacitorHttp.get(options);
+
+                if (response.status === 200 && response.data) {
+                    if (proxyUrl && proxyUrl.includes('allorigins.win')) {
+                        try {
+                            const json = JSON.parse(response.data);
+                            html = json.contents || '';
+                        } catch {
+                            html = String(response.data || '');
+                        }
+                    } else if (typeof response.data === 'object') {
+                        html = JSON.stringify(response.data);
+                    } else {
+                        html = String(response.data || '');
+                    }
+                } else {
+                    console.warn(`[Scraper] ✗ HTTP ${response.status} via ${proxyName}`);
+                    if (response.status === 429) {
+                        console.warn(`[Scraper] Rate limited (429), backing off 2s before next proxy...`);
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+                    return '';
                 }
-                return String(response.data || '');
             }
-            console.warn(`[Scraper] HTTP ${response.status} for ${url}`);
-            // If rate-limited (429), back off before trying next proxy
-            if (response.status === 429) {
-                console.warn(`[Scraper] Rate limited (429), backing off 2s before next proxy...`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Validate HTML content
+            if (this.isValidHtml(html)) {
+                console.log(`[Scraper] ✓ Got valid HTML (${html.length} chars) via ${proxyName}`);
+                return html;
+            } else {
+                console.warn(`[Scraper] ✗ Blocked/challenge page via ${proxyName}`);
             }
         } catch (error) {
-            console.warn(`[Scraper] Fetch error for ${url}:`, error);
+            console.warn(`[Scraper] ✗ Fetch error via ${proxyName}:`, error);
         }
 
         return '';
     }
 
     getProxies(): string[] {
-        // corsproxy.io works best for NovelFire, try it first
+        const isNative = Capacitor.isNativePlatform();
+
+        if (isNative) {
+            // Direct first for native (no CORS), then fallbacks
+            return [
+                '', // Direct fetch
+                'https://api.codetabs.com/v1/proxy?quest=',
+                'https://corsproxy.io/?url=',
+            ];
+        }
+
+        // Web: use Vite dev proxy to bypass CORS entirely
         return [
-            'https://corsproxy.io/?url=',
-            'https://api.codetabs.com/v1/proxy?quest=',
-            'https://api.allorigins.win/get?url=',
-            'https://thingproxy.freeboard.io/fetch/'
+            '/api/proxy?url=',
         ];
     }
 
