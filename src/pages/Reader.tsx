@@ -828,12 +828,15 @@ export const Reader = () => {
             );
 
             if (newContent && newContent !== chapter.content) {
+                // Apply smart formatting (thoughts, sfx, system msgs) just like normal chapters
+                const processedContent = scraperService.enhanceContent(newContent);
+
                 if (!isLiveMode) {
                     // Update DB mapped content
-                    await dbService.updateChapterContent(chapter.novelId, chapter.id, newContent);
+                    await dbService.updateChapterContent(chapter.novelId, chapter.id, processedContent);
                 }
                 // Update local state
-                setChapter(prev => prev ? { ...prev, content: newContent } : null);
+                setChapter(prev => prev ? { ...prev, content: processedContent } : null);
                 setRewriteProgress('Done!');
                 setTimeout(() => setRewriteProgress(''), 3000);
             } else {

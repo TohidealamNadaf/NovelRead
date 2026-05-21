@@ -932,7 +932,7 @@ export class ScraperService {
         };
     }
 
-    private enhanceContent(html: string): string {
+    public enhanceContent(html: string): string {
         const $ = cheerio.load(html, { xmlMode: false });
         $('*').contents().each((_, elem) => {
             if (elem.type === 'text') {
