@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MoreHorizontal, Play, Pause, FastForward, Rewind, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus, WandSparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
@@ -629,7 +629,7 @@ export const Reader = () => {
 
             const route = targetUrl.startsWith('http')
                 ? `/read/live/${encodeURIComponent(targetUrl)}`
-                : `/read/${novelId}/${nextChapter.id}`;
+                : `/read/${encodeURIComponent(novelId || '')}/${encodeURIComponent(nextChapter.id)}`;
 
             navigate(route, {
                 state: {
@@ -654,7 +654,7 @@ export const Reader = () => {
 
             const route = targetUrl.startsWith('http')
                 ? `/read/live/${encodeURIComponent(targetUrl)}`
-                : `/read/${novelId}/${prevChapter.id}`;
+                : `/read/${encodeURIComponent(novelId || '')}/${encodeURIComponent(prevChapter.id)}`;
 
             navigate(route, {
                 state: {
@@ -742,7 +742,7 @@ export const Reader = () => {
         if (isLiveMode) {
             navigate(-1);
         } else {
-            navigate(`/novel/${novelId}`);
+            navigate(`/novel/${encodeURIComponent(novelId || '')}`);
         }
     };
 
@@ -1497,7 +1497,7 @@ export const Reader = () => {
                             replace: true
                         });
                     } else {
-                        navigate(`/read/${novelId}/${target.id}`, {
+                        navigate(`/read/${encodeURIComponent(novelId || '')}/${encodeURIComponent(target.id)}`, {
                             state: {
                                 ...location.state,
                                 chapters: [...sourceList],

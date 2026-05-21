@@ -1,5 +1,5 @@
-import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useRef, useMemo } from 'react';
+import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { X, BookOpen, CheckCircle2, ChevronsUp, ChevronsDown } from 'lucide-react';
 import clsx from 'clsx';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -70,7 +70,6 @@ const ChapterRow = memo(({
 
 // Swipe-to-close configuration
 const CLOSE_THRESHOLD = 80; // px of leftward drag to trigger close
-const MAX_VERTICAL_DRIFT = 40; // px vertical movement before it's a scroll, not a swipe
 
 export const ChapterSidebar = ({
     isOpen,
@@ -83,58 +82,8 @@ export const ChapterSidebar = ({
 }: ChapterSidebarProps) => {
     const parentRef = useRef<HTMLDivElement>(null);
 
-    // Swipe-to-close state
-    const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
-    const [swipeDragX, setSwipeDragX] = useState(0);
-    const isSwipingRef = useRef(false);
-
-    const handleSidebarTouchStart = useCallback((e: React.TouchEvent) => {
-        const touch = e.touches[0];
-        swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
-        isSwipingRef.current = false;
-    }, []);
-
-    const handleSidebarTouchMove = useCallback((e: React.TouchEvent) => {
-        if (!swipeStartRef.current) return;
-        const touch = e.touches[0];
-        const diffX = touch.clientX - swipeStartRef.current.x;
-        const diffY = Math.abs(touch.clientY - swipeStartRef.current.y);
-
-        // If vertical movement exceeds threshold, it's a scroll — abort swipe
-        if (diffY > MAX_VERTICAL_DRIFT && !isSwipingRef.current) {
-            swipeStartRef.current = null;
-            setSwipeDragX(0);
-            return;
-        }
-
-        // Only track leftward swipes (negative diffX)
-        if (diffX < -10) {
-            isSwipingRef.current = true;
-            // Apply resistance: clamp to 0..sidebar-width, only track leftward
-            const clamped = Math.min(0, diffX * 0.8);
-            setSwipeDragX(clamped);
-        }
-    }, []);
-
-    const handleSidebarTouchEnd = useCallback(() => {
-        if (isSwipingRef.current && swipeDragX < -CLOSE_THRESHOLD) {
-            // Dragged far enough left — close the sidebar
-            onClose();
-        }
-        // Reset
-        swipeStartRef.current = null;
-        isSwipingRef.current = false;
-        setSwipeDragX(0);
-    }, [swipeDragX, onClose]);
-
-    // Reset drag state when sidebar closes
-    useEffect(() => {
-        if (!isOpen) {
-            setSwipeDragX(0);
-            swipeStartRef.current = null;
-            isSwipingRef.current = false;
-        }
-    }, [isOpen]);
+    const x = useMotionValue(0);
+    const backdropOpacity = useTransform(x, [-300, 0], [0.1, 1]);
 
     // Lock body scroll when sidebar is open
     useEffect(() => {
@@ -193,27 +142,27 @@ export const ChapterSidebar = ({
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                         className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
-                        style={{
-                            opacity: swipeDragX < 0
-                                ? Math.max(0.1, 1 + swipeDragX / 300)
-                                : undefined
-                        }}
+                        style={{ opacity: backdropOpacity }}
                         onClick={onClose}
                     />
 
-                    {/* Sidebar — follows swipe drag */}
+                    {/* Sidebar — follows swipe drag natively */}
                     <motion.div
                         initial={{ x: '-100%' }}
-                        animate={{ x: swipeDragX }}
+                        animate={{ x: 0 }}
                         exit={{ x: '-100%' }}
-                        transition={swipeDragX !== 0
-                            ? { type: 'tween', duration: 0 } // instant follow during drag
-                            : { type: 'spring', damping: 25, stiffness: 200 }
-                        }
+                        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                        style={{ x }}
+                        drag="x"
+                        dragConstraints={{ left: 0, right: 0 }}
+                        dragElastic={{ left: 1, right: 0 }} // Allow pulling left freely, but not right
+                        dragDirectionLock
+                        onDragEnd={(_, { offset, velocity }) => {
+                            if (offset.x < -CLOSE_THRESHOLD || velocity.x < -500) {
+                                onClose();
+                            }
+                        }}
                         className="fixed left-0 top-0 bottom-0 z-50 w-[85%] max-w-sm bg-white dark:bg-[#1a182b] shadow-2xl flex flex-col"
-                        onTouchStart={handleSidebarTouchStart}
-                        onTouchMove={handleSidebarTouchMove}
-                        onTouchEnd={handleSidebarTouchEnd}
                     >
                         {/* Header */}
                         <div className="flex flex-col border-b border-slate-200 dark:border-white/10 bg-white dark:bg-[#1a182b] z-10">

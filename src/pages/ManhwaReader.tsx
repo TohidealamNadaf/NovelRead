@@ -187,7 +187,7 @@ export const ManhwaReader = () => {
         const currentIndex = allChapters.findIndex(c => c.id === chapter.id);
         if (currentIndex !== -1 && currentIndex < allChapters.length - 1) {
             const nextChapter = allChapters[currentIndex + 1];
-            navigate(`/manhwa/read/${novelId}/${nextChapter.id}`, { replace: true });
+            navigate(`/manhwa/read/${encodeURIComponent(novelId!)}/${encodeURIComponent(nextChapter.id)}`, { replace: true });
         }
     };
 
@@ -196,11 +196,46 @@ export const ManhwaReader = () => {
         setShowSidebar(false);
         // Navigate to the selected chapter
         console.log(`[ManhwaReader] Sidebar selected: "${selectedChapter.title}" (id: ${selectedChapter.id})`);
-        navigate(`/manhwa/read/${novelId}/${selectedChapter.id}`, { replace: true });
+        navigate(`/manhwa/read/${encodeURIComponent(novelId!)}/${encodeURIComponent(selectedChapter.id)}`, { replace: true });
     };
 
     const handleToggleControls = () => {
         setShowControls(prev => !prev);
+    };
+
+    // Edge Swipe to Open Sidebar
+    const edgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
+    const SWIPE_ZONE_WIDTH = 0.5;
+    const OPEN_THRESHOLD = 60;
+    const MAX_VERTICAL_DRIFT = 40;
+
+    const handleEdgeTouchStart = (e: React.TouchEvent) => {
+        const touch = e.touches[0];
+        const screenWidth = window.innerWidth;
+        if (touch.clientX <= screenWidth * SWIPE_ZONE_WIDTH) {
+            edgeSwipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+        }
+    };
+
+    const handleEdgeTouchMove = (e: React.TouchEvent) => {
+        if (edgeSwipeStartRef.current === null) return;
+        const touch = e.touches[0];
+        const diffX = touch.clientX - edgeSwipeStartRef.current.x;
+        const diffY = Math.abs(touch.clientY - edgeSwipeStartRef.current.y);
+
+        if (diffY > MAX_VERTICAL_DRIFT) {
+            edgeSwipeStartRef.current = null;
+            return;
+        }
+
+        if (diffX > OPEN_THRESHOLD && diffX > diffY * 1.5) {
+            setShowSidebar(true);
+            edgeSwipeStartRef.current = null;
+        }
+    };
+
+    const handleEdgeTouchEnd = () => {
+        edgeSwipeStartRef.current = null;
     };
 
     if (isLoading && !chapter) {
@@ -226,6 +261,9 @@ export const ManhwaReader = () => {
             ref={containerRef}
             className="min-h-screen bg-black pb-20 relative selection:bg-primary/30"
             onClick={handleToggleControls} // Toggle controls on tap anywhere
+            onTouchStart={handleEdgeTouchStart}
+            onTouchMove={handleEdgeTouchMove}
+            onTouchEnd={handleEdgeTouchEnd}
         >
             {/* Header */}
             <AnimatePresence>

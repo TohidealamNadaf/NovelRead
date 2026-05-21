@@ -249,7 +249,7 @@ export const ManhwaSeries = () => {
             alert("Please save the series to your library first to read chapters.");
             return;
         }
-        navigate(`/manhwa/read/${novelId}/${chapter.id}`); // Using the new reader route
+        navigate(`/manhwa/read/${encodeURIComponent(novelId!)}/${encodeURIComponent(chapter.id)}`); // Using the new reader route
     };
 
     const handleToggleLibrary = () => {

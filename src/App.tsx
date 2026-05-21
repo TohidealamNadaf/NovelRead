@@ -15,7 +15,7 @@ import { MiniPlayer } from './components/MiniPlayer';
 import { ManhwaSeries } from './pages/ManhwaSeries';
 import { ManhwaReader } from './pages/ManhwaReader';
 import { syncService } from './services/sync.service';
-import { Capacitor } from '@capacitor/core';
+
 import { App as CapApp } from '@capacitor/app';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
@@ -53,10 +53,6 @@ function App() {
 
   return (
     <>
-      {Capacitor.getPlatform() === 'web' && (
-        // @ts-ignore
-        <jeep-sqlite />
-      )}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/import" element={<Import />} />

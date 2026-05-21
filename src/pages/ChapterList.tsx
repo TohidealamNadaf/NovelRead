@@ -149,7 +149,7 @@ export const ChapterList = () => {
             });
         } else {
             const realIndex = chapters.findIndex(c => c.id === chapter.id);
-            navigate(`/read/${novel?.id}/${chapter.id}`, {
+            navigate(`/read/${encodeURIComponent(novel?.id || '')}/${encodeURIComponent(chapter.id)}`, {
                 state: {
                     novel,
                     liveMode: false,
@@ -512,7 +512,7 @@ export const ChapterList = () => {
                                     // foundChapter is a local DB Chapter — always use `chapters` for navigation
                                     const realIndex = chapters.findIndex(c => c.id === foundChapter.id);
 
-                                    navigate(`/read/${novel.id}/${foundChapter.id}`, {
+                                    navigate(`/read/${encodeURIComponent(novel.id)}/${encodeURIComponent(foundChapter.id)}`, {
                                         state: {
                                             novel,
                                             liveMode: isLiveMode,
@@ -526,7 +526,7 @@ export const ChapterList = () => {
                                     const targetUrl = foundLive.url;
                                     const realIndex = liveChapters.findIndex((c: any) => c.url === foundLive.url);
 
-                                    navigate(`/read/${novel.id}/${encodeURIComponent(targetUrl)}`, {
+                                    navigate(`/read/${encodeURIComponent(novel.id)}/${encodeURIComponent(targetUrl)}`, {
                                         state: {
                                             novel,
                                             liveMode: true,
@@ -537,7 +537,7 @@ export const ChapterList = () => {
                                         }
                                     });
                                 } else {
-                                    navigate(`/read/${novel.id}/${novel.lastReadChapterId}`, {
+                                    navigate(`/read/${encodeURIComponent(novel.id)}/${encodeURIComponent(novel.lastReadChapterId || '')}`, {
                                         state: {
                                             novel,
                                             liveMode: isLiveMode,
@@ -546,7 +546,7 @@ export const ChapterList = () => {
                                     });
                                 }
                             } else if (chapters.length > 0) {
-                                navigate(`/read/${novel.id}/${chapters[0].id}`, {
+                                navigate(`/read/${encodeURIComponent(novel.id)}/${encodeURIComponent(chapters[0].id)}`, {
                                     state: {
                                         novel,
                                         liveMode: isLiveMode,
@@ -554,7 +554,7 @@ export const ChapterList = () => {
                                     }
                                 });
                             } else if (liveChapters.length > 0) {
-                                navigate(`/read/${novel.id}/${encodeURIComponent(liveChapters[0].url)}`, {
+                                navigate(`/read/${encodeURIComponent(novel.id)}/${encodeURIComponent(liveChapters[0].url)}`, {
                                     state: {
                                         novel,
                                         liveMode: true,

@@ -36,6 +36,7 @@ export interface Chapter {
 class DatabaseService {
     private sqlite: SQLiteConnection;
     private db: SQLiteDBConnection | null = null;
+    private initializationPromise: Promise<void> | null = null;
 
     constructor() {
         this.sqlite = new SQLiteConnection(CapacitorSQLite);
@@ -44,14 +45,35 @@ class DatabaseService {
     async initialize() {
         if (this.db) return;
 
+        // Prevent concurrent initialization attempts
+        if (this.initializationPromise) {
+            return this.initializationPromise;
+        }
+
+        this.initializationPromise = this._doInitialize();
+        try {
+            await this.initializationPromise;
+        } finally {
+            // Only clear the promise if init failed (db is still null)
+            // so next caller can retry
+            if (!this.db) {
+                this.initializationPromise = null;
+            }
+        }
+    }
+
+    private async _doInitialize() {
+        if (this.db) return;
+
         try {
             if (Capacitor.getPlatform() === 'web') {
-                const jeepSqlite = document.querySelector('jeep-sqlite');
-                if (jeepSqlite) {
-                    await customElements.whenDefined('jeep-sqlite');
+                // Web store should already be initialized in main.tsx
+                // But as a safety fallback, try to init if needed
+                try {
                     await this.sqlite.initWebStore();
-                } else {
-                    console.error("jeep-sqlite element not found in DOM");
+                } catch (e) {
+                    // Already initialized — this is expected, ignore
+                    console.log('[DB] WebStore already initialized or init skipped');
                 }
             }
 

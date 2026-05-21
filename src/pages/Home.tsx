@@ -227,7 +227,7 @@ export const Home = () => {
                                 {continueReading.map(novel => (
                                     <Link
                                         key={'cont-' + novel.id}
-                                        to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${novel.id}` : `/novel/${novel.id}`)}
+                                        to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(novel.id)}` : `/novel/${encodeURIComponent(novel.id)}`)}
                                         className="snap-start shrink-0 w-32 flex flex-col gap-2 group select-none touch-manipulation"
                                         style={{ WebkitTapHighlightColor: 'transparent' }}
                                         onTouchStart={handlePointerDown}
@@ -317,7 +317,7 @@ export const Home = () => {
                                         {rowItems.map((novel) => (
                                             <Link
                                                 key={novel.id}
-                                                to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${novel.id}` : `/novel/${novel.id}`)}
+                                                to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(novel.id)}` : `/novel/${encodeURIComponent(novel.id)}`)}
                                                 className={`flex flex-col gap-2 group relative w-full select-none touch-manipulation ${editMode ? 'cursor-default' : 'cursor-pointer'}`}
                                                 style={{ WebkitTapHighlightColor: 'transparent' }}
                                                 onTouchStart={handlePointerDown}
