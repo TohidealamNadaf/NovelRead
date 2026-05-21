@@ -159,14 +159,59 @@ export class ScraperService {
     private extractChaptersFromPage($: cheerio.CheerioAPI, baseUrl: string): ScrapedChapter[] {
         const chapters: ScrapedChapter[] = [];
         const seenLinks = new Set<string>();
+        const origin = 'https://novelfire.net';
 
-        const listSelectors = [
-            '.chapter-list li', 'ul.chapter-list li', '.list-chapter li',
-            '#chapter-list li', '.chapters li', '.list-chapters li',
+        // PRIMARY: novelfire.net specific - ul.chapter-list li a with strong.chapter-title and time.chapter-update
+        // Structure: <li><a href="/book/.../chapter-N"><span class="chapter-no">N</span><strong class="chapter-title">Title</strong><time class="chapter-update">X ago</time></a></li>
+        const novelFireItems = $('ul.chapter-list li, .chapter-list li');
+        if (novelFireItems.length > 0) {
+            novelFireItems.each((_, el) => {
+                const anchor = $(el).find('a').first();
+                if (!anchor.length) return;
+
+                const link = anchor.attr('href') || anchor.attr('title') && '';
+                if (!link) return;
+
+                // Get title from strong.chapter-title, fallback to anchor[title], fallback to full text
+                const titleEl = anchor.find('strong.chapter-title, .chapter-title').first();
+                let rawTitle = titleEl.length ? titleEl.text().trim() : '';
+                if (!rawTitle) rawTitle = anchor.attr('title')?.trim() || '';
+                if (!rawTitle) {
+                    // Clone, remove time element, get text
+                    const clone = anchor.clone();
+                    clone.find('time, .chapter-update, .chapter-no').remove();
+                    rawTitle = clone.text().trim();
+                }
+
+                const dateEl = anchor.find('time.chapter-update, time, .chapter-update').first();
+                const chapterDate = dateEl.length ? dateEl.text().trim() : undefined;
+
+                const cleanTitle = this.cleanChapterTitle(rawTitle);
+                const fullUrl = link.startsWith('http') ? link : `${origin}${link.startsWith('/') ? '' : '/'}${link}`;
+
+                let finalTitle = cleanTitle;
+                // If no meaningful title, extract from URL
+                if (!finalTitle || /^Chapter$/i.test(finalTitle)) {
+                    const urlMatch = fullUrl.match(/chapter[_\-]?(\d+)/i);
+                    if (urlMatch) finalTitle = `Chapter ${urlMatch[1]}`;
+                }
+
+                if (this.isValidChapterTitle(finalTitle) && !seenLinks.has(fullUrl)) {
+                    chapters.push({ title: finalTitle, url: fullUrl, date: chapterDate });
+                    seenLinks.add(fullUrl);
+                }
+            });
+
+            if (chapters.length > 0) return chapters;
+        }
+
+        // FALLBACK: Generic selectors for other novel sites
+        const genericSelectors = [
+            'ul.list-chapter li', '#chapter-list li', '.chapters li',
             '#list-chapter .row', '.list-item', '.chapter-item'
         ];
 
-        for (const sel of listSelectors) {
+        for (const sel of genericSelectors) {
             const items = $(sel);
             if (items.length > 0) {
                 items.each((_, el) => {
@@ -176,32 +221,21 @@ export class ScraperService {
                     const link = anchor.attr('href');
                     if (!link) return;
 
-                    // --- DOM-level title/date separation ---
-                    // Many sites (NovelFire, etc.) nest the date INSIDE the anchor tag,
-                    // so anchor.text() merges title+date: "Chapter 14 years ago"
-                    // Fix: Remove date elements from a clone BEFORE getting text.
-
-                    // 1. Try to extract date from child elements first
                     const dateSelectors = 'time, [class*="time"], [class*="date"], [class*="ago"], [class*="update"], small, .text-muted';
                     const dateEl = anchor.find(dateSelectors).first();
                     let chapterDate: string | undefined;
-                    if (dateEl.length > 0) {
-                        chapterDate = dateEl.text().trim() || undefined;
-                    }
+                    if (dateEl.length > 0) chapterDate = dateEl.text().trim() || undefined;
 
-                    // 2. Get title from cloned anchor with date elements removed
                     const clonedAnchor = anchor.clone();
                     clonedAnchor.find(dateSelectors).remove();
                     let rawTitle = clonedAnchor.text().trim();
 
-                    // 3. If no DOM-level date found, try regex on the full text as fallback
                     if (!chapterDate && rawTitle) {
                         const timestampRegex = /(\d{1,2}\s*(minute|hour|day|week|month|year)s?\s*ago)/gi;
                         const fullText = anchor.text();
                         const dateMatch = fullText.match(timestampRegex);
                         if (dateMatch) {
                             chapterDate = dateMatch[dateMatch.length - 1].trim();
-                            // Clean the timestamp from the title
                             rawTitle = rawTitle.replace(timestampRegex, '').trim();
                         }
                     }
@@ -211,23 +245,14 @@ export class ScraperService {
                     const cleanTitle = this.cleanChapterTitle(rawTitle);
                     const fullUrl = this.resolveUrl(baseUrl, link);
 
-                    // 4. If title is ambiguous (just "Chapter" without a number),
-                    //    try to extract the chapter number from the URL
                     let finalTitle = cleanTitle;
                     if (/^Chapter$/i.test(finalTitle)) {
                         const urlMatch = fullUrl.match(/chapter[_\-]?(\d+)/i);
-                        if (urlMatch) {
-                            finalTitle = `Chapter ${urlMatch[1]}`;
-                        }
+                        if (urlMatch) finalTitle = `Chapter ${urlMatch[1]}`;
                     }
 
-                    // Only deduplicate by URL
                     if (this.isValidChapterTitle(finalTitle) && !seenLinks.has(fullUrl)) {
-                        chapters.push({
-                            title: finalTitle,
-                            url: fullUrl,
-                            date: chapterDate
-                        });
+                        chapters.push({ title: finalTitle, url: fullUrl, date: chapterDate });
                         seenLinks.add(fullUrl);
                     }
                 });
@@ -235,19 +260,17 @@ export class ScraperService {
             }
         }
 
-        // Fallback: If no list detected, scan all specific chapter-like anchors
+        // LAST RESORT: Scan all chapter-like links
         if (chapters.length === 0) {
             $('a').each((_, el) => {
                 const anchor = $(el);
                 const link = anchor.attr('href');
+                if (!link || (!link.includes('/chapter') && !link.includes('ch-'))) return;
 
-                if (!link || (!link.includes('chapter') && !link.includes('ch-'))) return;
-
-                // Same DOM-level extraction
-                const dateSelectors = 'time, [class*="time"], [class*="date"], [class*="ago"], [class*="update"], small, .text-muted';
+                const dateSelectors = 'time, [class*="time"], [class*="date"], [class*="ago"], [class*="update"], small';
                 const clonedAnchor = anchor.clone();
                 clonedAnchor.find(dateSelectors).remove();
-                let rawTitle = clonedAnchor.text().trim() || anchor.text().trim();
+                let rawTitle = clonedAnchor.text().trim() || anchor.attr('title')?.trim() || anchor.text().trim();
 
                 const cleanTitle = this.cleanChapterTitle(rawTitle);
                 const fullUrl = this.resolveUrl(baseUrl, link);
@@ -255,9 +278,7 @@ export class ScraperService {
                 let finalTitle = cleanTitle;
                 if (/^Chapter$/i.test(finalTitle)) {
                     const urlMatch = fullUrl.match(/chapter[_\-]?(\d+)/i);
-                    if (urlMatch) {
-                        finalTitle = `Chapter ${urlMatch[1]}`;
-                    }
+                    if (urlMatch) finalTitle = `Chapter ${urlMatch[1]}`;
                 }
 
                 if (this.isValidChapterTitle(finalTitle) && !seenLinks.has(fullUrl)) {
@@ -266,6 +287,7 @@ export class ScraperService {
                 }
             });
         }
+
         return chapters;
     }
 
@@ -573,73 +595,81 @@ export class ScraperService {
         for (const proxyUrl of this.getProxies()) {
             try {
                 const html = await this.fetchHtml(infoUrl, proxyUrl);
-                if (!html || html.length < 500) continue;
-                if (html.includes('you have been blocked') ||
-                    html.includes('Checking your browser') ||
-                    html.includes('Just a moment') ||
-                    html.includes('cf-browser-verification')) continue;
+                if (!html) continue;
 
                 const $ = cheerio.load(html);
-                const getMeta = (selectors: string[]) => {
-                    for (const sel of selectors) {
-                        const txt = $(sel).text().trim();
-                        if (txt) return txt;
-                    } return '';
-                };
-                const getAttr = (selectors: string[], attrs: string[]) => {
-                    for (const sel of selectors) {
-                        for (const attr of attrs) {
-                            const val = $(sel).attr(attr);
-                            if (val && !val.startsWith('data:image')) return val;
-                        }
-                    } return '';
-                };
 
-                const extractedTitle = getMeta([
-                    '.novel-info .novel-title', '.title', 'h1', 'h2.title',
-                    '.book-name', '.truyen-title', 'meta[property="og:title"]'
-                ]).split(' Novel - Read')[0].trim();
+                // NovelFire detail page selectors:
+                // Title: h1[itemprop="name"] or h1.novel-title or og:title
+                const extractedTitle = (
+                    $('h1[itemprop="name"]').text().trim() ||
+                    $('h1.novel-title').text().trim() ||
+                    $('h1').first().text().trim() ||
+                    $('meta[property="og:title"]').attr('content') || ''
+                ).split(' Novel - Read')[0].split(' - Novel Fire')[0].trim();
 
                 if (extractedTitle) {
                     title = extractedTitle;
-                    author = getMeta(['.author', '.info-author', '.book-author', 'span[itemprop="author"]', '.txt-author']).replace('Author:', '').trim() || 'Unknown';
-                    summary = getMeta(['.summary__content', '.description', '#editdescription', '.book-info-desc', '.content', 'meta[name="description"]']).trim();
-                    summary = this.cleanSummary(summary);
-                    status = getMeta(['.status', '.info-status', '.book-status', '.post-content_item:contains("Status") .summary-content']).trim() || 'Ongoing';
 
-                    let extractedCover = getAttr([
-                        '.novel-cover img', '.book img', '.book-cover img', '.img-cover',
-                        'meta[property="og:image"]', '.summary_image img', '.book-info-cover img'
-                    ], ['data-src', 'data-lazy-src', 'data-original', 'src', 'content']);
+                    // Author: span[itemprop="author"] inside .author
+                    author = (
+                        $('span[itemprop="author"]').first().text().trim() ||
+                        $('.author a').first().text().trim() ||
+                        $('.author').text().replace('Author:', '').trim() ||
+                        'Unknown'
+                    );
+
+                    // Summary: meta[name="description"] is most reliable (synopsis may be ajax-loaded)
+                    summary = (
+                        $('meta[name="description"]').attr('content') || ''
+                    ).trim();
+                    summary = this.cleanSummary(summary);
+
+                    // Status: strong.ongoing or strong.status inside header-stats
+                    status = (
+                        $('strong.ongoing').first().text().trim() ||
+                        $('strong.status').first().text().trim() ||
+                        $('.header-stats strong').last().text().trim() ||
+                        'Ongoing'
+                    );
+
+                    // Cover: meta[property="og:image"] is most reliable (full absolute URL)
+                    let extractedCover = $('meta[property="og:image"]').attr('content') || '';
+                    if (!extractedCover) {
+                        // Fallback: figure.novel-cover img or .cover img
+                        const imgEl = $('figure.novel-cover img, .novel-cover img, .cover img, .book-cover img').first();
+                        extractedCover = imgEl.attr('src') || imgEl.attr('data-src') || imgEl.attr('data-lazy-src') || '';
+                    }
 
                     if (extractedCover && !extractedCover.startsWith('http')) {
                         if (extractedCover.startsWith('//')) extractedCover = `https:${extractedCover}`;
-                        else { if (!extractedCover.startsWith('/')) extractedCover = '/' + extractedCover; extractedCover = `https://novelfire.net${extractedCover}`; }
+                        else {
+                            if (!extractedCover.startsWith('/')) extractedCover = '/' + extractedCover;
+                            extractedCover = `https://novelfire.net${extractedCover}`;
+                        }
                     }
                     coverUrl = extractedCover;
 
                     // Yield metadata early so Synopsis/Summary shows up
-                    onProgress?.([], 0, {
-                        title,
-                        author,
-                        summary,
-                        status,
-                        coverUrl
-                    });
+                    onProgress?.([], 0, { title, author, summary, status, coverUrl });
 
                     if (!userProvidedChapters) {
+                        // NovelFire chapters page: /book/{slug}/chapters
                         const chaptersLink = $('a[href*="/chapters"]').first().attr('href');
                         if (chaptersLink) {
                             const origin = new URL(infoUrl).origin;
                             listUrl = chaptersLink.startsWith('http') ? chaptersLink : `${origin}${chaptersLink.startsWith('/') ? '' : '/'}${chaptersLink}`;
+                        } else {
+                            // Derive chapters URL from info URL
+                            listUrl = infoUrl.replace(/\/$/, '') + '/chapters';
                         }
                     }
 
-                    workingProxy = proxyUrl; // Lock in this proxy
+                    workingProxy = proxyUrl;
                     break;
                 }
             } catch (e) {
-                console.warn(`[Scraper:Fast] Metadata fetch failed with proxy`, e);
+                console.warn(`[Scraper:Fast] Metadata fetch failed`, e);
             }
         }
 
@@ -732,50 +762,43 @@ export class ScraperService {
         let status = 'Ongoing';
 
         const extractMetadata = ($: cheerio.CheerioAPI) => {
-            const getMeta = (selectors: string[]) => {
-                for (const sel of selectors) {
-                    const txt = $(sel).text().trim();
-                    if (txt) return txt;
-                }
-                return '';
-            };
-            const getAttr = (selectors: string[], attrs: string[]) => {
-                for (const sel of selectors) {
-                    for (const attr of attrs) {
-                        const val = $(sel).attr(attr);
-                        if (val && !val.startsWith('data:image')) return val;
-                    }
-                }
-                return '';
-            };
+            // NovelFire detail page selectors (verified against live HTML):
+            // Title: h1[itemprop="name"] or h1.novel-title or og:title
+            const extractedTitle = (
+                $('h1[itemprop="name"]').text().trim() ||
+                $('h1.novel-title').text().trim() ||
+                $('h1').first().text().trim() ||
+                $('meta[property="og:title"]').attr('content') || ''
+            ).split(' Novel - Read')[0].split(' - Novel Fire')[0].trim();
 
-            const extractedTitle = getMeta([
-                '.novel-info .novel-title', '.title', 'h1', 'h2.title',
-                '.book-name', '.truyen-title', 'meta[property="og:title"]'
-            ]).split(' Novel - Read')[0].trim();
+            // Author: span[itemprop="author"] inside .author
+            const extractedAuthor = (
+                $('span[itemprop="author"]').first().text().trim() ||
+                $('.author a').first().text().trim() ||
+                $('.author').text().replace('Author:', '').trim() ||
+                'Unknown'
+            );
 
-            const extractedAuthor = getMeta([
-                '.author', '.info-author', '.book-author',
-                'span[itemprop="author"]', '.txt-author'
-            ]).replace('Author:', '').trim() || 'Unknown';
-
-            const extractedSummary = getMeta([
-                '.summary__content', '.description', '#editdescription',
-                '.book-info-desc', '.content', 'meta[name="description"]'
-            ]).trim();
-
+            // Summary: meta[name="description"] is most reliable
+            const extractedSummary = (
+                $('meta[name="description"]').attr('content') || ''
+            ).trim();
             const cleanedSummary = this.cleanSummary(extractedSummary);
 
-            const extractedStatus = getMeta([
-                '.status', '.info-status', '.book-status',
-                '.post-content_item:contains("Status") .summary-content'
-            ]).trim() || 'Ongoing';
+            // Status: strong.ongoing in header-stats
+            const extractedStatus = (
+                $('strong.ongoing').first().text().trim() ||
+                $('strong.status').first().text().trim() ||
+                $('.header-stats strong').last().text().trim() ||
+                'Ongoing'
+            );
 
-            let extractedCover = getAttr([
-                '.novel-cover img', '.book img', '.book-cover img',
-                '.img-cover', 'meta[property="og:image"]', '.summary_image img',
-                '.book-info-cover img'
-            ], ['data-src', 'data-lazy-src', 'data-original', 'src', 'content']);
+            // Cover: og:image is most reliable (full absolute URL)
+            let extractedCover = $('meta[property="og:image"]').attr('content') || '';
+            if (!extractedCover) {
+                const imgEl = $('figure.novel-cover img, .novel-cover img, .cover img, .book-cover img').first();
+                extractedCover = imgEl.attr('src') || imgEl.attr('data-src') || imgEl.attr('data-lazy-src') || '';
+            }
 
             if (extractedCover && !extractedCover.startsWith('http')) {
                 const origin = 'https://novelfire.net';
@@ -800,17 +823,7 @@ export class ScraperService {
         for (const getProxyUrl of this.getProxies()) {
             try {
                 const html = await this.fetchHtml(infoUrl, getProxyUrl);
-                if (!html || html.length < 500) continue;
-
-                // Detect blocked/captcha pages
-                if (html.includes('you have been blocked') ||
-                    html.includes('Checking your browser') ||
-                    html.includes('Just a moment') ||
-                    html.includes('cf-browser-verification') ||
-                    html.includes('challenge-form')) {
-                    console.warn(`[Scraper] Blocked by Cloudflare/site protection via ${getProxyUrl}`);
-                    continue;
-                }
+                if (!html) continue;
 
                 const $ = cheerio.load(html);
                 const metadata = extractMetadata($);
@@ -827,12 +840,15 @@ export class ScraperService {
                         if (chaptersLink) {
                             const origin = new URL(infoUrl).origin;
                             listUrl = chaptersLink.startsWith('http') ? chaptersLink : `${origin}${chaptersLink.startsWith('/') ? '' : '/'}${chaptersLink}`;
+                        } else {
+                            // Derive chapters URL: /book/{slug}/chapters
+                            listUrl = infoUrl.replace(/\/$/, '') + '/chapters';
                         }
                     }
                     break;
                 }
             } catch (e) {
-                console.warn(`[Scraper] Metadata fetch failed with proxy`, e);
+                console.warn(`[Scraper] Metadata fetch failed`, e);
             }
         }
 
@@ -852,16 +868,7 @@ export class ScraperService {
             for (const getProxyUrl of this.getProxies()) {
                 try {
                     const html = await this.fetchHtml(currentUrl, getProxyUrl);
-                    if (!html || html.length < 500) continue;
-
-                    // Detect blocked/captcha pages
-                    if (html.includes('you have been blocked') ||
-                        html.includes('Checking your browser') ||
-                        html.includes('Just a moment') ||
-                        html.includes('cf-browser-verification')) {
-                        console.warn(`[Scraper] Chapter page blocked via ${getProxyUrl}`);
-                        continue;
-                    }
+                    if (!html) continue;
 
                     const $ = cheerio.load(html);
                     const newChapters = this.extractChaptersFromPage($, currentUrl);
@@ -1195,54 +1202,78 @@ export class ScraperService {
         ];
     }
 
+    /**
+     * Parse a list of novels from novelfire.net HTML.
+     * NovelFire uses li.novel-item with cover in figure img[data-src],
+     * title in h2.title or h4.novel-title, URL in a[href*="/book/"].
+     */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private parseNovelsList($: cheerio.CheerioAPI, selector: any): (NovelMetadata & { sourceUrl: string })[] {
         const novels: (NovelMetadata & { sourceUrl: string })[] = [];
         const origin = 'https://novelfire.net';
 
-        const $container = $(selector);
-        const items = $container.hasClass('item') || $container.hasClass('novel-item') || $container.hasClass('book-item')
-            ? $container
-            : $container.find('.novel-item, .item, .book-item, .list-row, .col-6, .box, [class*="item"], a[href*="/book/"], a[href*="/novel/"]');
+        // Get novel item elements
+        let items = $(selector);
+        // If the selector returned a container (not individual items), find novel-items inside
+        if (items.length === 1 && !items.hasClass('novel-item')) {
+            items = items.find('li.novel-item, .novel-item');
+        }
+        // If still a broad selection, try to find individual novel-items
+        if (items.length === 0) {
+            items = $('li.novel-item');
+        }
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         items.each((_: number, el: any) => {
             const $el = $(el);
-            let title = $el.find('h1, h2, h3, h4, h5, .title, .novel-title, .book-name').first().text().trim();
-            let url = $el.find('a[href*="/book/"], a[href*="/novel/"]').first().attr('href') || $el.find('a').first().attr('href') || '';
 
-            if (!title) {
-                title = $el.find('a').first().attr('title')?.trim() || $el.find('a').first().text().trim();
-            }
+            // Title: novelfire uses h2.title > a or h4.novel-title > text, or a[title]
+            let title = $el.find('h2.title a, h4.novel-title, h3.novel-title, h2.novel-title').first().text().trim();
+            if (!title) title = $el.find('h1, h2, h3, h4, h5').first().text().trim();
+            if (!title) title = $el.find('.cover-wrap a, .cover-wrap figure a').first().attr('title')?.trim() || '';
+            if (!title) title = $el.find('a[href*="/book/"]').first().attr('title')?.trim() || '';
+            if (!title) title = $el.find('a').first().text().trim();
+
+            // URL: prioritize /book/ links (novelfire uses /book/ not /novel/)
+            let url = $el.find('a[href*="/book/"]').first().attr('href') || '';
+            if (!url) url = $el.find('a').first().attr('href') || '';
 
             if (url && !url.startsWith('http')) {
                 if (!url.startsWith('/')) url = '/' + url;
                 url = `${origin}${url}`;
             }
 
-            let coverUrl = $el.find('img').attr('data-src') ||
-                $el.find('img').attr('data-lazy-src') ||
-                $el.find('img').attr('data-original') ||
-                $el.find('img').attr('src') || '';
+            // Cover image: novelfire uses data-src (lazy-loaded), src is a base64 placeholder
+            const imgEl = $el.find('img').first();
+            let coverUrl = imgEl.attr('data-src') ||
+                imgEl.attr('data-lazy-src') ||
+                imgEl.attr('data-original') ||
+                imgEl.attr('src') || '';
+
+            // Skip base64 placeholder images and pick data-src
+            if (coverUrl && coverUrl.startsWith('data:')) {
+                coverUrl = imgEl.attr('data-src') || imgEl.attr('data-lazy-src') || imgEl.attr('data-original') || '';
+            }
 
             if (coverUrl) {
                 if (coverUrl.startsWith('//')) {
                     coverUrl = `https:${coverUrl}`;
                 } else if (!coverUrl.startsWith('http')) {
                     if (!coverUrl.startsWith('/')) coverUrl = '/' + coverUrl;
-                    coverUrl = `https://novelfire.net${coverUrl}`;
+                    coverUrl = `${origin}${coverUrl}`;
                 }
             }
 
-            const author = $el.find('.author, .book-author').first().text().trim() || 'Unknown';
-            const status = $el.find('.status').first().text().trim() || 'Ongoing';
+            // Status: in .status or strong.ongoing
+            const status = $el.find('.status, strong.ongoing, .status-group .status').first().text().trim() || 'Ongoing';
 
-            if (title && url && (url.includes('/book/') || url.includes('/novel/'))) {
+            // Only include if we have a valid novelfire /book/ URL
+            if (title && url && url.includes('/book/')) {
                 novels.push({
                     title,
-                    author,
+                    author: 'Unknown', // Author not available in listing cards
                     coverUrl,
-                    summary: $el.find('.description, .excerpt').first().text().trim() || '',
+                    summary: '',
                     status,
                     sourceUrl: url,
                     chapters: []
@@ -1253,9 +1284,7 @@ export class ScraperService {
         // Deduplicate by sourceUrl
         const seen = new Set<string>();
         return novels.filter(novel => {
-            if (seen.has(novel.sourceUrl)) {
-                return false;
-            }
+            if (seen.has(novel.sourceUrl)) return false;
             seen.add(novel.sourceUrl);
             return true;
         });
@@ -1269,47 +1298,23 @@ export class ScraperService {
         else if (type === 'most-read') url += '/most-read';
         else if (type === 'most-review') url += '/most-review';
 
-        if (page > 1) {
-            url += `?page=${page}`;
-        }
+        if (page > 1) url += `?page=${page}`;
 
         console.log(`[Scraper] Fetching Ranking: ${url} (page ${page})`);
 
-        for (const getProxyUrl of this.getProxies()) {
+        for (const proxyUrl of this.getProxies()) {
             try {
-                const html = await this.fetchHtml(url, getProxyUrl);
-                if (!html || html.length < 500) continue;
-
-                // Detect blocked/captcha pages
-                if (html.includes('you have been blocked') ||
-                    html.includes('Checking your browser') ||
-                    html.includes('Just a moment') ||
-                    html.includes('cf-browser-verification')) {
-                    console.warn(`[Scraper] Ranking page blocked via ${getProxyUrl}`);
-                    continue;
-                }
-
+                const html = await this.fetchHtml(url, proxyUrl);
+                if (!html) continue;
                 const $ = cheerio.load(html);
-
-                // Try multiple selectors for the ranking page
-                let novels = this.parseNovelsList($, '.rank-novels');
-                if (novels.length === 0) {
-                    novels = this.parseNovelsList($, '.novel-list');
-                }
-                if (novels.length === 0) {
-                    novels = this.parseNovelsList($, '.list-novel');
-                }
-                if (novels.length === 0) {
-                    // Try direct item selection
-                    novels = this.parseNovelsList($, '.novel-item');
-                }
-
+                // novelfire ranking page has li.novel-item elements directly
+                const novels = this.parseNovelsList($, 'li.novel-item');
                 if (novels.length > 0) {
-                    console.log(`[Scraper] Ranking fetched ${novels.length} novels via ${getProxyUrl}`);
+                    console.log(`[Scraper] Ranking fetched ${novels.length} novels`);
                     return novels;
                 }
             } catch (e) {
-                console.error(`[Scraper] Ranking fetch failed for type ${type}, page ${page}`, e);
+                console.error(`[Scraper] Ranking fetch failed`, e);
             }
         }
         return [];
@@ -1317,34 +1322,19 @@ export class ScraperService {
 
     async fetchLatest(page: number = 1): Promise<NovelMetadata[]> {
         const url = `https://novelfire.net/genre-all/sort-new/status-all/all-novel${page > 1 ? `?page=${page}` : ''}`;
-        console.log(`[Scraper] Fetching Latest: ${url} (page ${page})`);
-        for (const getProxyUrl of this.getProxies()) {
+        console.log(`[Scraper] Fetching Latest: ${url}`);
+        for (const proxyUrl of this.getProxies()) {
             try {
-                const html = await this.fetchHtml(url, getProxyUrl);
-                if (!html || html.length < 500) continue;
-
-                // Detect blocked/captcha pages
-                if (html.includes('you have been blocked') ||
-                    html.includes('Checking your browser') ||
-                    html.includes('Just a moment') ||
-                    html.includes('cf-browser-verification')) {
-                    console.warn(`[Scraper] Latest page blocked via ${getProxyUrl}`);
-                    continue;
-                }
-
+                const html = await this.fetchHtml(url, proxyUrl);
+                if (!html) continue;
                 const $ = cheerio.load(html);
-                let novels = this.parseNovelsList($, '.novel-list .novel-item, .novel-list .item, .novel-item');
-
-                if (novels.length === 0) {
-                    novels = this.parseNovelsList($, '.novel-list');
-                }
-
+                const novels = this.parseNovelsList($, 'li.novel-item');
                 if (novels.length > 0) {
-                    console.log(`[Scraper] Latest fetched ${novels.length} novels via ${getProxyUrl}`);
+                    console.log(`[Scraper] Latest fetched ${novels.length} novels`);
                     return novels;
                 }
             } catch (e) {
-                console.error(`[Scraper] Latest fetch failed for page ${page}`, e);
+                console.error(`[Scraper] Latest fetch failed`, e);
             }
         }
         return [];
@@ -1352,34 +1342,19 @@ export class ScraperService {
 
     async fetchRecentlyAdded(page: number = 1): Promise<NovelMetadata[]> {
         const url = `https://novelfire.net/latest-release-novels${page > 1 ? `?page=${page}` : ''}`;
-        console.log(`[Scraper] Fetching Recently Added: ${url} (page ${page})`);
-        for (const getProxyUrl of this.getProxies()) {
+        console.log(`[Scraper] Fetching Recently Added: ${url}`);
+        for (const proxyUrl of this.getProxies()) {
             try {
-                const html = await this.fetchHtml(url, getProxyUrl);
-                if (!html || html.length < 500) continue;
-
-                // Detect blocked/captcha pages
-                if (html.includes('you have been blocked') ||
-                    html.includes('Checking your browser') ||
-                    html.includes('Just a moment') ||
-                    html.includes('cf-browser-verification')) {
-                    console.warn(`[Scraper] Recently Added page blocked via ${getProxyUrl}`);
-                    continue;
-                }
-
+                const html = await this.fetchHtml(url, proxyUrl);
+                if (!html) continue;
                 const $ = cheerio.load(html);
-                let novels = this.parseNovelsList($, '.novel-list .novel-item, .novel-list .item, .novel-item');
-
-                if (novels.length === 0) {
-                    novels = this.parseNovelsList($, '.novel-list');
-                }
-
+                const novels = this.parseNovelsList($, 'li.novel-item');
                 if (novels.length > 0) {
-                    console.log(`[Scraper] Recently Added fetched ${novels.length} novels via ${getProxyUrl}`);
+                    console.log(`[Scraper] Recently Added fetched ${novels.length} novels`);
                     return novels;
                 }
             } catch (e) {
-                console.error(`[Scraper] Recently Added fetch failed for page ${page}`, e);
+                console.error(`[Scraper] Recently Added fetch failed`, e);
             }
         }
         return [];
@@ -1387,34 +1362,19 @@ export class ScraperService {
 
     async fetchCompleted(page: number = 1): Promise<NovelMetadata[]> {
         const url = `https://novelfire.net/genre-all/sort-popular/status-completed/all-novel${page > 1 ? `?page=${page}` : ''}`;
-        console.log(`[Scraper] Fetching Completed: ${url} (page ${page})`);
-        for (const getProxyUrl of this.getProxies()) {
+        console.log(`[Scraper] Fetching Completed: ${url}`);
+        for (const proxyUrl of this.getProxies()) {
             try {
-                const html = await this.fetchHtml(url, getProxyUrl);
-                if (!html || html.length < 500) continue;
-
-                // Detect blocked/captcha pages
-                if (html.includes('you have been blocked') ||
-                    html.includes('Checking your browser') ||
-                    html.includes('Just a moment') ||
-                    html.includes('cf-browser-verification')) {
-                    console.warn(`[Scraper] Completed page blocked via ${getProxyUrl}`);
-                    continue;
-                }
-
+                const html = await this.fetchHtml(url, proxyUrl);
+                if (!html) continue;
                 const $ = cheerio.load(html);
-                let novels = this.parseNovelsList($, '.novel-list .novel-item, .novel-list .item, .novel-item');
-
-                if (novels.length === 0) {
-                    novels = this.parseNovelsList($, '.novel-list');
-                }
-
+                const novels = this.parseNovelsList($, 'li.novel-item');
                 if (novels.length > 0) {
-                    console.log(`[Scraper] Completed fetched ${novels.length} novels via ${getProxyUrl}`);
+                    console.log(`[Scraper] Completed fetched ${novels.length} novels`);
                     return novels;
                 }
             } catch (e) {
-                console.error(`[Scraper] Completed fetch failed for page ${page}`, e);
+                console.error(`[Scraper] Completed fetch failed`, e);
             }
         }
         return [];
@@ -1427,37 +1387,18 @@ export class ScraperService {
         for (const proxyUrl of this.getProxies()) {
             try {
                 const html = await this.fetchHtml(url, proxyUrl);
-                if (!html || html.length < 500) continue;
-
-                if (html.includes('you have been blocked') ||
-                    html.includes('Checking your browser') ||
-                    html.includes('Just a moment') ||
-                    html.includes('cf-browser-verification')) {
-                    console.warn(`[Scraper] Search blocked via ${proxyUrl}`);
-                    continue;
-                }
+                if (!html) continue;
 
                 const $ = cheerio.load(html);
-
-                // Try multiple selectors for search results
-                let novels = this.parseNovelsList($, '.novel-list .novel-item, .novel-list .item, .novel-item');
-                if (novels.length === 0) {
-                    novels = this.parseNovelsList($, '.novel-list');
-                }
-                if (novels.length === 0) {
-                    novels = this.parseNovelsList($, '.list-novel');
-                }
-                if (novels.length === 0) {
-                    // Broadest fallback
-                    novels = this.parseNovelsList($, '.content-list, .search-list, .result-list, main');
-                }
+                // novelfire search results use li.novel-item elements
+                const novels = this.parseNovelsList($, 'li.novel-item');
 
                 if (novels.length > 0) {
-                    console.log(`[Scraper] Search found ${novels.length} novels via ${proxyUrl}`);
+                    console.log(`[Scraper] Search found ${novels.length} novels`);
                     return novels;
                 }
             } catch (e) {
-                console.error(`[Scraper] Search failed with proxy ${proxyUrl}`, e);
+                console.error(`[Scraper] Search failed`, e);
             }
         }
         return [];
@@ -1467,54 +1408,25 @@ export class ScraperService {
         const results: HomeData = { recommended: [], ranking: [], latest: [], recentlyAdded: [], completed: [] };
 
         try {
-            // 1. Fetch Ranking (Page 1)
-            onProgress?.('Syncing Top Rankings...', 1, 5);
+            // 1. Fetch Ranking (Top Novels)
+            onProgress?.('Syncing Top Rankings...', 1, 4);
             results.ranking = await this.fetchRanking('overall', 1);
 
-            // 2. Fetch Latest (Page 1)
-            onProgress?.('Syncing Latest Updates...', 2, 5);
+            // 2. Fetch Latest Updates
+            onProgress?.('Syncing Latest Updates...', 2, 4);
             results.latest = await this.fetchLatest(1);
 
-            // 3. Fetch Completed (Page 1)
-            onProgress?.('Syncing Completed Stories...', 3, 5);
+            // 3. Fetch Completed Stories
+            onProgress?.('Syncing Completed Stories...', 3, 4);
             results.completed = await this.fetchCompleted(1);
 
             // 4. Fetch Recently Added (from /latest-release-novels)
-            onProgress?.('Syncing Recently Added...', 4, 5);
+            onProgress?.('Syncing Recently Added...', 4, 4);
             results.recentlyAdded = await this.fetchRecentlyAdded(1);
 
-            // 5. Try to fetch deep home data for recommendations
-            onProgress?.('Syncing Home Page...', 5, 5);
-            try {
-                const homeDeepData = await this.fetchHomeData();
-
-                // Backfill other categories if primary fetch failed (Fallback source)
-                if (results.ranking.length === 0 && homeDeepData.ranking.length > 0) {
-                    console.log('[Scraper] Backfilling Ranking from Home Data');
-                    results.ranking = homeDeepData.ranking;
-                }
-                if (results.latest.length === 0 && homeDeepData.latest.length > 0) {
-                    console.log('[Scraper] Backfilling Latest from Home Data');
-                    results.latest = homeDeepData.latest;
-                }
-                if (results.completed.length === 0 && homeDeepData.completed.length > 0) {
-                    console.log('[Scraper] Backfilling Completed from Home Data');
-                    results.completed = homeDeepData.completed;
-                }
-                // Use AJAX recently added as fallback if main fetch failed
-                if (results.recentlyAdded.length === 0 && homeDeepData.recentlyAdded.length > 0) {
-                    console.log('[Scraper] Backfilling Recently Added from AJAX');
-                    results.recentlyAdded = homeDeepData.recentlyAdded;
-                }
-
-            } catch (e) {
-                console.warn('[Scraper] Deep home fetch failed, using fallbacks', e);
-            }
-
-            // Fallback for Recently Added: Use Latest if still empty
+            // Fallback: if recentlyAdded is empty, use latest
             if (results.recentlyAdded.length === 0 && results.latest.length > 0) {
                 console.log('[Scraper] Using Latest as fallback for Recently Added');
-                // Take the first 10 from latest as 'recently added'
                 results.recentlyAdded = [...results.latest].slice(0, 10);
             }
 
