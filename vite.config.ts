@@ -47,7 +47,9 @@ export default defineConfig({
               'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
               'Accept-Language': 'en-US,en;q=0.5',
-              'Accept-Encoding': 'gzip, deflate, br',
+              // Intentionally omit Accept-Encoding so servers return plain (uncompressed) responses.
+              // If we forward gzip/br, servers compress the body and our pipe-through proxy
+              // cannot transparently decompress it, resulting in garbled binary content.
               'Referer': targetUrl.origin + '/',
               'Connection': 'keep-alive',
               'Cache-Control': 'no-cache',

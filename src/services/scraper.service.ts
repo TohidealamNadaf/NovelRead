@@ -933,8 +933,9 @@ export class ScraperService {
     }
 
     public enhanceContent(html: string): string {
-        const $ = cheerio.load(html, { xmlMode: false });
-        $('*').contents().each((_, elem) => {
+        // Wrap in a container div so we can extract just the modified inner content
+        const $ = cheerio.load(`<div id="_enhance_root">${html}</div>`, { xmlMode: false });
+        $('#_enhance_root').find('*').contents().each((_, elem) => {
             if (elem.type === 'text') {
                 let text = $(elem).text();
                 text = text.replace(/(\[[^\]]+\])/g, '<span class="smart-system">$1</span>');
@@ -957,7 +958,8 @@ export class ScraperService {
                 $(elem).replaceWith(text);
             }
         });
-        return $('body').html() || html;
+        // Return only the modified inner content, not the full body
+        return $('#_enhance_root').html() || html;
     }
 
     resolveUrl(baseUrl: string, relativeUrl: string): string {
@@ -1007,13 +1009,23 @@ export class ScraperService {
                     return this.fetchChapterContent(resolved, visitedUrls);
                 }
 
-                $('script, style, .ads, .ad-container, iframe, .hidden, .announcement').remove();
+                $('script, style, .ads, .ad-container, .nf-ads, iframe, .hidden, .announcement, .box-notification, .report-container, .chapternav, .nav-back, .restore-scroll-btn').remove();
 
+                // NovelFire-first priority: content lives in #content inside #chapter-container
                 const contentSelectors = [
-                    '#chapter-content', '.chapter-content', '#chr-content',
-                    '.read-content', '.reading-content', '.text-left',
-                    '#content', '.entry-content', 'article', '.chapter-readable',
-                    '.read-container', '.chapter-text', '.chapter-body'
+                    '#content',              // NovelFire: <div id="content" class="clearfix font_default">
+                    '#chapter-container',    // NovelFire outer wrapper fallback
+                    '#chapter-content',      // Generic
+                    '.chapter-content',
+                    '#chr-content',
+                    '.read-content',
+                    '.reading-content',
+                    '.text-left',
+                    '.entry-content',
+                    '.chapter-readable',
+                    '.read-container',
+                    '.chapter-text',
+                    '.chapter-body'
                 ];
 
                 for (const sel of contentSelectors) {
@@ -1024,16 +1036,21 @@ export class ScraperService {
                     }
                 }
 
+                // Broad fallback: find the largest text-rich div
                 if (!content || content.length < 500) {
-                    $('div, section, main').each((_, el) => {
+                    let bestEl: string = '';
+                    let bestLen = 0;
+                    $('div, section').each((_, el) => {
                         const $el = $(el);
                         const text = $el.text().trim();
                         if (text.length > 1000 && ($el.find('p').length > 3 || $el.find('br').length > 5)) {
-                            if (!content || text.length < $(content).text().length) {
-                                content = $el.html() || '';
+                            if (text.length > bestLen) {
+                                bestLen = text.length;
+                                bestEl = $el.html() || '';
                             }
                         }
                     });
+                    if (bestEl) content = bestEl;
                 }
 
                 if (content && content.length > 300) {
