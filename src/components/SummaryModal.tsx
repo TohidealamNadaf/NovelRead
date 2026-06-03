@@ -20,22 +20,22 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading, onReload }: 
 
     // Height tracking values
     const getVh = () => typeof window !== 'undefined' ? window.innerHeight : 800;
-    const MIN_HEIGHT = 400;
+    const MIN_HEIGHT = 450;
 
     // Set dynamic base min tracking depending on screen height
-    const heightRaw = useMotionValue(Math.max(MIN_HEIGHT, getVh() * 0.4));
+    const heightRaw = useMotionValue(Math.max(MIN_HEIGHT, getVh() * 0.55));
 
     // Clamp the pixel height to visually bounded percentage values
     const height = useTransform(heightRaw, (h) => {
         const vh = getVh();
-        const bounded = Math.min(Math.max(h, vh * 0.4), vh * 0.95);
+        const bounded = Math.min(Math.max(h, vh * 0.55), vh * 0.95);
         return `${bounded}px`;
     });
 
     // Reset tracking when opened
     useEffect(() => {
         if (isOpen) {
-            heightRaw.set(Math.max(MIN_HEIGHT, getVh() * 0.4));
+            heightRaw.set(Math.max(MIN_HEIGHT, getVh() * 0.55));
         }
     }, [isOpen, heightRaw]);
 
@@ -45,7 +45,7 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading, onReload }: 
     const summaryParagraphs = summary?.extractive?.split(/\n+/).filter(p => p.trim().length > 0) || [];
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-0 sm:p-4 pointer-events-none">
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center pb-[2px] sm:p-4 pointer-events-none">
             <div
                 className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity pointer-events-auto"
                 onClick={onClose}
@@ -65,7 +65,7 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading, onReload }: 
                     onPan={(_e, info) => {
                         const vh = window.innerHeight;
                         const maxH = vh * 0.95;
-                        const minH = Math.max(400, vh * 0.4);
+                        const minH = Math.max(450, vh * 0.55);
 
                         // info.delta.y is negative when dragging up.
                         // So subtracting it INCREASES the height.
@@ -77,7 +77,7 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading, onReload }: 
                         heightRaw.set(newHeight);
                     }}
                     onPanEnd={(_e, info) => {
-                        const minH = Math.max(400, window.innerHeight * 0.4);
+                        const minH = Math.max(450, window.innerHeight * 0.55);
 
                         // Close if thrown down fast or pushed below minimum size
                         if (info.velocity.y > 600 || heightRaw.get() < minH - 10) {

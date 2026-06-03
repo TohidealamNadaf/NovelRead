@@ -113,22 +113,26 @@ export const DiscoverList = () => {
                     setHasMore(false);
                 } else if (category === 'ranking') {
                     pageTitle = 'Top Ranking';
-                    const liveRanking = await scraperService.fetchRanking(rankType, pageNum);
+                    const activeSource = mode === 'novels' ? 'novelfire' : mode;
+                    const liveRanking = await scraperService.fetchRanking(rankType, pageNum, activeSource);
                     data = liveRanking;
                     setHasMore(liveRanking.length >= 20);
                 } else if (category === 'latest' || category === 'new') {
                     pageTitle = 'Latest Novels';
-                    const liveLatest = await scraperService.fetchLatest(pageNum);
+                    const activeSource = mode === 'novels' ? 'novelfire' : mode;
+                    const liveLatest = await scraperService.fetchLatest(pageNum, activeSource);
                     data = liveLatest;
                     setHasMore(liveLatest.length >= 20);
                 } else if (category === 'completed') {
                     pageTitle = 'Completed Stories';
-                    const liveCompleted = await scraperService.fetchCompleted(pageNum);
+                    const activeSource = mode === 'novels' ? 'novelfire' : mode;
+                    const liveCompleted = await scraperService.fetchCompleted(pageNum, activeSource);
                     data = liveCompleted.length > 0 ? liveCompleted : (pageNum === 1 ? homeData?.completed || [] : []);
                     setHasMore(liveCompleted.length >= 20);
                 } else if (category === 'recentlyAdded' || category === 'recently-added') {
                     pageTitle = 'Recently Added';
-                    const liveRecentlyAdded = await scraperService.fetchRecentlyAdded(pageNum);
+                    const activeSource = mode === 'novels' ? 'novelfire' : mode;
+                    const liveRecentlyAdded = await scraperService.fetchRecentlyAdded(pageNum, activeSource);
                     data = liveRecentlyAdded.length > 0 ? liveRecentlyAdded : (pageNum === 1 ? homeData?.recentlyAdded || [] : []);
                     setHasMore(liveRecentlyAdded.length >= 20);
                 } else if (category) {
@@ -195,7 +199,7 @@ export const DiscoverList = () => {
                 </div>
 
                 {/* Ranking Type Filters */}
-                {category === 'ranking' && mode === 'novels' && (
+                {category === 'ranking' && mode !== 'manhwa' && (
                     <div className="flex overflow-x-auto gap-2 px-4 pb-3 hide-scrollbar">
                         {[
                             { id: 'overall', label: 'Ranks' },
@@ -265,7 +269,7 @@ export const DiscoverList = () => {
                                             </div>
                                         )}
 
-                                        {category === 'ranking' && mode === 'novels' && (
+                                        {category === 'ranking' && mode !== 'manhwa' && (
                                             <div className="absolute top-1 left-1 bg-black/60 backdrop-blur-sm text-white size-5 flex items-center justify-center rounded font-bold text-[8px]">
                                                 #{(page - 1) * 24 + index + 1}
                                             </div>
@@ -280,7 +284,7 @@ export const DiscoverList = () => {
                         </div>
 
                         {/* Pagination Controls */}
-                        {((mode === 'novels' && (category === 'ranking' || category === 'latest' || category === 'completed' || category === 'new' || category === 'recentlyAdded' || category === 'recently-added')) ||
+                        {((mode !== 'manhwa' && (category === 'ranking' || category === 'latest' || category === 'completed' || category === 'new' || category === 'recentlyAdded' || category === 'recently-added')) ||
                             (mode === 'manhwa' && category === 'latest')) && (
                                 <div className="flex items-center justify-between pt-4 pb-8">
                                     <button

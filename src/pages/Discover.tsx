@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Minimize2, WifiOff } from 'lucide-react';
 import { scraperService, type ScraperProgress, type NovelMetadata } from '../services/scraper.service';
@@ -48,8 +48,9 @@ const GlobalScrapingBar = memo(({ isGlobalScraping, scrapingProgress }: { isGlob
 
 export const Discover = () => {
     const navigate = useNavigate();
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
     const [searchQuery, setSearchQuery] = useState('');
-    const [homeData, setHomeData] = useState<any>(null);
+    const [homeData, setHomeData] = useState<Record<string, any>>({});
     const [isSyncingHome, setIsSyncingHome] = useState(false);
     const [scrapingProgress, setScrapingProgress] = useState<ScraperProgress>(scraperService.progress);
     const [isGlobalScraping, setIsGlobalScraping] = useState(scraperService.isScraping);
@@ -57,8 +58,8 @@ export const Discover = () => {
     const [showSyncModal, setShowSyncModal] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const [mode, setMode] = useState<'novels' | 'manhwa'>(() => {
-        return (sessionStorage.getItem('discoverTabMode') as 'novels' | 'manhwa') || 'novels';
+    const [mode, setMode] = useState<'novelfire' | 'freewebnovel' | 'manhwa'>(() => {
+        return (sessionStorage.getItem('discoverTabMode') as 'novelfire' | 'freewebnovel' | 'manhwa') || 'novelfire';
     });
     const [manhwaData, setManhwaData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
     const [isLoadingManhwa, setIsLoadingManhwa] = useState(false);
@@ -112,25 +113,44 @@ export const Discover = () => {
         };
     }, []);
 
-    // Load Manhwa Data when switching tabs
+    // Load data when switching tabs
     useEffect(() => {
         sessionStorage.setItem('discoverTabMode', mode);
-        if (mode === 'manhwa' && !manhwaData) {
-            loadManhwaData();
+        if (mode === 'manhwa') {
+            if (!manhwaData) loadManhwaData();
+        } else if (mode === 'novelfire' || mode === 'freewebnovel') {
+            if (!homeData[mode]) loadHomeData(mode);
         }
-    }, [mode, manhwaData]);
+    }, [mode, manhwaData, homeData]);
 
-    const loadHomeData = async () => {
+    const loadHomeData = async (currentMode: 'novelfire' | 'freewebnovel' | 'manhwa' = mode) => {
+        if (currentMode === 'manhwa') return;
         try {
-            // Try DB cache first
-            const cached = await dbService.getCache('homeData');
+            const cacheKey = `homeData_${currentMode}`;
+            const cached = await dbService.getCache(cacheKey);
             if (cached) {
-                setHomeData(cached);
-            } else {
-                // Fallback to localStorage if DB empty (migration)
-                const stored = localStorage.getItem('homeData');
-                if (stored) setHomeData(JSON.parse(stored));
+                setHomeData(prev => ({ ...prev, [currentMode]: cached }));
+            } else if (currentMode === 'novelfire') {
+                // Fallback for old cache key format
+                const oldCached = await dbService.getCache('homeData');
+                if (oldCached) {
+                    setHomeData(prev => ({ ...prev, novelfire: oldCached }));
+                } else {
+                    const stored = localStorage.getItem('homeData');
+                    if (stored) setHomeData(prev => ({ ...prev, novelfire: JSON.parse(stored) }));
+                }
             }
+            
+            // If still empty after cache checks, trigger an automatic sync
+            setTimeout(() => {
+                setHomeData(current => {
+                    if (!current[currentMode]) {
+                        console.log(`[Discover] No cache for ${currentMode}, auto-syncing...`);
+                        syncHomeData(currentMode);
+                    }
+                    return current;
+                });
+            }, 500);
         } catch (e) {
             console.error("Failed to load home data", e);
         }
@@ -159,23 +179,30 @@ export const Discover = () => {
         }
     };
 
-    const syncHomeData = useCallback(async () => {
+    const syncHomeData = useCallback(async (targetModeOrEvent?: 'novelfire' | 'freewebnovel' | 'manhwa' | any) => {
+        const actualTargetMode = typeof targetModeOrEvent === 'string' ? targetModeOrEvent : mode;
+
         if (!navigator.onLine) {
             alert("No internet connection available for sync.");
+            return;
+        }
+
+        if (actualTargetMode === 'manhwa') {
+            loadManhwaData();
             return;
         }
 
         setIsSyncingHome(true);
         setShowSyncModal(true);
         try {
-            console.log("Syncing discover data...");
+            console.log(`Syncing discover data for ${actualTargetMode}...`);
             const data = await scraperService.syncAllDiscoverData((task: string, current: number, total: number) => {
                 setSyncProgress({ task, current, total });
-            });
+            }, actualTargetMode as 'novelfire' | 'freewebnovel');
 
             if (data && (data.recommended.length > 0 || data.ranking.length > 0 || data.latest.length > 0)) {
-                setHomeData(data);
-                await dbService.setCache('homeData', data);
+                setHomeData(prev => ({ ...prev, [actualTargetMode]: data }));
+                await dbService.setCache(`homeData_${actualTargetMode}`, data);
                 setShowSuccess(true);
             } else {
                 alert("Sync returned empty data. Please try again.");
@@ -187,7 +214,7 @@ export const Discover = () => {
             setIsSyncingHome(false);
             setShowSyncModal(false);
         }
-    }, []);
+    }, [mode]);
 
     const performQuickScrape = async (url: string) => {
         const isManhwa = mode === 'manhwa' || url.includes('asura');
@@ -208,6 +235,9 @@ export const Discover = () => {
 
     const handleSearch = useCallback(async (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && searchQuery) {
+            if (scrollContainerRef.current) {
+                scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+            }
             if (searchQuery.startsWith('http')) {
                 await performQuickScrape(searchQuery);
             } else {
@@ -225,11 +255,11 @@ export const Discover = () => {
                         setIsSearchingManhwa(false);
                     }
                 } else {
-                    // Search novels on NovelFire
+                    // Search novels
                     setIsSearchingNovels(true);
                     setNovelSearchResults([]);
                     try {
-                        const results = await scraperService.searchNovels(searchQuery);
+                        const results = await scraperService.searchNovels(searchQuery, mode as 'novelfire' | 'freewebnovel');
                         setNovelSearchResults(results);
                     } catch (e) {
                         console.error('Novel search failed:', e);
@@ -244,7 +274,7 @@ export const Discover = () => {
     return (
         <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark font-sans selection:bg-primary/30 overflow-hidden">
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto pb-24">
+            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pb-24">
                 <DiscoverHeader
                     profileImage={profileImage}
                     isSyncingHome={isSyncingHome}
@@ -271,9 +301,10 @@ export const Discover = () => {
 
                 {/* Content */}
                 <div className="flex flex-col gap-6 pt-2">
-                    {mode === 'novels' ? (
+                    {mode === 'novelfire' || mode === 'freewebnovel' ? (
                         <NovelDiscoverSection
-                            homeData={homeData}
+                            homeData={homeData[mode]}
+                            source={mode}
                             isSearchingNovels={isSearchingNovels}
                             searchPerformed={searchPerformed}
                             novelSearchResults={novelSearchResults}

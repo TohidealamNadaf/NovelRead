@@ -155,9 +155,11 @@ export function useChapterData() {
                                 ...currentNovel,
                                 ...metadata,
                                 title: metadata.title || currentNovel.title,
+                                author: (metadata.author && metadata.author !== 'Unknown') ? metadata.author : currentNovel.author,
+                                status: (metadata.status && metadata.status !== 'Unknown' && metadata.status !== 'Ongoing') ? metadata.status : (currentNovel.status || metadata.status),
                             } as Novel;
                             // Only update state if meaningful change to avoid flickering
-                            if (updatedNovel.coverUrl !== currentNovel.coverUrl || updatedNovel.summary !== currentNovel.summary) {
+                            if (updatedNovel.coverUrl !== currentNovel.coverUrl || updatedNovel.summary !== currentNovel.summary || updatedNovel.author !== currentNovel.author || updatedNovel.status !== currentNovel.status) {
                                 setNovel(updatedNovel);
                                 currentNovel = updatedNovel; // Update local ref
                             }

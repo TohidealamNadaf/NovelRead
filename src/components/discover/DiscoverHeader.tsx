@@ -13,8 +13,8 @@ interface DiscoverHeaderProps {
     searchQuery: string;
     setSearchQuery: (query: string) => void;
     handleSearch: (e: React.KeyboardEvent) => void;
-    mode: 'novels' | 'manhwa';
-    setMode: (mode: 'novels' | 'manhwa') => void;
+    mode: 'novelfire' | 'freewebnovel' | 'manhwa';
+    setMode: (mode: 'novelfire' | 'freewebnovel' | 'manhwa') => void;
     navigate: (path: string) => void;
 }
 
@@ -105,16 +105,22 @@ export const DiscoverHeader = memo(({
             </div>
 
             {/* Tab Switcher */}
-            <div className="px-4 py-2 flex gap-4">
+            <div className="px-4 py-2 flex gap-4 overflow-x-auto no-scrollbar">
                 <button
-                    onClick={() => setMode('novels')}
-                    className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all ${mode === 'novels' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-slate-200/50 dark:bg-[#2b2839] text-slate-500 dark:text-[#a19db9]'}`}
+                    onClick={() => setMode('novelfire')}
+                    className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-bold transition-all ${mode === 'novelfire' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-slate-200/50 dark:bg-[#2b2839] text-slate-500 dark:text-[#a19db9]'}`}
                 >
-                    Novels
+                    NovelFire
+                </button>
+                <button
+                    onClick={() => setMode('freewebnovel')}
+                    className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-bold transition-all ${mode === 'freewebnovel' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-slate-200/50 dark:bg-[#2b2839] text-slate-500 dark:text-[#a19db9]'}`}
+                >
+                    FreeWebNovel
                 </button>
                 <button
                     onClick={() => setMode('manhwa')}
-                    className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all ${mode === 'manhwa' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-slate-200/50 dark:bg-[#2b2839] text-slate-500 dark:text-[#a19db9]'}`}
+                    className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-bold transition-all ${mode === 'manhwa' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-slate-200/50 dark:bg-[#2b2839] text-slate-500 dark:text-[#a19db9]'}`}
                 >
                     Manhwa
                 </button>

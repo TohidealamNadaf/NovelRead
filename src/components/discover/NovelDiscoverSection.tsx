@@ -11,6 +11,7 @@ interface NovelDiscoverSectionProps {
     novelSearchResults: NovelMetadata[];
     searchQuery: string;
     onClearSearch: () => void;
+    source: 'novelfire' | 'freewebnovel';
 }
 
 export const NovelDiscoverSection = memo(({
@@ -19,7 +20,8 @@ export const NovelDiscoverSection = memo(({
     searchPerformed,
     novelSearchResults,
     searchQuery,
-    onClearSearch
+    onClearSearch,
+    source
 }: NovelDiscoverSectionProps) => {
     const navigate = useNavigate();
 
@@ -45,7 +47,7 @@ export const NovelDiscoverSection = memo(({
                     {isSearchingNovels && (
                         <div className="flex items-center justify-center py-12 gap-3">
                             <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                            <p className="text-sm text-slate-400">Searching NovelFire...</p>
+                            <p className="text-sm text-slate-400">Searching {source === 'novelfire' ? 'NovelFire' : 'FreeWebNovel'}...</p>
                         </div>
                     )}
 
@@ -106,7 +108,7 @@ export const NovelDiscoverSection = memo(({
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between px-4">
                         <h3 className="text-lg font-bold tracking-tight">Recommends</h3>
-                        <button onClick={() => navigate('/discover/recommended')} className="text-primary text-sm font-medium">See all</button>
+                        <button onClick={() => navigate(`/discover/recommended?mode=${source}`)} className="text-primary text-sm font-medium">See all</button>
                     </div>
                     <div className="carousel-container flex overflow-x-auto gap-4 px-4 hide-scrollbar snap-x snap-mandatory">
                         {homeData.recommended.slice(0, 10).map((novel: any, idx: number) => (
@@ -120,7 +122,7 @@ export const NovelDiscoverSection = memo(({
                                 <div className="absolute bottom-4 left-4 right-4">
                                     <span className="bg-primary/90 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider mb-2 inline-block">Recommended</span>
                                     <h4 className="text-white text-xl font-bold leading-tight line-clamp-1">{novel.title}</h4>
-                                    <p className="text-white/70 text-sm line-clamp-1">{novel.author && novel.author !== 'Unknown' ? novel.author : novel.chapters?.length ? `${novel.chapters.length} Chapters` : 'Best of NovelFire'}</p>
+                                    <p className="text-white/70 text-sm line-clamp-1">{novel.author && novel.author !== 'Unknown' ? novel.author : novel.chapters?.length ? `${novel.chapters.length} Chapters` : `Best of ${source === 'novelfire' ? 'NovelFire' : 'FreeWebNovel'}`}</p>
                                 </div>
                             </div>
                         ))}
@@ -133,7 +135,7 @@ export const NovelDiscoverSection = memo(({
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between px-4">
                         <h3 className="text-lg font-bold tracking-tight">Top Ranking</h3>
-                        <button onClick={() => navigate('/discover/ranking')} className="text-primary text-sm font-medium">View More</button>
+                        <button onClick={() => navigate(`/discover/ranking?mode=${source}`)} className="text-primary text-sm font-medium">View More</button>
                     </div>
                     <div className="flex overflow-x-auto gap-4 px-4 hide-scrollbar">
                         {homeData.ranking.slice(0, 10).map((novel: any, idx: number) => (
@@ -174,7 +176,7 @@ export const NovelDiscoverSection = memo(({
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between px-4">
                         <h3 className="text-lg font-bold tracking-tight">Latest Updates</h3>
-                        <button onClick={() => navigate('/discover/latest')} className="text-primary text-sm font-medium">See all</button>
+                        <button onClick={() => navigate(`/discover/latest?mode=${source}`)} className="text-primary text-sm font-medium">See all</button>
                     </div>
                     <div className="flex flex-col bg-white dark:bg-transparent rounded-2xl border border-slate-200 dark:border-white/5 overflow-hidden mx-4">
                         {homeData.latest.slice(0, 10).map((novel: any, idx: number) => (
@@ -220,7 +222,7 @@ export const NovelDiscoverSection = memo(({
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between px-4">
                         <h3 className="text-lg font-bold tracking-tight">Recently Added</h3>
-                        <button onClick={() => navigate('/discover/recentlyAdded')} className="text-primary text-sm font-medium">See all</button>
+                        <button onClick={() => navigate(`/discover/recentlyAdded?mode=${source}`)} className="text-primary text-sm font-medium">See all</button>
                     </div>
                     <div className="flex overflow-x-auto gap-4 px-4 hide-scrollbar">
                         {homeData.recentlyAdded.slice(0, 10).map((novel: any, idx: number) => (
@@ -259,7 +261,7 @@ export const NovelDiscoverSection = memo(({
                 <div className="flex flex-col gap-4">
                     <div className="flex items-center justify-between px-4">
                         <h3 className="text-lg font-bold tracking-tight">Completed Stories</h3>
-                        <button onClick={() => navigate('/discover/completed')} className="text-primary text-sm font-medium">See all</button>
+                        <button onClick={() => navigate(`/discover/completed?mode=${source}`)} className="text-primary text-sm font-medium">See all</button>
                     </div>
                     <div className="flex overflow-x-auto gap-4 px-4 hide-scrollbar">
                         {homeData.completed.slice(0, 10).map((novel: any, idx: number) => (
