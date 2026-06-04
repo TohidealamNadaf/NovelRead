@@ -93,7 +93,7 @@ export const AudioSettings = () => {
         });
 
     return (
-        <div className="bg-[#f8fafc] dark:bg-[#0b0f19] text-slate-900 dark:text-white min-h-screen font-sans flex flex-col transition-colors duration-300">
+        <div className="bg-[#f8fafc] dark:bg-[#0b0f19] text-slate-900 dark:text-white h-screen overflow-hidden font-sans flex flex-col transition-colors duration-300">
             {/* Header */}
             <Header
                 title="AI Audio Reader"
@@ -110,7 +110,7 @@ export const AudioSettings = () => {
                         </div>
                     </Link>
                 }
-                className="border-b border-transparent bg-transparent"
+                className="border-b border-slate-100 dark:border-white/5 bg-[#f8fafc]/90 dark:bg-[#0b0f19]/90 backdrop-blur-xl"
                 transparent
             />
 
