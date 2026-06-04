@@ -325,7 +325,7 @@ export const Home = () => {
                             <div className="absolute left-0 top-10 bottom-0 w-4 bg-gradient-to-r from-background-light dark:from-[#0f111a] to-transparent z-10 pointer-events-none" />
                             <div className="absolute right-0 top-10 bottom-0 w-8 bg-gradient-to-l from-background-light dark:from-[#0f111a] to-transparent z-10 pointer-events-none" />
                             
-                            <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 pb-4 snap-x">
+                            <div className="flex gap-4 overflow-x-auto hide-scrollbar px-4 pb-4 snap-x scroll-px-4">
                                 {recentCarousel.map(novel => (
                                     <Link
                                         key={'recent-' + novel.id}
