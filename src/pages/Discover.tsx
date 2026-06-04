@@ -61,8 +61,8 @@ export const Discover = () => {
     const [showSyncModal, setShowSyncModal] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const [mode, setMode] = useState<'novelfire' | 'freewebnovel' | 'manhwa' | 'kagane'>(() => {
-        return (sessionStorage.getItem('discoverTabMode') as 'novelfire' | 'freewebnovel' | 'manhwa' | 'kagane') || 'novelfire';
+    const [mode, setMode] = useState<'novelfire' | 'freewebnovel' | 'manhwa'>(() => {
+        return (sessionStorage.getItem('discoverTabMode') as 'novelfire' | 'freewebnovel' | 'manhwa') || 'novelfire';
     });
     const [manhwaData, setManhwaData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
     const [isLoadingManhwa, setIsLoadingManhwa] = useState(false);
@@ -96,7 +96,7 @@ export const Discover = () => {
             if (state.isActive) {
                 console.log('[Discover] App resumed, refreshing data...');
                 loadHomeData();
-                if (mode === 'manhwa' || mode === 'kagane') loadManhwaData(mode);
+                if (mode === 'manhwa') loadManhwaData();
             }
         });
 
@@ -119,15 +119,15 @@ export const Discover = () => {
     // Load data when switching tabs
     useEffect(() => {
         sessionStorage.setItem('discoverTabMode', mode);
-        if (mode === 'manhwa' || mode === 'kagane') {
-            loadManhwaData(mode);
+        if (mode === 'manhwa') {
+            loadManhwaData();
         } else if (mode === 'novelfire' || mode === 'freewebnovel') {
             if (!homeData[mode]) loadHomeData(mode);
         }
     }, [mode, homeData]);
 
-    const loadHomeData = async (currentMode: 'novelfire' | 'freewebnovel' | 'manhwa' | 'kagane' = mode) => {
-        if (currentMode === 'manhwa' || currentMode === 'kagane') return;
+    const loadHomeData = async (currentMode: 'novelfire' | 'freewebnovel' | 'manhwa' = mode) => {
+        if (currentMode === 'manhwa') return;
         try {
             const cacheKey = `homeData_${currentMode}`;
             const cached = await dbService.getCache(cacheKey);
@@ -159,9 +159,8 @@ export const Discover = () => {
         }
     };
 
-    const loadManhwaData = async (currentMode: 'manhwa' | 'kagane' = (mode === 'kagane' ? 'kagane' : 'manhwa')) => {
-        const source = currentMode === 'kagane' ? 'kagane' : 'asura';
-        const cacheKey = currentMode === 'kagane' ? 'kaganeDiscoveryData' : 'manhwaDiscoveryData';
+    const loadManhwaData = async () => {
+        const cacheKey = 'manhwaDiscoveryData';
         
         // Try DB cache first
         const cached = await dbService.getCache(cacheKey);
@@ -174,7 +173,7 @@ export const Discover = () => {
         if (navigator.onLine) {
             setIsLoadingManhwa(true);
             try {
-                const data = await manhwaScraperService.getDiscoveryData(source);
+                const data = await manhwaScraperService.getDiscoveryData();
                 if (data && (data.trending.length > 0 || data.popular.length > 0 || data.latest.length > 0)) {
                     setManhwaData(data);
                     await dbService.setCache(cacheKey, data);
@@ -187,7 +186,7 @@ export const Discover = () => {
         }
     };
 
-    const syncHomeData = useCallback(async (targetModeOrEvent?: 'novelfire' | 'freewebnovel' | 'manhwa' | 'kagane' | any) => {
+    const syncHomeData = useCallback(async (targetModeOrEvent?: 'novelfire' | 'freewebnovel' | 'manhwa' | any) => {
         const actualTargetMode = typeof targetModeOrEvent === 'string' ? targetModeOrEvent : mode;
 
         if (!navigator.onLine) {
@@ -195,8 +194,8 @@ export const Discover = () => {
             return;
         }
 
-        if (actualTargetMode === 'manhwa' || actualTargetMode === 'kagane') {
-            loadManhwaData(actualTargetMode);
+        if (actualTargetMode === 'manhwa') {
+            loadManhwaData();
             return;
         }
 
@@ -250,13 +249,12 @@ export const Discover = () => {
                 await performQuickScrape(searchQuery);
             } else {
                 setSearchPerformed(true);
-                if (mode === 'manhwa' || mode === 'kagane') {
+                if (mode === 'manhwa') {
                     // Search manhwas
                     setIsSearchingManhwa(true);
                     setManhwaSearchResults([]);
                     try {
-                        const source = mode === 'kagane' ? 'kagane' : 'asura';
-                        const results = await manhwaScraperService.searchManga(searchQuery, source);
+                        const results = await manhwaScraperService.searchManga(searchQuery);
                         setManhwaSearchResults(results);
                     } catch (e) {
                         console.error('Manhwa search failed:', e);
