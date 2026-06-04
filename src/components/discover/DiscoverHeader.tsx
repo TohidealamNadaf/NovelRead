@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { RefreshCcw, Filter, Search, X } from 'lucide-react';
 import { Header } from '../Header';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface DiscoverHeaderProps {
     profileImage: string;
@@ -17,6 +17,8 @@ interface DiscoverHeaderProps {
     mode: 'novelfire' | 'freewebnovel' | 'manhwa';
     setMode: (mode: 'novelfire' | 'freewebnovel' | 'manhwa') => void;
     navigate: (path: string) => void;
+    isCollapsed: boolean;
+    onSearchIconClick: () => void;
 }
 
 export const DiscoverHeader = memo(({
@@ -31,7 +33,9 @@ export const DiscoverHeader = memo(({
     handleSearch,
     mode,
     setMode,
-    navigate
+    navigate,
+    isCollapsed,
+    onSearchIconClick
 }: DiscoverHeaderProps) => {
     return (
         <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md">
@@ -44,7 +48,20 @@ export const DiscoverHeader = memo(({
                     </Link>
                 }
                 rightActions={
-                    <div className="flex w-20 items-center justify-end gap-1 relative">
+                    <div className="flex items-center justify-end gap-1 relative">
+                        <AnimatePresence>
+                            {isCollapsed && (
+                                <motion.button
+                                    initial={{ opacity: 0, scale: 0.6, width: 0 }}
+                                    animate={{ opacity: 1, scale: 1, width: 'auto' }}
+                                    exit={{ opacity: 0, scale: 0.6, width: 0 }}
+                                    onClick={onSearchIconClick}
+                                    className="flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors overflow-hidden shrink-0"
+                                >
+                                    <Search className="text-primary" size={20} />
+                                </motion.button>
+                            )}
+                        </AnimatePresence>
                         <button
                             onClick={syncHomeData}
                             disabled={isGlobalScraping}
@@ -80,8 +97,18 @@ export const DiscoverHeader = memo(({
                 }
             />
 
-            <div className="px-4 py-3 pb-1">
-                <label className="flex flex-col min-w-40 h-11 w-full group">
+            <motion.div
+                initial={false}
+                animate={{
+                    height: isCollapsed ? 0 : 54,
+                    opacity: isCollapsed ? 0 : 1,
+                    marginBottom: isCollapsed ? 0 : 4,
+                    pointerEvents: isCollapsed ? 'none' : 'auto'
+                }}
+                transition={{ duration: 0.25, ease: "easeInOut" }}
+                className="overflow-hidden px-4"
+            >
+                <label className="flex flex-col min-w-40 h-11 w-full group py-1">
                     <div className="flex w-full flex-1 items-stretch rounded-xl h-full bg-slate-100 dark:bg-[#2b2839] border border-transparent focus-within:border-primary/50 focus-within:bg-white dark:focus-within:bg-[#1c1c1e] focus-within:shadow-sm transition-all duration-200">
                         <div className="text-slate-400 dark:text-[#a19db9] group-focus-within:text-primary transition-colors flex items-center justify-center pl-4">
                             <Search size={20} />
@@ -114,22 +141,32 @@ export const DiscoverHeader = memo(({
                         )}
                     </div>
                 </label>
-            </div>
+            </motion.div>
 
             {/* Tab Switcher */}
-            <div className="px-4 py-2 pb-3">
+            <motion.div
+                initial={false}
+                animate={{
+                    height: isCollapsed ? 0 : 64,
+                    opacity: isCollapsed ? 0 : 1,
+                    paddingBottom: isCollapsed ? 0 : 12,
+                    pointerEvents: isCollapsed ? 'none' : 'auto'
+                }}
+                transition={{ duration: 0.25, ease: "easeInOut" }}
+                className="overflow-hidden px-4 py-2"
+            >
                 <div className="flex p-1 bg-slate-200/50 dark:bg-[#2b2839]/50 rounded-xl shadow-inner relative">
                     {['novelfire', 'freewebnovel', 'manhwa'].map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setMode(tab as any)}
-                            className={`relative flex-1 py-1.5 rounded-lg text-[13px] sm:text-sm font-bold transition-colors duration-200 z-10 ${mode === tab ? 'text-primary' : 'text-slate-500 dark:text-[#a19db9] hover:text-slate-700 dark:hover:text-slate-300'
+                            className={`relative flex-1 py-1.5 rounded-lg text-[13px] sm:text-sm font-bold transition-colors duration-200 z-10 ${mode === tab ? 'text-white' : 'text-slate-500 dark:text-[#a19db9] hover:text-slate-700 dark:hover:text-slate-300'
                                 }`}
                         >
                             {mode === tab && (
                                 <motion.div
                                     layoutId="discoverActiveTab"
-                                    className="absolute inset-0 bg-white dark:bg-[#1c1c1e] rounded-lg shadow-sm"
+                                    className="absolute inset-0 bg-primary rounded-lg shadow-md shadow-primary/20"
                                     transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                                     style={{ zIndex: -1 }}
                                 />
@@ -138,7 +175,7 @@ export const DiscoverHeader = memo(({
                         </button>
                     ))}
                 </div>
-            </div>
+            </motion.div>
         </div>
     );
 });

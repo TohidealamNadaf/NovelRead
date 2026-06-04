@@ -5,7 +5,6 @@ import { dbService, type Novel } from '../services/db.service';
 import { Link, useLocation } from 'react-router-dom';
 import { Search, Bell, Plus, X, BookOpen, Clock, ArrowUp, Play, ChevronRight } from 'lucide-react';
 import { notificationService } from '../services/notification.service';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { useProfileImage } from '../hooks/useProfileImage';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -45,6 +44,16 @@ export const Home = () => {
     // Long Press Edit Mode Tracking
     const pressTimer = useRef<NodeJS.Timeout | null>(null);
     const wasLongPressed = useRef(false);
+    const sessionStorageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Clean up scroll debounce timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (sessionStorageTimeoutRef.current) {
+                clearTimeout(sessionStorageTimeoutRef.current);
+            }
+        };
+    }, []);
 
     const handlePointerDown = () => {
         if (editMode) return;
@@ -97,11 +106,45 @@ export const Home = () => {
         }
     };
 
+    const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+
     const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
         const scrollTop = e.currentTarget.scrollTop;
-        sessionStorage.setItem('homeScroll', scrollTop.toString());
-        setShowScrollTop(scrollTop > 500);
-        setIsScrolled(scrollTop > 10);
+
+        // Debounce writing scroll position to sessionStorage
+        if (sessionStorageTimeoutRef.current) {
+            clearTimeout(sessionStorageTimeoutRef.current);
+        }
+        sessionStorageTimeoutRef.current = setTimeout(() => {
+            sessionStorage.setItem('homeScroll', scrollTop.toString());
+        }, 150);
+
+        // Only update states when the thresholds are actually crossed
+        const targetShowScrollTop = scrollTop > 500;
+        setShowScrollTop(prev => prev !== targetShowScrollTop ? targetShowScrollTop : prev);
+
+        const targetScrolled = scrollTop > 10;
+        setIsScrolled(prev => prev !== targetScrolled ? targetScrolled : prev);
+        
+        setIsHeaderCollapsed(prev => {
+            if (scrollTop > 80) {
+                return true;
+            } else if (scrollTop < 15) {
+                return false;
+            }
+            return prev;
+        });
+    };
+
+    const handleSearchIconClick = () => {
+        containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        setIsHeaderCollapsed(false);
+        setTimeout(() => {
+            const input = document.getElementById('library-search-input');
+            if (input) {
+                input.focus();
+            }
+        }, 300);
     };
 
     const scrollToTop = () => {
@@ -149,16 +192,6 @@ export const Home = () => {
     const heroNovel = continueReading.length > 0 ? continueReading[0] : null;
     const recentCarousel = continueReading.length > 1 ? continueReading.slice(1, 6) : [];
 
-    // Virtualization (Grid)
-    const rowCount = Math.ceil((filteredNovels.length + 1) / COLUMN_COUNT); // +1 for "Import New" card
-
-    const rowVirtualizer = useVirtualizer({
-        count: rowCount,
-        getScrollElement: () => containerRef.current,
-        estimateSize: () => window.innerWidth < 600 ? 240 : 280, // Dynamic height estimation
-        overscan: 4,
-    });
-
     const profileImage = useProfileImage();
 
     // Animation Variants
@@ -172,96 +205,110 @@ export const Home = () => {
 
     return (
         <div className="relative h-screen w-full flex flex-col bg-background-light dark:bg-[#0f111a] overflow-hidden font-sans">
+            {/* Header Section - Sticky Frosted Glass */}
+            <div className={`z-30 transition-all duration-300 ${isScrolled ? 'bg-white/80 dark:bg-[#0f111a]/80 backdrop-blur-xl shadow-sm' : 'bg-transparent'}`}>
+                <Header
+                    title="Library"
+                    leftContent={
+                        <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
+                            <img src={profileImage} alt="Profile" className="size-full object-cover" loading="lazy" />
+                        </Link>
+                    }
+                    rightActions={
+                        <div className="flex items-center gap-1">
+                            <AnimatePresence>
+                                {isHeaderCollapsed && !editMode && (
+                                    <motion.button
+                                        initial={{ opacity: 0, scale: 0.6, width: 0 }}
+                                        animate={{ opacity: 1, scale: 1, width: 'auto' }}
+                                        exit={{ opacity: 0, scale: 0.6, width: 0 }}
+                                        onClick={handleSearchIconClick}
+                                        className="flex items-center justify-center p-2.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors overflow-hidden shrink-0"
+                                    >
+                                        <Search size={22} className="text-slate-700 dark:text-white" />
+                                    </motion.button>
+                                )}
+                            </AnimatePresence>
+                            {novels.length > 0 && (
+                                <button
+                                    onClick={() => setEditMode(!editMode)}
+                                    className={`text-sm font-bold px-4 py-2 rounded-full transition-all active:scale-95 ${editMode ? 'bg-red-500 text-white shadow-lg shadow-red-500/30' : 'text-primary hover:bg-primary/10'}`}
+                                >
+                                    {editMode ? 'Done' : 'Edit'}
+                                </button>
+                            )}
+                            <Link to="/notifications" className="flex items-center justify-center p-2.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors relative active:scale-95">
+                                <Bell size={22} className="text-slate-700 dark:text-white" />
+                                {unreadCount > 0 && (
+                                    <motion.span 
+                                        initial={{ scale: 0 }} animate={{ scale: 1 }}
+                                        className="absolute top-1 right-1 size-4.5 bg-primary text-white text-[10px] font-bold flex items-center justify-center rounded-full ring-2 ring-white dark:ring-[#0f111a]"
+                                    >
+                                        {unreadCount}
+                                    </motion.span>
+                                )}
+                            </Link>
+                        </div>
+                    }
+                    transparent
+                />
+
+                {/* Search & Categories (Hidden in Edit Mode or when Collapsed) */}
+                <motion.div 
+                    initial={false}
+                    animate={{ 
+                        opacity: (editMode || isHeaderCollapsed) ? 0 : 1, 
+                        height: (editMode || isHeaderCollapsed) ? 0 : 106,
+                        pointerEvents: (editMode || isHeaderCollapsed) ? 'none' : 'auto'
+                    }}
+                    transition={{ duration: 0.25, ease: "easeInOut" }}
+                    className="overflow-hidden"
+                >
+                    {/* Search Bar */}
+                    <div className="px-4 py-2">
+                        <div className="flex w-full items-center rounded-2xl bg-slate-100/80 dark:bg-white/5 border border-transparent focus-within:border-primary/50 focus-within:bg-white dark:focus-within:bg-white/10 focus-within:shadow-sm transition-all duration-300">
+                            <div className="pl-4 text-slate-400">
+                                <Search size={18} />
+                            </div>
+                            <input
+                                id="library-search-input"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="flex-1 bg-transparent border-none py-3 px-3 text-[15px] focus:outline-none placeholder:text-slate-400 dark:text-slate-200"
+                                placeholder="Search your collection..."
+                            />
+                            {searchQuery && (
+                                <button onClick={() => setSearchQuery('')} className="pr-4 text-slate-400 hover:text-slate-600 transition-colors">
+                                    <X size={18} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Categories */}
+                    <div className="flex gap-2 px-4 pb-3 overflow-x-auto hide-scrollbar">
+                        {categories.map((cat) => (
+                            <button
+                                key={cat}
+                                onClick={() => setSelectedCategory(cat)}
+                                className={`flex h-9 shrink-0 items-center justify-center rounded-full px-5 text-sm font-semibold transition-all active:scale-95 ${selectedCategory === cat
+                                    ? 'bg-primary text-white shadow-lg shadow-primary/30 scale-105'
+                                    : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'
+                                    }`}
+                            >
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
+                </motion.div>
+            </div>
+
             {/* Scrollable Content */}
             <div
                 ref={containerRef}
                 onScroll={handleScroll}
-                className="flex-1 overflow-y-auto pb-24 scroll-smooth hide-scrollbar"
+                className="flex-1 overflow-y-auto pb-24 hide-scrollbar"
             >
-                {/* Header Section - Sticky Frosted Glass */}
-                <div className={`sticky top-0 z-30 transition-all duration-300 ${isScrolled ? 'bg-white/80 dark:bg-[#0f111a]/80 backdrop-blur-xl shadow-sm' : 'bg-transparent'}`}>
-                    <Header
-                        title="Library"
-                        leftContent={
-                            <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
-                                <img src={profileImage} alt="Profile" className="size-full object-cover" loading="lazy" />
-                            </Link>
-                        }
-                        rightActions={
-                            <div className="flex items-center gap-1">
-                                {novels.length > 0 && (
-                                    <button
-                                        onClick={() => setEditMode(!editMode)}
-                                        className={`text-sm font-bold px-4 py-2 rounded-full transition-all active:scale-95 ${editMode ? 'bg-red-500 text-white shadow-lg shadow-red-500/30' : 'text-primary hover:bg-primary/10'}`}
-                                    >
-                                        {editMode ? 'Done' : 'Edit'}
-                                    </button>
-                                )}
-                                <Link to="/notifications" className="flex items-center justify-center p-2.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors relative active:scale-95">
-                                    <Bell size={22} className="text-slate-700 dark:text-white" />
-                                    {unreadCount > 0 && (
-                                        <motion.span 
-                                            initial={{ scale: 0 }} animate={{ scale: 1 }}
-                                            className="absolute top-1 right-1 size-4.5 bg-primary text-white text-[10px] font-bold flex items-center justify-center rounded-full ring-2 ring-white dark:ring-[#0f111a]"
-                                        >
-                                            {unreadCount}
-                                        </motion.span>
-                                    )}
-                                </Link>
-                            </div>
-                        }
-                        transparent
-                    />
-
-                    {/* Search & Categories (Hidden in Edit Mode for focus) */}
-                    <AnimatePresence>
-                        {!editMode && (
-                            <motion.div 
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="overflow-hidden"
-                            >
-                                {/* Search Bar */}
-                                <div className="px-4 py-2">
-                                    <div className="flex w-full items-center rounded-2xl bg-slate-100/80 dark:bg-white/5 border border-transparent focus-within:border-primary/50 focus-within:bg-white dark:focus-within:bg-white/10 focus-within:shadow-sm transition-all duration-300">
-                                        <div className="pl-4 text-slate-400">
-                                            <Search size={18} />
-                                        </div>
-                                        <input
-                                            value={searchQuery}
-                                            onChange={(e) => setSearchQuery(e.target.value)}
-                                            className="flex-1 bg-transparent border-none py-3 px-3 text-[15px] focus:outline-none placeholder:text-slate-400 dark:text-slate-200"
-                                            placeholder="Search your collection..."
-                                        />
-                                        {searchQuery && (
-                                            <button onClick={() => setSearchQuery('')} className="pr-4 text-slate-400 hover:text-slate-600 transition-colors">
-                                                <X size={18} />
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Categories */}
-                                <div className="flex gap-2 px-4 pb-3 overflow-x-auto hide-scrollbar">
-                                    {categories.map((cat) => (
-                                        <button
-                                            key={cat}
-                                            onClick={() => setSelectedCategory(cat)}
-                                            className={`flex h-9 shrink-0 items-center justify-center rounded-full px-5 text-sm font-semibold transition-all active:scale-95 ${selectedCategory === cat
-                                                ? 'bg-primary text-white shadow-lg shadow-primary/30 scale-105'
-                                                : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'
-                                                }`}
-                                        >
-                                            {cat}
-                                        </button>
-                                    ))}
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
-
                 {/* Main Content Area */}
                 <div className="pt-2">
                     {/* Hero Banner for Continue Reading */}
@@ -345,7 +392,7 @@ export const Home = () => {
                                                     <div
                                                         className="h-full bg-primary"
                                                         style={{ width: `${Math.min(100, ((novel.readChapters || 0) / (novel.totalChapters || 1)) * 100)}%` }}
-                                                    />
+                                                     />
                                                 </div>
                                             </div>
                                         </div>
@@ -382,126 +429,99 @@ export const Home = () => {
                                 <p className="font-medium">No results found for "{searchQuery}"</p>
                             </div>
                         ) : (
-                            <div
-                                style={{
-                                    height: `${rowVirtualizer.getTotalSize()}px`,
-                                    width: '100%',
-                                    position: 'relative',
-                                }}
+                            <div 
+                                className="grid gap-3 sm:gap-4 pb-6"
+                                style={{ gridTemplateColumns: `repeat(${COLUMN_COUNT}, minmax(0, 1fr))` }}
                             >
-                                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                                    const startIndex = virtualRow.index * COLUMN_COUNT;
-                                    const rowItems = filteredNovels.slice(startIndex, startIndex + COLUMN_COUNT);
-                                    const isLastRow = virtualRow.index === rowCount - 1;
-                                    const showImport = isLastRow && !searchQuery && selectedCategory === 'All';
-
-                                    return (
-                                        <div
-                                            key={virtualRow.key}
-                                            data-index={virtualRow.index}
-                                            ref={rowVirtualizer.measureElement}
-                                            style={{
-                                                position: 'absolute',
-                                                top: 0,
-                                                left: 0,
-                                                width: '100%',
-                                                transform: `translateY(${virtualRow.start}px)`,
-                                                gridTemplateColumns: `repeat(${COLUMN_COUNT}, minmax(0, 1fr))`
-                                            }}
-                                            className="grid gap-3 sm:gap-4 pb-6"
+                                {filteredNovels.map((novel) => (
+                                    <motion.div
+                                        key={novel.id}
+                                        variants={editMode ? jiggleVariants : {}}
+                                        animate={editMode ? "jiggle" : "idle"}
+                                    >
+                                        <Link
+                                            to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(novel.id)}` : `/novel/${encodeURIComponent(novel.id)}`)}
+                                            className={`flex flex-col gap-2 group relative w-full select-none touch-manipulation ${editMode ? 'cursor-default' : 'cursor-pointer'}`}
+                                            style={{ WebkitTapHighlightColor: 'transparent' }}
+                                            onTouchStart={handlePointerDown}
+                                            onTouchEnd={handlePointerUpOrMove}
+                                            onTouchMove={handlePointerUpOrMove}
+                                            onMouseDown={handlePointerDown}
+                                            onMouseUp={handlePointerUpOrMove}
+                                            onMouseLeave={handlePointerUpOrMove}
+                                            onContextMenu={(e) => { e.preventDefault(); }}
+                                            onClick={preventLinkIfEdit}
                                         >
-                                            {rowItems.map((novel) => (
-                                                <motion.div
-                                                    key={novel.id}
-                                                    variants={editMode ? jiggleVariants : {}}
-                                                    animate={editMode ? "jiggle" : "idle"}
-                                                >
-                                                    <Link
-                                                        to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(novel.id)}` : `/novel/${encodeURIComponent(novel.id)}`)}
-                                                        className={`flex flex-col gap-2 group relative w-full select-none touch-manipulation ${editMode ? 'cursor-default' : 'cursor-pointer'}`}
-                                                        style={{ WebkitTapHighlightColor: 'transparent' }}
-                                                        onTouchStart={handlePointerDown}
-                                                        onTouchEnd={handlePointerUpOrMove}
-                                                        onTouchMove={handlePointerUpOrMove}
-                                                        onMouseDown={handlePointerDown}
-                                                        onMouseUp={handlePointerUpOrMove}
-                                                        onMouseLeave={handlePointerUpOrMove}
-                                                        onContextMenu={(e) => { e.preventDefault(); }}
-                                                        onClick={preventLinkIfEdit}
+                                            {/* Edit Mode Delete Button */}
+                                            <AnimatePresence>
+                                                {editMode && (
+                                                    <motion.button
+                                                        initial={{ scale: 0, opacity: 0 }}
+                                                        animate={{ scale: 1, opacity: 1 }}
+                                                        exit={{ scale: 0, opacity: 0 }}
+                                                        onClick={(e) => handleDeleteNovel(novel.id, e)}
+                                                        className="absolute -top-2 -right-2 z-20 size-8 bg-red-500/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl ring-2 ring-white dark:ring-[#0f111a] hover:bg-red-600 transition-colors"
                                                     >
-                                                        {/* Edit Mode Delete Button */}
-                                                        <AnimatePresence>
-                                                            {editMode && (
-                                                                <motion.button
-                                                                    initial={{ scale: 0, opacity: 0 }}
-                                                                    animate={{ scale: 1, opacity: 1 }}
-                                                                    exit={{ scale: 0, opacity: 0 }}
-                                                                    onClick={(e) => handleDeleteNovel(novel.id, e)}
-                                                                    className="absolute -top-2 -right-2 z-20 size-8 bg-red-500/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl ring-2 ring-white dark:ring-[#0f111a] hover:bg-red-600 transition-colors"
-                                                                >
-                                                                    <X size={16} className="text-white" strokeWidth={3} />
-                                                                </motion.button>
-                                                            )}
-                                                        </AnimatePresence>
+                                                        <X size={16} className="text-white" strokeWidth={3} />
+                                                    </motion.button>
+                                                )}
+                                            </AnimatePresence>
 
-                                                        <div className={`relative aspect-[2/3] w-full rounded-2xl overflow-hidden shadow-sm bg-slate-100 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 ${editMode ? 'ring-2 ring-red-500/50 shadow-red-500/20' : 'group-active:scale-[0.97] transition-all duration-200'}`}>
-                                                            <img
-                                                                src={novel.coverUrl || '/placeholder-cover.jpg'}
-                                                                alt={novel.title}
-                                                                className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                                                loading="lazy"
-                                                            />
-                                                            
-                                                            {/* Smooth Gradient Overlay */}
-                                                            <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-80" />
+                                            <div className={`relative aspect-[2/3] w-full rounded-2xl overflow-hidden shadow-sm bg-slate-100 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 ${editMode ? 'ring-2 ring-red-500/50 shadow-red-500/20' : 'group-active:scale-[0.97] transition-all duration-200'}`}>
+                                                <img
+                                                    src={novel.coverUrl || '/placeholder-cover.jpg'}
+                                                    alt={novel.title}
+                                                    className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                                    loading="lazy"
+                                                />
+                                                
+                                                {/* Smooth Gradient Overlay */}
+                                                <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-80" />
 
-                                                            {/* Type Badge */}
-                                                            {novel.category && novel.category !== 'Unknown' && (
-                                                                <div className="absolute top-2 right-2 px-2 py-1 rounded-md bg-black/40 backdrop-blur-md ring-1 ring-white/20">
-                                                                    <p className="text-[9px] font-extrabold text-white uppercase tracking-wider">{novel.category}</p>
-                                                                </div>
-                                                            )}
-
-                                                            {/* Embedded Info & Progress */}
-                                                            <div className="absolute inset-x-0 bottom-0 p-2 sm:p-3 flex flex-col justify-end">
-                                                                <div className="h-1 bg-white/30 rounded-full overflow-hidden backdrop-blur-sm w-full shadow-inner mb-1.5">
-                                                                    <div
-                                                                        className="h-full bg-primary shadow-[0_0_8px_rgba(var(--color-primary),0.8)]"
-                                                                        style={{ width: `${Math.min(100, ((novel.readChapters || 0) / (novel.totalChapters || 1)) * 100)}%` }}
-                                                                    />
-                                                                </div>
-                                                                <div className="flex justify-between items-end gap-2">
-                                                                    <p className="text-[10px] sm:text-xs text-white/90 truncate font-medium">
-                                                                        Ch {novel.readChapters || 0}
-                                                                    </p>
-                                                                    <p className="text-[9px] text-white/60 font-semibold bg-white/10 px-1.5 py-0.5 rounded backdrop-blur-md">
-                                                                        {Math.round(((novel.readChapters || 0) / (novel.totalChapters || 1)) * 100)}%
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex flex-col px-1">
-                                                            <p className="font-bold text-xs sm:text-sm line-clamp-2 leading-tight group-hover:text-primary transition-colors text-slate-800 dark:text-slate-200">
-                                                                {novel.title}
-                                                            </p>
-                                                        </div>
-                                                    </Link>
-                                                </motion.div>
-                                            ))}
-
-                                            {/* Import Button */}
-                                            {showImport && rowItems.length < COLUMN_COUNT && (
-                                                <Link to="/discover" className="relative aspect-[2/3] w-full rounded-2xl border-2 border-dashed border-slate-300 dark:border-white/10 flex flex-col items-center justify-center gap-3 hover:bg-primary/5 hover:border-primary/50 transition-all active:scale-[0.97] group">
-                                                    <div className="size-12 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center group-hover:bg-primary group-hover:shadow-lg group-hover:shadow-primary/30 transition-all duration-300">
-                                                        <Plus className="text-slate-400 group-hover:text-white transition-colors" size={24} />
+                                                {/* Type Badge */}
+                                                {novel.category && novel.category !== 'Unknown' && (
+                                                    <div className="absolute top-2 right-2 px-2 py-1 rounded-md bg-black/40 backdrop-blur-md ring-1 ring-white/20">
+                                                        <p className="text-[9px] font-extrabold text-white uppercase tracking-wider">{novel.category}</p>
                                                     </div>
-                                                    <span className="text-xs font-bold text-slate-500 group-hover:text-primary">Add Novel</span>
-                                                </Link>
-                                            )}
+                                                )}
+
+                                                {/* Embedded Info & Progress */}
+                                                <div className="absolute inset-x-0 bottom-0 p-2 sm:p-3 flex flex-col justify-end">
+                                                    <div className="h-1 bg-white/30 rounded-full overflow-hidden backdrop-blur-sm w-full shadow-inner mb-1.5">
+                                                        <div
+                                                            className="h-full bg-primary shadow-[0_0_8px_rgba(var(--color-primary),0.8)]"
+                                                            style={{ width: `${Math.min(100, ((novel.readChapters || 0) / (novel.totalChapters || 1)) * 100)}%` }}
+                                                        />
+                                                    </div>
+                                                    <div className="flex justify-between items-end gap-2">
+                                                        <p className="text-[10px] sm:text-xs text-white/90 truncate font-medium">
+                                                            Ch {novel.readChapters || 0}
+                                                        </p>
+                                                        <p className="text-[9px] text-white/60 font-semibold bg-white/10 px-1.5 py-0.5 rounded backdrop-blur-md">
+                                                            {Math.round(((novel.readChapters || 0) / (novel.totalChapters || 1)) * 100)}%
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-col px-1">
+                                                <p className="font-bold text-xs sm:text-sm line-clamp-2 leading-tight group-hover:text-primary transition-colors text-slate-800 dark:text-slate-200">
+                                                    {novel.title}
+                                                </p>
+                                            </div>
+                                        </Link>
+                                    </motion.div>
+                                ))}
+
+                                {/* Import Button */}
+                                {!searchQuery && selectedCategory === 'All' && (
+                                    <Link to="/discover" className="relative aspect-[2/3] w-full rounded-2xl border-2 border-dashed border-slate-300 dark:border-white/10 flex flex-col items-center justify-center gap-3 hover:bg-primary/5 hover:border-primary/50 transition-all active:scale-[0.97] group">
+                                        <div className="size-12 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center group-hover:bg-primary group-hover:shadow-lg group-hover:shadow-primary/30 transition-all duration-300">
+                                            <Plus className="text-slate-400 group-hover:text-white transition-colors" size={24} />
                                         </div>
-                                    );
-                                })}
+                                        <span className="text-xs font-bold text-slate-500 group-hover:text-primary">Add Novel</span>
+                                    </Link>
+                                )}
                             </div>
                         )}
                         

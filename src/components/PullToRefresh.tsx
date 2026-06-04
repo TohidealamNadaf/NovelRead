@@ -8,10 +8,11 @@ interface PullToRefreshProps {
     isDisabled?: boolean;
     className?: string;
     header?: React.ReactNode;
+    onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }
 
 export const PullToRefresh = forwardRef<HTMLDivElement, PullToRefreshProps>(
-    ({ onRefresh, children, isDisabled = false, className = "", header }, ref) => {
+    ({ onRefresh, children, isDisabled = false, className = "", header, onScroll }, ref) => {
         const [isRefreshing, setIsRefreshing] = useState(false);
         const containerRef = useRef<HTMLDivElement>(null);
         
@@ -109,6 +110,7 @@ export const PullToRefresh = forwardRef<HTMLDivElement, PullToRefreshProps>(
             onMouseMove={handleTouchMove}
             onMouseUp={handleTouchEnd}
             onMouseLeave={handleTouchEnd}
+            onScroll={onScroll}
         >
             {header}
             

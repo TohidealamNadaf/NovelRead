@@ -78,6 +78,34 @@ export const Discover = () => {
     const [isOffline, setIsOffline] = useState(!navigator.onLine);
     const profileImage = useProfileImage();
 
+    // Scroll collapse state
+    const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+
+    const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+        const scrollTop = e.currentTarget.scrollTop;
+        setIsHeaderCollapsed(prev => {
+            if (scrollTop > 80) {
+                return true;
+            } else if (scrollTop < 15) {
+                return false;
+            }
+            return prev;
+        });
+    }, []);
+
+    const handleSearchIconClick = useCallback(() => {
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        setIsHeaderCollapsed(false);
+        setTimeout(() => {
+            const input = document.getElementById('search-input');
+            if (input) {
+                input.focus();
+            }
+        }, 300);
+    }, []);
+
     // Initial Load & Listeners
     useEffect(() => {
         loadHomeData();
@@ -292,18 +320,22 @@ export const Discover = () => {
             mode={mode}
             setMode={setMode}
             navigate={navigate}
+            isCollapsed={isHeaderCollapsed}
+            onSearchIconClick={handleSearchIconClick}
         />
     );
 
     return (
         <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark font-sans selection:bg-primary/30 overflow-hidden">
+            {header}
+
             {/* Scrollable Content */}
             <PullToRefresh 
                 ref={scrollContainerRef}
                 onRefresh={() => syncHomeData()}
                 isDisabled={isGlobalScraping}
                 className="pb-24"
-                header={header}
+                onScroll={handleScroll}
             >
 
                 {isOffline && (
