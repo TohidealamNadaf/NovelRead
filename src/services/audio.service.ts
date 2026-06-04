@@ -21,6 +21,7 @@ interface AudioState {
     isTtsPlaying: boolean;
     isTtsPaused: boolean;
     currentSegment: TTSSegment | null;
+    currentWordBoundary: { charIndex: number; charLength: number } | null;
 }
 
 // Voice interface for compatibility
@@ -38,6 +39,7 @@ export class AudioService {
     private isNative: boolean = false;
     private nativeVoices: VoiceInfo[] = [];
     private selectedVoice: any = null;
+    private silentAudio: HTMLAudioElement | null = null;
 
     // State for persistence/settings
     private pitch: number = 1.0;
@@ -52,7 +54,8 @@ export class AudioService {
         isBgmPlaying: false,
         isTtsPlaying: false,
         isTtsPaused: false,
-        currentSegment: null
+        currentSegment: null,
+        currentWordBoundary: null
     };
 
     private sleepTimerId: any = null;
@@ -61,6 +64,13 @@ export class AudioService {
         this.isNative = Capacitor.isNativePlatform();
         if (!this.isNative) {
             this.synthesis = typeof window !== 'undefined' ? window.speechSynthesis : null;
+        }
+
+        if (typeof window !== 'undefined') {
+            // A tiny silent WAV file to keep the media session active in the background
+            this.silentAudio = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
+            this.silentAudio.loop = true;
+            this.silentAudio.volume = 0.01;
         }
 
         const settings = settingsService.getSettings();
@@ -74,6 +84,34 @@ export class AudioService {
 
         if (this.isNative) {
             this.loadVoices();
+        } else if (this.synthesis) {
+            // Eagerly set web voice when loaded
+            const initWebVoices = () => {
+                const voices = this.getVoices();
+                if (voices.length > 0) {
+                    if (this.selectedVoiceName) {
+                        const match = voices.find(v => v.name === this.selectedVoiceName);
+                        if (match) {
+                            this.selectedVoice = match;
+                            ttsEngine.setSettings({ voice: match });
+                        }
+                    } 
+                    
+                    if (!this.selectedVoice) {
+                        const female = this.getBestVoice('female');
+                        if (female) {
+                            this.selectedVoice = female;
+                            this.selectedVoiceName = female.name;
+                            ttsEngine.setSettings({ voice: female });
+                        }
+                    }
+                }
+            };
+            
+            initWebVoices();
+            if (this.synthesis.onvoiceschanged !== undefined) {
+                this.synthesis.onvoiceschanged = initWebVoices;
+            }
         }
     }
 
@@ -258,19 +296,28 @@ export class AudioService {
         }).catch(e => console.log("BGM play failed", e));
     }
 
-    getAmbienceTrack() {
+getAmbienceTrack() {
         return this.ambienceTrack;
     }
 
     stopBGM() {
-        if (this.bgmAudio) {
-            this.bgmAudio.pause();
+        if (this.state.currentTrack?.type === 'bgm') {
+            this.state.currentTrack = null;
+            this.notify();
+        }
+        
+        try {
+            if (this.bgmAudio) {
+                this.bgmAudio.pause();
+                this.bgmAudio.currentTime = 0;
+            }
             this.bgmAudio = null;
             this.ambienceTrack = null;
             settingsService.updateSettings({ ambience: null });
-            if (this.state.currentTrack?.type === 'bgm') {
-                this.updateState(null); // Clear state if BGM stopped and it was the main track
-            }
+            this.state.isBgmPlaying = false;
+            this.notify();
+        } catch (e) {
+            console.error('[Audio] Error stopping BGM:', e);
         }
     }
 
@@ -293,8 +340,8 @@ export class AudioService {
         const highQuality = ['network', 'online', 'enhanced', 'premium', 'natural', 'google'];
 
         // Keywords for gender
-        const femaleKeywords = ['female', 'zira', 'sira', 'friend', 'girl', 'woman'];
-        const maleKeywords = ['male', 'david', 'guy', 'boy', 'man'];
+        const femaleKeywords = ['female', 'zira', 'sira', 'friend', 'girl', 'woman', 'samantha', 'victoria', 'karen', 'tessa', 'moira', 'veena', 'lexi', 'hazel', 'catherine', 'susi', 'fiona', 'martha', 'google us english'];
+        const maleKeywords = ['male', 'david', 'guy', 'boy', 'man', 'mark', 'arthur', 'george', 'daniel', 'aaron'];
 
         // Filter by gender first
         const genderVoices = voices.filter(v => {
@@ -327,6 +374,9 @@ export class AudioService {
             if (aQualityIdx !== -1) return -1;
             if (bQualityIdx !== -1) return 1;
 
+            // If we are looking for female, and neither matched female/male explicit keywords,
+            // we can try to guess based on standard OS default voices which are often female,
+            // or just prefer English US over others as it's often female by default.
             return 0;
         });
 
@@ -436,6 +486,12 @@ export class AudioService {
         ttsEngine.setCallbacks({
             onSegmentChange: (segment, _index) => {
                 this.state.currentSegment = segment;
+                this.state.currentWordBoundary = null; // reset word boundary on new segment
+                this.notify();
+            },
+            onWordChange: (segment, charIndex, charLength) => {
+                this.state.currentSegment = segment;
+                this.state.currentWordBoundary = { charIndex, charLength };
                 this.notify();
             },
             onStateChange: (isPlaying, isPaused) => {
@@ -451,6 +507,13 @@ export class AudioService {
                     const baseVol = Math.min(1.0, settings.bgmVolume / 100);
                     // If playing and NOT paused -> duck. Else restore.
                     this.bgmAudio.volume = (isPlaying && !isPaused) ? baseVol * 0.4 : baseVol;
+                }
+
+                // Handle silent background audio to keep WebView alive
+                if (isPlaying && !isPaused) {
+                    this.silentAudio?.play().catch(e => console.warn('Silent audio blocked:', e));
+                } else {
+                    this.silentAudio?.pause();
                 }
 
                 this.notify();
@@ -469,6 +532,8 @@ export class AudioService {
                     this.bgmAudio.volume = Math.min(1.0, settings.bgmVolume / 100);
                 }
 
+                this.silentAudio?.pause();
+
                 // Auto-next chapter logic
                 if (settingsService.getSettings().autoNextChapter) {
                     // Logic to trigger next chapter would ideally be here or via callback to Reader
@@ -485,26 +550,32 @@ export class AudioService {
 
     // ... stopSpeaking changes for ducking ...
     async stopSpeaking(clearState = true) {
-        await ttsEngine.stop();
-
-        this.state.isTtsPlaying = false;
-        this.state.isTtsPaused = false;
-        this.state.currentSegment = null;
-
-        // Restore BGM volume
-        if (this.bgmAudio) {
-            const settings = settingsService.getSettings();
-            this.bgmAudio.volume = Math.min(1.0, settings.bgmVolume / 100);
-        }
-
+        // Optimistic UI clear to prevent MiniPlayer getting stuck
         if (clearState) {
             this.state.currentTrack = null;
-            this.notify();
-        } else {
-            if (this.state.currentTrack) {
-                this.state.currentTrack.isPlaying = false;
+        } else if (this.state.currentTrack) {
+            this.state.currentTrack.isPlaying = false;
+        }
+        this.notify();
+
+        try {
+            await ttsEngine.stop();
+            this.silentAudio?.pause();
+
+            this.state.isTtsPlaying = false;
+            this.state.isTtsPaused = false;
+            this.state.currentSegment = null;
+
+            // Restore BGM volume
+            if (this.bgmAudio) {
+                const settings = settingsService.getSettings();
+                const vol = settings?.bgmVolume ?? 35;
+                this.bgmAudio.volume = Math.max(0, Math.min(1.0, vol / 100));
             }
+            
             this.notify();
+        } catch (e) {
+            console.error('[Audio] Error stopping TTS:', e);
         }
     }
 

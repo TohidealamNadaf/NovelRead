@@ -1,7 +1,8 @@
 import { memo } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCcw, Filter, Search } from 'lucide-react';
+import { RefreshCcw, Filter, Search, X } from 'lucide-react';
 import { Header } from '../Header';
+import { motion } from 'framer-motion';
 
 interface DiscoverHeaderProps {
     profileImage: string;
@@ -47,7 +48,7 @@ export const DiscoverHeader = memo(({
                         <button
                             onClick={syncHomeData}
                             disabled={isGlobalScraping}
-                            className={`flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors ${isSyncingHome ? 'animate-spin opacity-50' : ''}`}
+                            className={`flex items-center justify-center p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-90 active:bg-primary/10 transition-all duration-200 ${isSyncingHome ? 'animate-spin opacity-50' : ''}`}
                         >
                             <RefreshCcw size={20} className="text-primary" />
                         </button>
@@ -80,13 +81,13 @@ export const DiscoverHeader = memo(({
             />
 
             <div className="px-4 py-3 pb-1">
-                <label className="flex flex-col min-w-40 h-11 w-full">
-                    <div className="flex w-full flex-1 items-stretch rounded-xl h-full bg-slate-200/50 dark:bg-[#2b2839]">
-                        <div className="text-slate-500 dark:text-[#a19db9] flex items-center justify-center pl-4">
+                <label className="flex flex-col min-w-40 h-11 w-full group">
+                    <div className="flex w-full flex-1 items-stretch rounded-xl h-full bg-slate-100 dark:bg-[#2b2839] border border-transparent focus-within:border-primary/50 focus-within:bg-white dark:focus-within:bg-[#1c1c1e] focus-within:shadow-sm transition-all duration-200">
+                        <div className="text-slate-400 dark:text-[#a19db9] group-focus-within:text-primary transition-colors flex items-center justify-center pl-4">
                             <Search size={20} />
                         </div>
                         <input
-                            className="flex w-full min-w-0 flex-1 border-none bg-transparent focus:outline-0 focus:ring-0 text-base font-normal placeholder:text-slate-500 dark:placeholder:text-[#a19db9] px-3"
+                            className="flex w-full min-w-0 flex-1 border-none bg-transparent focus:outline-0 focus:ring-0 text-[15px] font-medium placeholder:text-slate-400 dark:placeholder:text-[#8a86a3] px-3 text-slate-900 dark:text-white"
                             placeholder={mode === 'manhwa' ? "Search Asura Scans..." : "Search titles or paste URL..."}
                             value={searchQuery}
                             id="search-input"
@@ -95,8 +96,19 @@ export const DiscoverHeader = memo(({
                             onKeyDown={handleSearch}
                             disabled={isGlobalScraping}
                         />
+                        {searchQuery && !isGlobalScraping && (
+                            <button
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    setSearchQuery('');
+                                }}
+                                className="flex items-center justify-center pr-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                            >
+                                <X size={18} />
+                            </button>
+                        )}
                         {isGlobalScraping && (
-                            <div className="flex items-center pr-3">
+                            <div className="flex items-center pr-4">
                                 <div className="size-4 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
                             </div>
                         )}
@@ -105,25 +117,27 @@ export const DiscoverHeader = memo(({
             </div>
 
             {/* Tab Switcher */}
-            <div className="px-4 py-2 flex gap-4 overflow-x-auto no-scrollbar">
-                <button
-                    onClick={() => setMode('novelfire')}
-                    className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-bold transition-all ${mode === 'novelfire' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-slate-200/50 dark:bg-[#2b2839] text-slate-500 dark:text-[#a19db9]'}`}
-                >
-                    NovelFire
-                </button>
-                <button
-                    onClick={() => setMode('freewebnovel')}
-                    className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-bold transition-all ${mode === 'freewebnovel' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-slate-200/50 dark:bg-[#2b2839] text-slate-500 dark:text-[#a19db9]'}`}
-                >
-                    FreeWebNovel
-                </button>
-                <button
-                    onClick={() => setMode('manhwa')}
-                    className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-bold transition-all ${mode === 'manhwa' ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-slate-200/50 dark:bg-[#2b2839] text-slate-500 dark:text-[#a19db9]'}`}
-                >
-                    Manhwa
-                </button>
+            <div className="px-4 py-2 pb-3">
+                <div className="flex p-1 bg-slate-200/50 dark:bg-[#2b2839]/50 rounded-xl shadow-inner relative">
+                    {['novelfire', 'freewebnovel', 'manhwa'].map((tab) => (
+                        <button
+                            key={tab}
+                            onClick={() => setMode(tab as any)}
+                            className={`relative flex-1 py-1.5 rounded-lg text-[13px] sm:text-sm font-bold transition-colors duration-200 z-10 ${mode === tab ? 'text-primary' : 'text-slate-500 dark:text-[#a19db9] hover:text-slate-700 dark:hover:text-slate-300'
+                                }`}
+                        >
+                            {mode === tab && (
+                                <motion.div
+                                    layoutId="discoverActiveTab"
+                                    className="absolute inset-0 bg-white dark:bg-[#1c1c1e] rounded-lg shadow-sm"
+                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                    style={{ zIndex: -1 }}
+                                />
+                            )}
+                            {tab === 'novelfire' ? 'NovelFire' : tab === 'freewebnovel' ? 'FWN' : 'Manhwa'}
+                        </button>
+                    ))}
+                </div>
             </div>
         </div>
     );

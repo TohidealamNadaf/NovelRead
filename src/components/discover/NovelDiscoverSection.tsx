@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { BookOpen, RefreshCcw, Search, X, Loader2 } from 'lucide-react';
+import { BookOpen, Search, X, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { generateSlug } from '../../utils/slugUtils';
 import type { NovelMetadata } from '../../services/scraper.service';
@@ -95,11 +95,29 @@ export const NovelDiscoverSection = memo(({
                 </div>
             )}
 
-            {/* Recommended - if empty show nothing or skeleton */}
+            {/* Loading Skeletons */}
             {!homeData && !searchPerformed && (
-                <div className="flex flex-col items-center justify-center py-10 opacity-50">
-                    <RefreshCcw className="animate-spin mb-2" size={24} />
-                    <p className="text-sm font-medium">Fetching dynamic content...</p>
+                <div className="flex flex-col gap-6 animate-pulse px-4 py-2">
+                    <div className="flex flex-col gap-3">
+                        <div className="h-6 w-32 bg-slate-200 dark:bg-white/5 rounded-lg"></div>
+                        <div className="flex gap-4 overflow-hidden">
+                            <div className="flex-none w-[85%] aspect-[16/9] rounded-2xl bg-slate-200 dark:bg-white/5"></div>
+                            <div className="flex-none w-[85%] aspect-[16/9] rounded-2xl bg-slate-200 dark:bg-white/5"></div>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3 mt-2">
+                        <div className="h-6 w-32 bg-slate-200 dark:bg-white/5 rounded-lg"></div>
+                        <div className="flex gap-4 overflow-hidden">
+                            {[1, 2, 3, 4].map((i) => (
+                                <div key={i} className="flex-none w-32 flex flex-col gap-2">
+                                    <div className="aspect-[2/3] w-full rounded-xl bg-slate-200 dark:bg-white/5"></div>
+                                    <div className="h-4 w-full bg-slate-200 dark:bg-white/5 rounded-md"></div>
+                                    <div className="h-3 w-2/3 bg-slate-200 dark:bg-white/5 rounded-md"></div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -141,18 +159,27 @@ export const NovelDiscoverSection = memo(({
                         {homeData.ranking.slice(0, 10).map((novel: any, idx: number) => (
                             <div
                                 key={idx}
-                                className="flex-none w-32 flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform"
+                                className="flex-none w-32 flex flex-col gap-2 cursor-pointer group"
                                 onClick={() => goToNovel(novel)}
                             >
-                                <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg border border-slate-100 dark:border-white/5">
+                                <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg group-active:scale-95 group-hover:-translate-y-1 transition-all duration-300 border border-slate-100 dark:border-white/5 bg-slate-200 dark:bg-[#1c1c1e]">
                                     {novel.coverUrl ? (
-                                        <img
-                                            src={novel.coverUrl}
-                                            className="absolute inset-0 w-full h-full object-cover"
-                                            alt={novel.title}
-                                            loading={idx < 4 ? "eager" : "lazy"}
-                                            decoding="async"
-                                        />
+                                        <>
+                                            <img
+                                                src={novel.coverUrl}
+                                                className="absolute inset-0 w-full h-full object-cover"
+                                                alt={novel.title}
+                                                loading={idx < 4 ? "eager" : "lazy"}
+                                                decoding="async"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                    (e.target as HTMLImageElement).parentElement!.querySelector('.img-fallback')?.classList.remove('hidden');
+                                                }}
+                                            />
+                                            <div className="img-fallback hidden absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
+                                                <BookOpen className="text-4xl text-slate-400" />
+                                            </div>
+                                        </>
                                     ) : (
                                         <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
                                             <BookOpen className="text-4xl text-slate-400" />
@@ -187,13 +214,22 @@ export const NovelDiscoverSection = memo(({
                             >
                                 <div className="aspect-[2/3] w-14 shrink-0 rounded-lg overflow-hidden shadow-md border border-slate-100 dark:border-white/10">
                                     {novel.coverUrl ? (
-                                        <img
-                                            src={novel.coverUrl}
-                                            className="w-full h-full object-cover"
-                                            alt={novel.title}
-                                            loading={idx < 4 ? "eager" : "lazy"}
-                                            decoding="async"
-                                        />
+                                        <>
+                                            <img
+                                                src={novel.coverUrl}
+                                                className="w-full h-full object-cover"
+                                                alt={novel.title}
+                                                loading={idx < 4 ? "eager" : "lazy"}
+                                                decoding="async"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                    (e.target as HTMLImageElement).parentElement!.querySelector('.img-fallback')?.classList.remove('hidden');
+                                                }}
+                                            />
+                                            <div className="img-fallback hidden w-full h-full bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center text-slate-400">
+                                                <BookOpen size={20} />
+                                            </div>
+                                        </>
                                     ) : (
                                         <div className="w-full h-full bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center text-slate-400">
                                             <BookOpen size={20} />
@@ -228,18 +264,27 @@ export const NovelDiscoverSection = memo(({
                         {homeData.recentlyAdded.slice(0, 10).map((novel: any, idx: number) => (
                             <div
                                 key={idx}
-                                className="flex-none w-28 flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform"
+                                className="flex-none w-28 flex flex-col gap-2 cursor-pointer group"
                                 onClick={() => goToNovel(novel)}
                             >
-                                <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-sm border border-slate-100 dark:border-white/5">
+                                <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-sm group-active:scale-95 group-hover:-translate-y-1 transition-all duration-300 border border-slate-100 dark:border-white/5 bg-slate-200 dark:bg-[#1c1c1e]">
                                     {novel.coverUrl ? (
-                                        <img
-                                            src={novel.coverUrl}
-                                            className="absolute inset-0 w-full h-full object-cover"
-                                            alt={novel.title}
-                                            loading={idx < 4 ? "eager" : "lazy"}
-                                            decoding="async"
-                                        />
+                                        <>
+                                            <img
+                                                src={novel.coverUrl}
+                                                className="absolute inset-0 w-full h-full object-cover"
+                                                alt={novel.title}
+                                                loading={idx < 4 ? "eager" : "lazy"}
+                                                decoding="async"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                    (e.target as HTMLImageElement).parentElement!.querySelector('.img-fallback')?.classList.remove('hidden');
+                                                }}
+                                            />
+                                            <div className="img-fallback hidden absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
+                                                <BookOpen className="text-2xl text-slate-400" />
+                                            </div>
+                                        </>
                                     ) : (
                                         <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
                                             <BookOpen className="text-2xl text-slate-400" />
@@ -267,18 +312,27 @@ export const NovelDiscoverSection = memo(({
                         {homeData.completed.slice(0, 10).map((novel: any, idx: number) => (
                             <div
                                 key={idx}
-                                className="flex-none w-32 flex flex-col gap-2 cursor-pointer active:scale-95 transition-transform"
+                                className="flex-none w-32 flex flex-col gap-2 cursor-pointer group"
                                 onClick={() => goToNovel(novel)}
                             >
-                                <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg border border-slate-100 dark:border-white/5">
+                                <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg group-active:scale-95 group-hover:-translate-y-1 transition-all duration-300 border border-slate-100 dark:border-white/5 bg-slate-200 dark:bg-[#1c1c1e]">
                                     {novel.coverUrl ? (
-                                        <img
-                                            src={novel.coverUrl}
-                                            className="absolute inset-0 w-full h-full object-cover"
-                                            alt={novel.title}
-                                            loading={idx < 4 ? "eager" : "lazy"}
-                                            decoding="async"
-                                        />
+                                        <>
+                                            <img
+                                                src={novel.coverUrl}
+                                                className="absolute inset-0 w-full h-full object-cover"
+                                                alt={novel.title}
+                                                loading={idx < 4 ? "eager" : "lazy"}
+                                                decoding="async"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                    (e.target as HTMLImageElement).parentElement!.querySelector('.img-fallback')?.classList.remove('hidden');
+                                                }}
+                                            />
+                                            <div className="img-fallback hidden absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
+                                                <BookOpen className="text-4xl text-slate-400" />
+                                            </div>
+                                        </>
                                     ) : (
                                         <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
                                             <BookOpen className="text-4xl text-slate-400" />

@@ -20,7 +20,6 @@
  */
 
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
-import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 
 // Segment types for emotion mapping
@@ -38,10 +37,10 @@ export interface TTSSegment {
 
 // Speech parameters per segment type - tuned for natural audiobook feel
 const EMOTION_MAP: Record<SegmentType, { rate: number; pitch: number }> = {
-    narration: { rate: 0.95, pitch: 1.0 },   // Calm storytelling
-    dialogue: { rate: 1.05, pitch: 1.1 },    // Expressive, slightly faster
-    inner: { rate: 0.9, pitch: 0.95 },       // Intimate, slower, lower
-    action: { rate: 1.15, pitch: 1.1 },      // Urgent, faster
+    narration: { rate: 0.98, pitch: 1.0 },   // Calm storytelling
+    dialogue: { rate: 1.02, pitch: 1.05 },    // Expressive, slightly faster
+    inner: { rate: 0.95, pitch: 0.95 },       // Intimate, slower, lower
+    action: { rate: 1.05, pitch: 1.05 },      // Urgent, faster
 };
 
 // Keywords for detecting segment types (heuristic, no NLP)
@@ -57,30 +56,23 @@ export class TTSEngine {
     private isPlaying: boolean = false;
     private isPaused: boolean = false;
     private shouldStop: boolean = false;
-    private isNative: boolean = false;
-    private language: string = 'en-US';
+    private isNative: boolean = false; // Forced to false to use Web Speech API for word highlighting
 
     // User settings
     private baseRate: number = 1.0;
     private basePitch: number = 1.0;
-    private voiceIndex: number = -1;
     private webVoice: any | null = null;
 
     // Callbacks
     private onSegmentChange: SegmentChangeCallback | null = null;
+    private onWordChange: ((segment: TTSSegment, charIndex: number, charLength: number) => void) | null = null;
     private onStateChange: StateChangeCallback | null = null;
     private onComplete: (() => void) | null = null;
 
     constructor() {
-        this.isNative = Capacitor.isNativePlatform();
+        // We enforce web implementation for precise word boundary highlighting
+        this.isNative = false; 
         this.setupEventListeners();
-        this.detectLanguage();
-    }
-
-    private detectLanguage() {
-        if (typeof navigator !== 'undefined' && navigator.language) {
-            this.language = navigator.language;
-        }
     }
 
     private setupEventListeners() {
@@ -108,10 +100,12 @@ export class TTSEngine {
      */
     setCallbacks(options: {
         onSegmentChange?: SegmentChangeCallback;
+        onWordChange?: (segment: TTSSegment, charIndex: number, charLength: number) => void;
         onStateChange?: StateChangeCallback;
         onComplete?: () => void;
     }) {
         if (options.onSegmentChange) this.onSegmentChange = options.onSegmentChange;
+        if (options.onWordChange) this.onWordChange = options.onWordChange;
         if (options.onStateChange) this.onStateChange = options.onStateChange;
         if (options.onComplete) this.onComplete = options.onComplete;
     }
@@ -122,8 +116,15 @@ export class TTSEngine {
     setSettings(options: { rate?: number; pitch?: number; voiceIndex?: number; voice?: any }) {
         if (options.rate !== undefined) this.baseRate = options.rate;
         if (options.pitch !== undefined) this.basePitch = options.pitch;
-        if (options.voiceIndex !== undefined) this.voiceIndex = options.voiceIndex;
-        if (options.voice !== undefined) this.webVoice = options.voice;
+        
+        if (options.voice !== undefined) {
+            if (options.voice && typeof window !== 'undefined' && window.speechSynthesis) {
+                const webVoices = window.speechSynthesis.getVoices();
+                this.webVoice = webVoices.find(v => v.name === options.voice.name) || options.voice;
+            } else {
+                this.webVoice = options.voice;
+            }
+        }
     }
 
     /**
@@ -285,78 +286,47 @@ export class TTSEngine {
      * Main speech loop - speaks segments sequentially with batching
      */
     private async speakLoop(): Promise<void> {
-        const BATCH_SIZE = 4; // Target batch size (3-6)
+        let activePromises: Promise<void>[] = [];
+        let queuedIndex = this.currentIndex;
 
-        while (this.currentIndex < this.segments.length && !this.shouldStop) {
+        while (queuedIndex < this.segments.length && !this.shouldStop) {
             if (this.isPaused) {
                 await this.sleep(200);
                 continue;
             }
 
-            // Create a batch starting from current index
-            const batchStartIndex = this.currentIndex;
-            const batchSegments: TTSSegment[] = [];
-            let charCount = 0;
-
-            // Collect segments for this batch
-            // Logic: Group up to BATCH_SIZE segments, but stop if total length is too long (>500 chars) to avoid huge delays
-            for (let i = 0; i < BATCH_SIZE; i++) {
-                const idx = batchStartIndex + i;
-                if (idx >= this.segments.length) break;
-
-                const segment = this.segments[idx];
-                batchSegments.push(segment);
-                charCount += segment.text.length;
-
-                if (charCount > 400) break; // Hard limit to prevent long blocking
+            // Maintain a buffer of 2 utterances to prevent spin-up latency between sentences
+            if (activePromises.length >= 2) {
+                await Promise.race(activePromises);
+                continue;
             }
 
-            // Processing the batch
-            if (batchSegments.length === 0) break;
+            const segment = this.segments[queuedIndex];
+            const indexBeingQueued = queuedIndex;
+            queuedIndex++;
 
-            // Notify UI we are processing this block (highlight first segment)
-            // Note: In batched mode, granular highlighting is lost for the duration of the batch
-            // We highlight the first one, then maybe estimate updates? 
-            // For now, simpler optimization: Notify start of batch
-            this.onSegmentChange?.(batchSegments[0], batchStartIndex);
-
-            try {
-                if (this.isNative) {
-                    // Combine text for native batch call
-                    // We use some punctuation hack to ensure pauses between joined segments if needed
-                    // Or just join with space if they are sentences
-                    const combinedText = batchSegments.map(s => s.text).join(' ');
-
-                    // Use parameters from the first/dominant segment or average?
-                    // User req: "Batch 3-6 segments... One native TextToSpeech.speak call"
-                    // We'll use the first segment's emotion as the driver for simplicity and consistency within a small block
-                    await this.speakNativeBatch(combinedText, batchSegments[0]);
-                } else {
-                    // Web fallback - speak individually for better control
-                    for (const segment of batchSegments) {
-                        if (this.shouldStop || this.isPaused) break;
-                        this.onSegmentChange?.(segment, segment.id); // Detailed highlighting for web
-                        await this.speakWeb(segment.text, segment.rate * this.baseRate, segment.pitch * this.basePitch);
-                        await this.sleep(this.getPauseDuration(segment));
+            const p = this.speakWeb(segment, segment.rate * this.baseRate, segment.pitch * this.basePitch, indexBeingQueued)
+                .catch(e => {
+                    if (!this.shouldStop && !this.isPaused) {
+                        console.error('[TTS] Speak failed:', e);
                     }
-                }
-            } catch (e) {
-                console.error('[TTS] Batch speak failed:', e);
-            }
+                });
 
-            // Update index
-            this.currentIndex += batchSegments.length;
-
-            // Small pause between batches if needed
-            if (!this.shouldStop && !this.isPaused && this.isNative) {
-                // Pause based on the last segment of the batch
-                const lastSeg = batchSegments[batchSegments.length - 1];
-                await this.sleep(this.getPauseDuration(lastSeg));
-            }
+            const trackedPromise = p.finally(() => {
+                activePromises = activePromises.filter(x => x !== trackedPromise);
+            });
+            
+            activePromises.push(trackedPromise);
         }
 
-        // Completed or stopped
-        this.cleanup();
+        // Wait for all to finish
+        while (activePromises.length > 0 && !this.shouldStop) {
+            await Promise.race(activePromises);
+        }
+
+        if (!this.shouldStop) {
+            this.cleanup();
+        }
     }
 
     private cleanup() {
@@ -376,69 +346,50 @@ export class TTSEngine {
     }
 
     /**
-     * Speak a batch of text natively
-     */
-    private async speakNativeBatch(text: string, referenceSegment: TTSSegment): Promise<void> {
-        // Apply user settings on top of emotion settings
-        const rate = referenceSegment.rate * this.baseRate;
-        const pitch = referenceSegment.pitch * this.basePitch;
-
-        await TextToSpeech.speak({
-            text: text,
-            lang: this.language, // Dynamic language
-            rate: Math.max(0.5, Math.min(2.0, rate)),
-            pitch: Math.max(0.5, Math.min(2.0, pitch)),
-            volume: 1.0,
-            category: 'playback',
-            voice: this.voiceIndex >= 0 ? this.voiceIndex : undefined,
-        });
-    }
-
-    /**
      * Web Speech API implementation
      */
-    private speakWeb(text: string, rate: number, pitch: number): Promise<void> {
+    private speakWeb(segment: TTSSegment, rate: number, pitch: number, index?: number): Promise<void> {
         return new Promise((resolve, reject) => {
             if (typeof window === 'undefined' || !window.speechSynthesis) {
                 reject(new Error('Speech synthesis not available'));
                 return;
             }
 
-            const utterance = new SpeechSynthesisUtterance(text);
+            const utterance = new SpeechSynthesisUtterance(segment.text);
             utterance.rate = rate;
             utterance.pitch = pitch;
             if (this.webVoice) {
                 utterance.voice = this.webVoice;
             }
 
+            utterance.onstart = () => {
+                if (index !== undefined) {
+                    this.currentIndex = index;
+                }
+                this.onSegmentChange?.(segment, segment.id);
+            };
+
             utterance.onend = () => resolve();
             utterance.onerror = (e) => reject(e);
+            utterance.onboundary = (e) => {
+                if (e.name === 'word') {
+                    // e.charIndex is relative to the segment text
+                    // e.charLength is provided by some engines, but we can fallback to finding next space
+                    let charLength = e.charLength;
+                    if (!charLength) {
+                        const remaining = segment.text.slice(e.charIndex);
+                        const match = remaining.match(/^.*?[\w\u00C0-\u017F]+/);
+                        charLength = match ? match[0].length : (remaining.indexOf(' ') > 0 ? remaining.indexOf(' ') : 1);
+                    }
+                    this.onWordChange?.(segment, e.charIndex, charLength);
+                }
+            };
 
             window.speechSynthesis.speak(utterance);
         });
     }
 
-    /**
-     * Get pause duration between segments
-     */
-    private getPauseDuration(segment: TTSSegment): number {
-        // Longer pause after dialogue, shorter after action
-        // Heuristic: Check last character for punctuation strength
-        const text = segment.text.trim();
-        const lastChar = text[text.length - 1];
 
-        let basePause = 250;
-
-        if (segment.type === 'dialogue') basePause = 350;
-        else if (segment.type === 'action') basePause = 150;
-        else if (segment.type === 'inner') basePause = 300;
-
-        // Punctuation modifiers
-        if (['.', '!', '?'].includes(lastChar)) return basePause + 100; // Full stop
-        if ([',', ';', ':'].includes(lastChar)) return basePause - 50;  // Comma/clause
-
-        return basePause;
-    }
 
     /**
      * Pause speaking (stops at segment boundary)

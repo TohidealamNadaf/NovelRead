@@ -94,6 +94,7 @@ export const Reader = () => {
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isMusicPlaying, setIsMusicPlaying] = useState(false);
     const [currentSegment, setCurrentSegment] = useState<TTSSegment | null>(null);
+    const [currentWordBoundary, setCurrentWordBoundary] = useState<{charIndex: number, charLength: number} | null>(null);
 
     // User Settings State (Global)
     const [settings, setSettings] = useState(settingsService.getSettings());
@@ -171,6 +172,7 @@ export const Reader = () => {
             setIsSpeaking(state.isTtsPlaying && !state.isTtsPaused);
             setIsMusicPlaying(state.isBgmPlaying);
             setCurrentSegment(state.currentSegment);
+            setCurrentWordBoundary(state.currentWordBoundary);
         });
 
         // Sync with global app settings
@@ -184,71 +186,99 @@ export const Reader = () => {
         };
     }, [novelId, chapterId, location.state]);
 
-    // TTS text highlighting effect - highlights current segment by wrapping it
+    // TTS text highlighting effect - O(1) performance to prevent crashing
     useEffect(() => {
         const contentEl = document.getElementById('reader-content-container');
         if (!contentEl || !currentSegment || !isSpeaking) {
-            // Remove any existing highlights
-            const existing = document.querySelectorAll('.tts-highlight');
-            existing.forEach(el => {
-                const parent = el.parentNode;
-                if (parent) {
-                    parent.replaceChild(document.createTextNode(el.textContent || ''), el);
-                    parent.normalize();
-                }
-            });
+            const container = document.getElementById('tts-segment-container');
+            if (container && container.parentNode) {
+                container.parentNode.replaceChild(document.createTextNode(container.textContent || ''), container);
+            }
             return;
         }
 
-        // Find and highlight the segment text
         const segmentText = currentSegment.text;
-        const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null);
+        let container = document.getElementById('tts-segment-container');
 
-        let node;
-        let found = false;
-
-        // Remove old highlights first
-        const oldHighlights = contentEl.querySelectorAll('.tts-highlight');
-        oldHighlights.forEach(el => {
-            const parent = el.parentNode;
-            if (parent) {
-                parent.replaceChild(document.createTextNode(el.textContent || ''), el);
-                parent.normalize();
+        // If segment container doesn't exist or is for a different segment, create it
+        if (!container || container.getAttribute('data-segment-id') !== String(currentSegment.id)) {
+            if (container && container.parentNode) {
+                container.parentNode.replaceChild(document.createTextNode(container.textContent || ''), container);
             }
-        });
 
-        // Walk text nodes to find segment
-        while ((node = walker.nextNode()) && !found) {
-            const text = node.textContent || '';
-            const index = text.indexOf(segmentText);
+            const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null);
+            let node;
+            while ((node = walker.nextNode())) {
+                const text = node.textContent || '';
+                const segmentIndex = text.indexOf(segmentText);
 
-            if (index !== -1) {
-                // Found! Split and wrap
-                const before = text.slice(0, index);
-                const match = text.slice(index, index + segmentText.length);
-                const after = text.slice(index + segmentText.length);
+                if (segmentIndex !== -1) {
+                    const before = text.slice(0, segmentIndex);
+                    const match = text.slice(segmentIndex, segmentIndex + segmentText.length);
+                    const after = text.slice(segmentIndex + segmentText.length);
 
-                const parent = node.parentNode;
-                if (parent) {
-                    const fragment = document.createDocumentFragment();
-                    if (before) fragment.appendChild(document.createTextNode(before));
+                    const parent = node.parentNode;
+                    if (parent) {
+                        const fragment = document.createDocumentFragment();
+                        if (before) fragment.appendChild(document.createTextNode(before));
 
-                    const highlight = document.createElement('span');
-                    highlight.className = 'tts-highlight';
-                    highlight.textContent = match;
-                    fragment.appendChild(highlight);
+                        container = document.createElement('span');
+                        container.id = 'tts-segment-container';
+                        container.setAttribute('data-segment-id', String(currentSegment.id));
+                        container.textContent = match;
+                        fragment.appendChild(container);
 
-                    if (after) fragment.appendChild(document.createTextNode(after));
+                        if (after) fragment.appendChild(document.createTextNode(after));
+                        parent.replaceChild(fragment, node);
 
-                    parent.replaceChild(fragment, node);
-
-                    // Scroll highlight into view
-                    highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    found = true;
+                        // Only scroll when finding a new segment
+                        container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    break;
                 }
             }
         }
-    }, [currentSegment, isSpeaking]);
+
+        // Apply word highlight safely inside the isolated container
+        if (container) {
+            if (currentWordBoundary) {
+                // Handle Chrome Android bug where it fires 1 word boundary for the whole sentence
+                const isFakeWord = currentWordBoundary.charLength >= segmentText.length - 2;
+                
+                if (isFakeWord) {
+                    const span = document.createElement('span');
+                    span.className = 'tts-highlight';
+                    span.textContent = segmentText;
+                    container.innerHTML = '';
+                    container.appendChild(span);
+                } else {
+                    const charIndex = currentWordBoundary.charIndex;
+                    const charLength = currentWordBoundary.charLength;
+                    
+                    if (charIndex + charLength <= segmentText.length) {
+                        const before = segmentText.slice(0, charIndex);
+                        const match = segmentText.slice(charIndex, charIndex + charLength);
+                        const after = segmentText.slice(charIndex + charLength);
+                        
+                        const matchSpan = document.createElement('span');
+                        matchSpan.className = 'tts-highlight tts-word-highlight';
+                        matchSpan.textContent = match;
+                        
+                        container.innerHTML = '';
+                        if (before) container.appendChild(document.createTextNode(before));
+                        container.appendChild(matchSpan);
+                        if (after) container.appendChild(document.createTextNode(after));
+                    }
+                }
+            } else {
+                const span = document.createElement('span');
+                span.className = 'tts-highlight';
+                span.textContent = segmentText;
+                container.innerHTML = '';
+                container.appendChild(span);
+            }
+        }
+    }, [currentSegment, currentWordBoundary, isSpeaking]);
 
     const loadData = async (nid: string, cid: string) => {
         setLoading(true);

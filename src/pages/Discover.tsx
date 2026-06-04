@@ -12,34 +12,37 @@ import { ManhwaDiscoverSection } from '../components/discover/ManhwaDiscoverSect
 import { DiscoverSyncModal } from '../components/discover/DiscoverSyncModal';
 import { dbService } from '../services/db.service';
 import { useProfileImage } from '../hooks/useProfileImage';
+import { PullToRefresh } from '../components/PullToRefresh';
 
 const GlobalScrapingBar = memo(({ isGlobalScraping, scrapingProgress }: { isGlobalScraping: boolean, scrapingProgress: ScraperProgress }) => {
     if (!isGlobalScraping) return null;
     return (
-        <div className="px-4 pb-2 animate-in slide-in-from-top-2 duration-300">
-            <div className="bg-primary/10 border border-primary/20 rounded-xl p-3">
+        <div className="px-4 pb-3 animate-in slide-in-from-top-2 fade-in duration-300">
+            <div className="bg-white/80 dark:bg-[#2b2839]/80 backdrop-blur-md border border-primary/20 rounded-2xl p-3 shadow-sm">
                 <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                        <div className="size-4 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
-                        <span className="text-[11px] font-bold text-primary uppercase tracking-wider">
-                            {isGlobalScraping ? `Scraping: ${scrapingProgress.currentTitle}` : 'Loading Metadata...'}
+                    <div className="flex items-center gap-2 overflow-hidden mr-2">
+                        <div className="size-3.5 shrink-0 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
+                        <span className="text-[11px] font-bold text-primary uppercase tracking-wider truncate">
+                            {isGlobalScraping ? `Scraping: ${scrapingProgress.currentTitle || 'Data'}` : 'Loading Metadata...'}
                         </span>
                     </div>
-                    <span className="text-[11px] font-bold text-primary">
+                    <span className="text-[11px] shrink-0 font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-md">
                         {isGlobalScraping ? `${scrapingProgress.current}/${scrapingProgress.total}` : ''}
                     </span>
                 </div>
                 {isGlobalScraping && (
-                    <div className="h-1.5 w-full bg-primary/20 rounded-full overflow-hidden">
+                    <div className="h-1.5 w-full bg-slate-100 dark:bg-black/20 rounded-full overflow-hidden shadow-inner">
                         <div
-                            className="h-full bg-primary transition-all duration-300"
+                            className="h-full bg-primary transition-all duration-300 relative overflow-hidden"
                             style={{ width: `${scrapingProgress.total > 0 ? (scrapingProgress.current / scrapingProgress.total) * 100 : 0}%` }}
-                        ></div>
+                        >
+                            <div className="absolute inset-0 bg-white/30 animate-[shimmer_1.5s_infinite] -skew-x-12"></div>
+                        </div>
                     </div>
                 )}
-                <div className="flex items-center gap-2 mt-2 opacity-70">
+                <div className="flex items-center gap-1.5 mt-2 opacity-70">
                     <Minimize2 size={12} className="text-primary" />
-                    <span className="text-[10px] text-primary font-medium">Runs in background</span>
+                    <span className="text-[10px] text-primary font-medium tracking-wide">Runs in background</span>
                 </div>
             </div>
         </div>
@@ -58,8 +61,8 @@ export const Discover = () => {
     const [showSyncModal, setShowSyncModal] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const [mode, setMode] = useState<'novelfire' | 'freewebnovel' | 'manhwa'>(() => {
-        return (sessionStorage.getItem('discoverTabMode') as 'novelfire' | 'freewebnovel' | 'manhwa') || 'novelfire';
+    const [mode, setMode] = useState<'novelfire' | 'freewebnovel' | 'manhwa' | 'kagane'>(() => {
+        return (sessionStorage.getItem('discoverTabMode') as 'novelfire' | 'freewebnovel' | 'manhwa' | 'kagane') || 'novelfire';
     });
     const [manhwaData, setManhwaData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
     const [isLoadingManhwa, setIsLoadingManhwa] = useState(false);
@@ -93,7 +96,7 @@ export const Discover = () => {
             if (state.isActive) {
                 console.log('[Discover] App resumed, refreshing data...');
                 loadHomeData();
-                if (mode === 'manhwa') loadManhwaData();
+                if (mode === 'manhwa' || mode === 'kagane') loadManhwaData(mode);
             }
         });
 
@@ -116,15 +119,15 @@ export const Discover = () => {
     // Load data when switching tabs
     useEffect(() => {
         sessionStorage.setItem('discoverTabMode', mode);
-        if (mode === 'manhwa') {
-            if (!manhwaData) loadManhwaData();
+        if (mode === 'manhwa' || mode === 'kagane') {
+            loadManhwaData(mode);
         } else if (mode === 'novelfire' || mode === 'freewebnovel') {
             if (!homeData[mode]) loadHomeData(mode);
         }
-    }, [mode, manhwaData, homeData]);
+    }, [mode, homeData]);
 
-    const loadHomeData = async (currentMode: 'novelfire' | 'freewebnovel' | 'manhwa' = mode) => {
-        if (currentMode === 'manhwa') return;
+    const loadHomeData = async (currentMode: 'novelfire' | 'freewebnovel' | 'manhwa' | 'kagane' = mode) => {
+        if (currentMode === 'manhwa' || currentMode === 'kagane') return;
         try {
             const cacheKey = `homeData_${currentMode}`;
             const cached = await dbService.getCache(cacheKey);
@@ -156,20 +159,25 @@ export const Discover = () => {
         }
     };
 
-    const loadManhwaData = async () => {
+    const loadManhwaData = async (currentMode: 'manhwa' | 'kagane' = (mode === 'kagane' ? 'kagane' : 'manhwa')) => {
+        const source = currentMode === 'kagane' ? 'kagane' : 'asura';
+        const cacheKey = currentMode === 'kagane' ? 'kaganeDiscoveryData' : 'manhwaDiscoveryData';
+        
         // Try DB cache first
-        const cached = await dbService.getCache('manhwaDiscoveryData');
+        const cached = await dbService.getCache(cacheKey);
         if (cached) {
             setManhwaData(cached);
+        } else {
+            setManhwaData(null); // clear if switching to uncached source
         }
 
         if (navigator.onLine) {
             setIsLoadingManhwa(true);
             try {
-                const data = await manhwaScraperService.getDiscoveryData();
+                const data = await manhwaScraperService.getDiscoveryData(source);
                 if (data && (data.trending.length > 0 || data.popular.length > 0 || data.latest.length > 0)) {
                     setManhwaData(data);
-                    await dbService.setCache('manhwaDiscoveryData', data);
+                    await dbService.setCache(cacheKey, data);
                 }
             } catch (e) {
                 console.error("Failed to load manhwa discovery data", e);
@@ -179,7 +187,7 @@ export const Discover = () => {
         }
     };
 
-    const syncHomeData = useCallback(async (targetModeOrEvent?: 'novelfire' | 'freewebnovel' | 'manhwa' | any) => {
+    const syncHomeData = useCallback(async (targetModeOrEvent?: 'novelfire' | 'freewebnovel' | 'manhwa' | 'kagane' | any) => {
         const actualTargetMode = typeof targetModeOrEvent === 'string' ? targetModeOrEvent : mode;
 
         if (!navigator.onLine) {
@@ -187,8 +195,8 @@ export const Discover = () => {
             return;
         }
 
-        if (actualTargetMode === 'manhwa') {
-            loadManhwaData();
+        if (actualTargetMode === 'manhwa' || actualTargetMode === 'kagane') {
+            loadManhwaData(actualTargetMode);
             return;
         }
 
@@ -242,12 +250,13 @@ export const Discover = () => {
                 await performQuickScrape(searchQuery);
             } else {
                 setSearchPerformed(true);
-                if (mode === 'manhwa') {
+                if (mode === 'manhwa' || mode === 'kagane') {
                     // Search manhwas
                     setIsSearchingManhwa(true);
                     setManhwaSearchResults([]);
                     try {
-                        const results = await manhwaScraperService.searchManga(searchQuery, 'asura');
+                        const source = mode === 'kagane' ? 'kagane' : 'asura';
+                        const results = await manhwaScraperService.searchManga(searchQuery, source);
                         setManhwaSearchResults(results);
                     } catch (e) {
                         console.error('Manhwa search failed:', e);
@@ -271,24 +280,33 @@ export const Discover = () => {
         }
     }, [searchQuery, mode, navigate]);
 
+    const header = (
+        <DiscoverHeader
+            profileImage={profileImage}
+            isSyncingHome={isSyncingHome}
+            isGlobalScraping={isGlobalScraping}
+            isFilterOpen={isFilterOpen}
+            setIsFilterOpen={setIsFilterOpen}
+            syncHomeData={syncHomeData}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            handleSearch={handleSearch}
+            mode={mode}
+            setMode={setMode}
+            navigate={navigate}
+        />
+    );
+
     return (
         <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark font-sans selection:bg-primary/30 overflow-hidden">
             {/* Scrollable Content */}
-            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pb-24">
-                <DiscoverHeader
-                    profileImage={profileImage}
-                    isSyncingHome={isSyncingHome}
-                    isGlobalScraping={isGlobalScraping}
-                    isFilterOpen={isFilterOpen}
-                    setIsFilterOpen={setIsFilterOpen}
-                    syncHomeData={syncHomeData}
-                    searchQuery={searchQuery}
-                    setSearchQuery={setSearchQuery}
-                    handleSearch={handleSearch}
-                    mode={mode}
-                    setMode={setMode}
-                    navigate={navigate}
-                />
+            <PullToRefresh 
+                ref={scrollContainerRef}
+                onRefresh={() => syncHomeData()}
+                isDisabled={isGlobalScraping}
+                className="pb-24"
+                header={header}
+            >
 
                 {isOffline && (
                     <div className="bg-red-500 text-white text-xs font-bold text-center py-1">
@@ -324,7 +342,7 @@ export const Discover = () => {
                         />
                     )}
                 </div>
-            </div>
+            </PullToRefresh>
 
             <FooterNavigation />
 
