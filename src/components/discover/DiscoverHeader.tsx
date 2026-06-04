@@ -100,60 +100,60 @@ export const DiscoverHeader = memo(({
             <motion.div
                 initial={false}
                 animate={{
-                    height: isCollapsed ? 0 : 54,
+                    height: isCollapsed ? 0 : 60,
                     opacity: isCollapsed ? 0 : 1,
-                    marginBottom: isCollapsed ? 0 : 4,
+                    paddingTop: isCollapsed ? 0 : 8,
+                    paddingBottom: isCollapsed ? 0 : 4,
                     pointerEvents: isCollapsed ? 'none' : 'auto'
                 }}
-                transition={{ duration: 0.25, ease: "easeInOut" }}
+                transition={{ type: "spring", stiffness: 220, damping: 28 }}
                 className="overflow-hidden px-4"
             >
-                <label className="flex flex-col min-w-40 h-11 w-full group py-1">
-                    <div className="flex w-full flex-1 items-stretch rounded-xl h-full bg-slate-100 dark:bg-[#2b2839] border border-transparent focus-within:border-primary/50 focus-within:bg-white dark:focus-within:bg-[#1c1c1e] focus-within:shadow-sm transition-all duration-200">
-                        <div className="text-slate-400 dark:text-[#a19db9] group-focus-within:text-primary transition-colors flex items-center justify-center pl-4">
-                            <Search size={20} />
-                        </div>
-                        <input
-                            className="flex w-full min-w-0 flex-1 border-none bg-transparent focus:outline-0 focus:ring-0 text-[15px] font-medium placeholder:text-slate-400 dark:placeholder:text-[#8a86a3] px-3 text-slate-900 dark:text-white"
-                            placeholder={mode === 'manhwa' ? "Search Asura Scans..." : "Search titles or paste URL..."}
-                            value={searchQuery}
-                            id="search-input"
-                            name="search-query"
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            onKeyDown={handleSearch}
-                            disabled={isGlobalScraping}
-                        />
-                        {searchQuery && !isGlobalScraping && (
-                            <button
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    setSearchQuery('');
-                                }}
-                                className="flex items-center justify-center pr-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                            >
-                                <X size={18} />
-                            </button>
-                        )}
-                        {isGlobalScraping && (
-                            <div className="flex items-center pr-4">
-                                <div className="size-4 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
-                            </div>
-                        )}
+                <div className="flex w-full h-12 items-center rounded-2xl bg-slate-100 dark:bg-[#2b2839] border border-transparent focus-within:border-primary/50 focus-within:bg-white dark:focus-within:bg-[#1c1c1e] focus-within:shadow-sm transition-all duration-200">
+                    <div className="text-slate-400 dark:text-[#a19db9] group-focus-within:text-primary transition-colors flex items-center justify-center pl-4">
+                        <Search size={20} />
                     </div>
-                </label>
+                    <input
+                        className="flex w-full min-w-0 flex-1 border-none bg-transparent focus:outline-0 focus:ring-0 text-[15px] font-medium placeholder:text-slate-400 dark:placeholder:text-[#8a86a3] px-3 text-slate-900 dark:text-white"
+                        placeholder={mode === 'manhwa' ? "Search Asura Scans..." : "Search titles or paste URL..."}
+                        value={searchQuery}
+                        id="search-input"
+                        name="search-query"
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={handleSearch}
+                        disabled={isGlobalScraping}
+                    />
+                    {searchQuery && !isGlobalScraping && (
+                        <button
+                            onClick={(e) => {
+                                e.preventDefault();
+                                setSearchQuery('');
+                            }}
+                            className="flex items-center justify-center pr-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                        >
+                            <X size={18} />
+                        </button>
+                    )}
+                    {isGlobalScraping && (
+                        <div className="flex items-center pr-4">
+                            <div className="size-4 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
+                        </div>
+                    )}
+                </div>
             </motion.div>
 
             {/* Tab Switcher */}
             <motion.div
                 initial={false}
                 animate={{
-                    height: isCollapsed ? 0 : 64,
+                    height: isCollapsed ? 0 : 54,
                     opacity: isCollapsed ? 0 : 1,
-                    paddingBottom: isCollapsed ? 0 : 12,
+                    paddingTop: isCollapsed ? 0 : 4,
+                    paddingBottom: isCollapsed ? 0 : 8,
                     pointerEvents: isCollapsed ? 'none' : 'auto'
                 }}
-                transition={{ duration: 0.25, ease: "easeInOut" }}
-                className="overflow-hidden px-4 py-2"
+                transition={{ type: "spring", stiffness: 220, damping: 28 }}
+                className="overflow-hidden px-4"
             >
                 <div className="flex p-1 bg-slate-200/50 dark:bg-[#2b2839]/50 rounded-xl shadow-inner relative">
                     {['novelfire', 'freewebnovel', 'manhwa'].map((tab) => (

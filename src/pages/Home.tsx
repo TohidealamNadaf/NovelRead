@@ -258,10 +258,10 @@ export const Home = () => {
                     initial={false}
                     animate={{ 
                         opacity: (editMode || isHeaderCollapsed) ? 0 : 1, 
-                        height: (editMode || isHeaderCollapsed) ? 0 : 106,
+                        height: (editMode || isHeaderCollapsed) ? 0 : 118,
                         pointerEvents: (editMode || isHeaderCollapsed) ? 'none' : 'auto'
                     }}
-                    transition={{ duration: 0.25, ease: "easeInOut" }}
+                    transition={{ type: "spring", stiffness: 220, damping: 28 }}
                     className="overflow-hidden"
                 >
                     {/* Search Bar */}
