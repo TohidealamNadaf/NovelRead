@@ -11,7 +11,6 @@ import { Reader } from './pages/Reader';
 import { ScrapingHistory } from './pages/ScrapingHistory';
 import { PrivacySecurity } from './pages/PrivacySecurity';
 import { Notifications } from './pages/Notifications';
-import { MiniPlayer } from './components/MiniPlayer';
 import { ManhwaSeries } from './pages/ManhwaSeries';
 import { ManhwaReader } from './pages/ManhwaReader';
 import { syncService } from './services/sync.service';
@@ -76,7 +75,6 @@ function App() {
         {/* Route alias for development/testing UI */}
         <Route path="/reader" element={<Reader />} />
       </Routes>
-      <MiniPlayer />
     </>
   );
 }
