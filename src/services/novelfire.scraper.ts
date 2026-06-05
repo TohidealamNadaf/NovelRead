@@ -61,8 +61,11 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         const results: HomeData = { recommended: [], ranking: [], latest: [], recentlyAdded: [], completed: [] };
 
         try {
+            // Pick a random page of highly rated novels to make recommendations dynamic
+            const randomPage = Math.floor(Math.random() * 5) + 1;
             onProgress?.('Fetching Recommended...', 1, 5);
-            results.recommended = await this.fetchRanking('ratings', 1);
+            const rawRecs = await this.fetchRanking('ratings', randomPage);
+            results.recommended = rawRecs.sort(() => 0.5 - Math.random());
 
             onProgress?.('Fetching Top Ranking...', 2, 5);
             results.ranking = await this.fetchRanking(1);

@@ -54,6 +54,7 @@ export class TTSEngine {
     // Web Speech API — current text for resume from current position
     private currentText = '';
     private currentResumeOffset = 0; // char index where we resume from after pause
+    private currentActiveChunkOffset = 0; // offset of the currently speaking chunk (Native)
 
     // Callbacks
     private onWordChange: WordChangeCallback | null = null;
@@ -215,14 +216,40 @@ export class TTSEngine {
             this.nativeRangeListener = null;
         }
 
+        // Chunking for Android's 4000 char limit
+        const chunks: { text: string; offset: number }[] = [];
+        let remaining = text;
+        let currentOffset = globalOffset;
+
+        while (remaining.length > 0) {
+            if (remaining.length <= 3500) {
+                chunks.push({ text: remaining, offset: currentOffset });
+                break;
+            }
+            
+            let breakIndex = 3500;
+            const searchSlice = remaining.substring(0, 3500);
+            const lastPeriod = searchSlice.lastIndexOf('. ');
+            const lastNewline = searchSlice.lastIndexOf('\n');
+            const lastSpace = searchSlice.lastIndexOf(' ');
+
+            if (lastPeriod > 0) breakIndex = lastPeriod + 1; 
+            else if (lastNewline > 0) breakIndex = lastNewline;
+            else if (lastSpace > 0) breakIndex = lastSpace;
+
+            chunks.push({ text: remaining.substring(0, breakIndex), offset: currentOffset });
+            currentOffset += breakIndex;
+            remaining = remaining.substring(breakIndex);
+        }
+
         // Register onRangeStart listener BEFORE calling speak()
         this.nativeRangeListener = await TextToSpeech.addListener(
             'onRangeStart',
             (data: { start: number; end: number; spokenWord: string }) => {
                 if (this.shouldStop || this.isPaused) return;
 
-                const absoluteStart = globalOffset + data.start;
-                const absoluteEnd = globalOffset + data.end;
+                const absoluteStart = this.currentActiveChunkOffset + data.start;
+                const absoluteEnd = this.currentActiveChunkOffset + data.end;
 
                 // Track the last spoken position for accurate resume
                 this.currentResumeOffset = absoluteStart;
@@ -236,16 +263,23 @@ export class TTSEngine {
         );
 
         try {
-            await TextToSpeech.speak({
-                text,
-                lang: 'en-US',
-                rate: Math.max(0.5, Math.min(2.0, this.baseRate)),
-                pitch: Math.max(0.5, Math.min(2.0, this.basePitch)),
-                volume: 1.0,
-                ...(this.nativeVoiceIndex >= 0 ? { voice: this.nativeVoiceIndex } : {}),
-            });
+            for (let i = 0; i < chunks.length; i++) {
+                if (this.shouldStop || this.isPaused) break;
+                
+                const chunk = chunks[i];
+                this.currentActiveChunkOffset = chunk.offset;
 
-            // speak() resolves when done (or if stop() was called)
+                await TextToSpeech.speak({
+                    text: chunk.text,
+                    lang: 'en-US',
+                    rate: Math.max(0.5, Math.min(2.0, this.baseRate)),
+                    pitch: Math.max(0.5, Math.min(2.0, this.basePitch)),
+                    volume: 1.0,
+                    ...(this.nativeVoiceIndex >= 0 ? { voice: this.nativeVoiceIndex } : {}),
+                });
+            }
+
+            // speak() loop resolves when done (or if stop() was called)
             if (!this.shouldStop && !this.isPaused) {
                 this.isPlaying = false;
                 this.onWordChange?.(null as any); // clear highlight
