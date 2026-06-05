@@ -1,6 +1,7 @@
 import { settingsService } from './settings.service';
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import { Capacitor } from '@capacitor/core';
+import { MediaSession } from '@capgo/capacitor-media-session';
 import { ttsEngine } from './ttsEngine';
 import type { WordBoundary } from './ttsEngine';
 
@@ -71,12 +72,26 @@ export class AudioService {
             this.silentAudio.volume = 0.01;
         }
 
-        // Load persisted settings
-        const settings = settingsService.getSettings();
-        this.pitch = settings.ttsPitch ?? 1.0;
-        this.rate = settings.ttsRate ?? 1.0;
-        this.ambienceTrack = settings.ambience;
-        this.selectedVoiceName = settings.ttsVoice || null;
+        // Subscribe to settings so we get them after they load from disk asynchronously
+        settingsService.subscribe((settings) => {
+            this.pitch = settings.ttsPitch ?? 1.0;
+            this.rate = settings.ttsRate ?? 1.0;
+            this.ambienceTrack = settings.ambience;
+            
+            if (this.selectedVoiceName !== settings.ttsVoice) {
+                this.selectedVoiceName = settings.ttsVoice || null;
+                
+                // If native voices are already loaded, update the engine
+                if (this.isNative && this.nativeVoices.length > 0 && this.selectedVoiceName) {
+                    let idx = this.nativeVoices.findIndex(v => (v.voiceURI || v.name) === this.selectedVoiceName);
+                    if (idx === -1) idx = this.nativeVoices.findIndex(v => v.name === this.selectedVoiceName);
+                    if (idx !== -1) {
+                        this.selectedVoice = this.nativeVoices[idx];
+                        ttsEngine.setSettings({ voiceIndex: idx, voice: this.selectedVoice });
+                    }
+                }
+            }
+        });
 
         // Register engine callbacks
         ttsEngine.setCallbacks({
@@ -100,8 +115,10 @@ export class AudioService {
                 // Keep WebView audio session alive
                 if (isPlaying && !isPaused) {
                     this.silentAudio?.play().catch(() => {});
+                    if (this.isNative) MediaSession.setPlaybackState({ playbackState: 'playing' }).catch(() => {});
                 } else {
                     this.silentAudio?.pause();
+                    if (this.isNative) MediaSession.setPlaybackState({ playbackState: 'paused' }).catch(() => {});
                 }
 
                 this.notify();
@@ -120,9 +137,27 @@ export class AudioService {
                     this.bgmAudio.volume = vol;
                 }
                 this.silentAudio?.pause();
+                if (this.isNative) MediaSession.setPlaybackState({ playbackState: 'none' }).catch(() => {});
                 this.notify();
             },
         });
+
+        // Register MediaSession action handlers
+        if (this.isNative) {
+            MediaSession.setActionHandler({ action: 'play' }, () => {
+                this.resume();
+            }).catch(() => {});
+            MediaSession.setActionHandler({ action: 'pause' }, () => {
+                this.pause();
+            }).catch(() => {});
+            MediaSession.setActionHandler({ action: 'stop' }, () => {
+                if (this.state.currentTrack?.type === 'tts') {
+                    this.stopSpeaking(true);
+                } else {
+                    this.stopBGM();
+                }
+            }).catch(() => {});
+        }
 
         // Load voices
         if (this.isNative) {
@@ -350,13 +385,24 @@ export class AudioService {
 
         // Speak — engine fires onWordChange / onStateChange / onComplete via callbacks above
         await ttsEngine.speak(plainText);
+
+        if (this.isNative) {
+            MediaSession.setMetadata({
+                title: this.state.currentTrack.title,
+                artist: this.state.currentTrack.subtitle,
+                album: 'Novel Reading App',
+                artwork: coverUrl ? [{ src: coverUrl, sizes: '512x512', type: 'image/jpeg' }] : []
+            }).catch(e => console.warn('[MediaSession] metadata err', e));
+        }
     }
 
     async stopSpeaking(clearState = true) {
         if (clearState) {
-            this.state.currentTrack = null;
-        } else if (this.state.currentTrack) {
-            this.state.currentTrack.isPlaying = false;
+            this.state.isTtsPlaying = false;
+            this.state.isTtsPaused = false;
+            if (this.state.currentTrack?.type === 'tts') {
+                this.state.currentTrack = null;
+            }
         }
         this.state.wordBoundary = null;
         this.notify();
@@ -364,8 +410,7 @@ export class AudioService {
         await ttsEngine.stop();
         this.silentAudio?.pause();
 
-        this.state.isTtsPlaying = false;
-        this.state.isTtsPaused = false;
+        if (this.isNative) MediaSession.setPlaybackState({ playbackState: 'none' }).catch(() => {});
 
         // Restore BGM
         if (this.bgmAudio) {

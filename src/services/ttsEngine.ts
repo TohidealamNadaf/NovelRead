@@ -47,6 +47,7 @@ export class TTSEngine {
     private basePitch = 1.0;
     private webVoice: SpeechSynthesisVoice | null = null;
     private nativeVoiceIndex = -1;
+    private nativeVoiceLang = 'en-US';
 
     // Native listener handle (for cleanup)
     private nativeRangeListener: PluginListenerHandle | null = null;
@@ -107,13 +108,19 @@ export class TTSEngine {
         if (options.pitch !== undefined) this.basePitch = options.pitch;
         if (options.voiceIndex !== undefined) this.nativeVoiceIndex = options.voiceIndex;
 
-        if (options.voice !== undefined && !this.isNative) {
-            // Web: resolve voice object from synthesis API
-            if (options.voice && typeof window !== 'undefined' && window.speechSynthesis) {
-                const voices = window.speechSynthesis.getVoices();
-                this.webVoice = voices.find(v => v.name === options.voice?.name) || options.voice || null;
-            } else {
-                this.webVoice = options.voice || null;
+        if (options.voice !== undefined) {
+            // Save the specific locale of the voice so Android doesn't override it
+            if (options.voice.lang) this.nativeVoiceLang = options.voice.lang;
+            
+            if (!this.isNative) {
+                // Web: resolve voice object from synthesis API
+                if (typeof window !== 'undefined' && window.speechSynthesis) {
+                    const voices = window.speechSynthesis.getVoices();
+                    const v = options.voice;
+                    this.webVoice = voices.find(
+                        voice => voice.voiceURI === v.voiceURI || voice.name === v.name
+                    ) || null;
+                }
             }
         }
     }
@@ -271,7 +278,7 @@ export class TTSEngine {
 
                 await TextToSpeech.speak({
                     text: chunk.text,
-                    lang: 'en-US',
+                    lang: this.nativeVoiceLang,
                     rate: Math.max(0.5, Math.min(2.0, this.baseRate)),
                     pitch: Math.max(0.5, Math.min(2.0, this.basePitch)),
                     volume: 1.0,
