@@ -10,7 +10,7 @@ export const FooterNavigation = () => {
         { icon: BookOpen, label: 'Library', path: '/' },
         { icon: Compass, label: 'Discover', path: '/discover' },
         { icon: Upload, label: 'Import', path: '/import', primary: true }, // Keep middle button
-        { icon: Headphones, label: 'AI Audio', path: '/audio' },
+        { icon: Headphones, label: 'Audio', path: '/audio' },
         { icon: User, label: 'Profile', path: '/profile' }, // Added Profile, Removed Settings (accessible via Profile)
     ];
 

@@ -300,9 +300,12 @@ export class AudioService {
     private htmlToPlainText(html: string): string {
         try {
             const doc = new DOMParser().parseFromString(html, 'text/html');
-            return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+            // Remove script and style nodes so they aren't included in textContent
+            doc.querySelectorAll('script, style').forEach(el => el.remove());
+            // DO NOT collapse whitespace! WordHighlighter calculates offsets using the original string.
+            return doc.body.textContent || '';
         } catch {
-            return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+            return html.replace(/<[^>]+>/g, '');
         }
     }
 
@@ -330,12 +333,18 @@ export class AudioService {
         this.notify();
 
         // Configure engine
+        let activeVoiceIndex = -1;
+        if (this.isNative && this.selectedVoiceName) {
+            activeVoiceIndex = this.nativeVoices.findIndex(v => (v.voiceURI || v.name) === this.selectedVoiceName);
+            if (activeVoiceIndex === -1) {
+                activeVoiceIndex = this.nativeVoices.findIndex(v => v.name === this.selectedVoiceName);
+            }
+        }
+
         ttsEngine.setSettings({
             rate: this.rate,
             pitch: this.pitch,
-            voiceIndex: this.isNative
-                ? this.nativeVoices.findIndex(v => v.name === this.selectedVoiceName)
-                : -1,
+            voiceIndex: activeVoiceIndex,
             voice: this.selectedVoice,
         });
 
