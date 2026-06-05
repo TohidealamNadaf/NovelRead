@@ -134,13 +134,16 @@ export class AudioService {
                 const voices = window.speechSynthesis.getVoices();
                 if (voices.length === 0) return;
 
-                const savedName = this.selectedVoiceName;
-                const match = savedName ? voices.find(v => v.name === savedName) : null;
+                const savedKey = this.selectedVoiceName;
+                // Match by voiceURI (unique) first, then by display name
+                const match = savedKey
+                    ? (voices.find(v => v.voiceURI === savedKey) || voices.find(v => v.name === savedKey))
+                    : null;
                 const best = match || this.findBestWebVoice(voices);
 
                 if (best) {
                     this.selectedVoice = best;
-                    this.selectedVoiceName = best.name;
+                    this.selectedVoiceName = best.voiceURI || best.name;
                     ttsEngine.setSettings({ voice: best });
                 }
             };
@@ -161,7 +164,10 @@ export class AudioService {
             this.nativeVoices = result.voices || [];
 
             if (this.selectedVoiceName) {
-                const idx = this.nativeVoices.findIndex(v => v.name === this.selectedVoiceName);
+                const savedKey = this.selectedVoiceName;
+                // Match by voiceURI (unique on Android) first, then by display name
+                let idx = this.nativeVoices.findIndex(v => (v.voiceURI || v.name) === savedKey);
+                if (idx === -1) idx = this.nativeVoices.findIndex(v => v.name === savedKey);
                 if (idx !== -1) {
                     this.selectedVoice = this.nativeVoices[idx];
                     ttsEngine.setSettings({ voiceIndex: idx, voice: this.selectedVoice });
@@ -265,13 +271,18 @@ export class AudioService {
             settingsService.updateSettings({ ttsVoice: settings.voiceName });
 
             if (this.isNative) {
-                const idx = this.nativeVoices.findIndex(v => v.name === settings.voiceName);
+                const key = settings.voiceName;
+                // Match by voiceURI (unique) first, then by display name
+                let idx = this.nativeVoices.findIndex(v => (v.voiceURI || v.name) === key);
+                if (idx === -1) idx = this.nativeVoices.findIndex(v => v.name === key);
                 if (idx !== -1) {
                     this.selectedVoice = this.nativeVoices[idx];
                     ttsEngine.setSettings({ voiceIndex: idx, voice: this.selectedVoice });
                 }
             } else if (typeof window !== 'undefined' && window.speechSynthesis) {
-                const webVoice = window.speechSynthesis.getVoices().find(v => v.name === settings.voiceName);
+                const webVoices = window.speechSynthesis.getVoices();
+                const webVoice = webVoices.find(v => v.voiceURI === settings.voiceName)
+                    || webVoices.find(v => v.name === settings.voiceName);
                 if (webVoice) {
                     this.selectedVoice = webVoice;
                     ttsEngine.setSettings({ voice: webVoice });

@@ -13,11 +13,65 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const PREVIEW_TEXT = "The night was dark, the wind was cold, and she ran through the ancient forest as if the whole world was chasing her dreams.";
 
+/**
+ * Convert a raw Android voiceURI (e.g. "en-au-x-axf-local") into a readable label.
+ * Format: "en-au-x-axf-local" → "English (AU) · Axf · Local"
+ */
+function prettifyVoiceURI(voiceURI: string, fallbackName: string): { label: string; quality: string; network: boolean } {
+    if (!voiceURI || voiceURI === fallbackName) {
+        return { label: fallbackName, quality: '', network: false };
+    }
+
+    // Android voice IDs: e.g. "en-au-x-axf-local", "en-gb-x-gbc-network", "en-us-x-tpf-local"
+    // Pattern: <lang>-<region>-x-<id>-<quality>
+    const parts = voiceURI.toLowerCase().split('-');
+    const isNetwork = voiceURI.endsWith('-network') || voiceURI.includes('network');
+    const isLocal = voiceURI.endsWith('-local') || voiceURI.includes('local');
+
+    // Extract lang+region (first two parts)
+    const lang = parts[0] || '';
+    const region = parts[1] || '';
+
+    // Extract the voice ID (the part after 'x')
+    const xIdx = parts.indexOf('x');
+    const voiceId = xIdx >= 0 && xIdx + 1 < parts.length ? parts[xIdx + 1] : '';
+
+    // Map region codes to nice names
+    const regionMap: Record<string, string> = {
+        us: 'US', gb: 'UK', au: 'AU', in: 'IN', ca: 'CA',
+        nz: 'NZ', za: 'ZA', ie: 'IE', sg: 'SG', ph: 'PH',
+    };
+
+    const regionLabel = regionMap[region] || region.toUpperCase();
+    const langLabel = lang === 'en' ? 'English' : lang.toUpperCase();
+
+    // Capitalize the voice ID to make it look like a name variant
+    const voiceVariant = voiceId
+        ? voiceId.toUpperCase()
+        : '';
+
+    const label = voiceVariant
+        ? `${langLabel} (${regionLabel}) · ${voiceVariant}`
+        : `${langLabel} (${regionLabel})`;
+
+    const quality = isNetwork ? 'Enhanced' : isLocal ? 'Local' : '';
+
+    return { label, quality, network: isNetwork };
+}
+
+/** The unique key we use to identify/select a voice — voiceURI on Android, name on Web */
+function voiceKey(v: VoiceInfo): string {
+    return v.voiceURI || v.name;
+}
+
 export const AudioSettings = () => {
     const [rate, setRate] = useState(settingsService.getSettings().ttsRate);
     const [availableVoices, setAvailableVoices] = useState<VoiceInfo[]>([]);
     const [profileImage, setProfileImage] = useState<string | null>(null);
-    const [selectedVoiceName, setSelectedVoiceName] = useState<string | null>(settingsService.getSettings().ttsVoice);
+    // Use voiceURI as the unique selection key (Android names are non-unique)
+    const [selectedVoiceKey, setSelectedVoiceKey] = useState<string | null>(
+        settingsService.getSettings().ttsVoice || null
+    );
     const [isPreviewing, setIsPreviewing] = useState(false);
     const [previewWordIndex, setPreviewWordIndex] = useState<number | null>(null);
     const isNative = Capacitor.isNativePlatform();
@@ -35,15 +89,19 @@ export const AudioSettings = () => {
             setAvailableVoices(voices);
 
             if (voices.length > 0) {
-                const savedVoiceName = settingsService.getSettings().ttsVoice;
-                let selected = voices.find(v => v.name === savedVoiceName);
+                const savedKey = settingsService.getSettings().ttsVoice;
+                // Match by voiceURI first (unique on Android), then by name
+                let selected = voices.find(v => voiceKey(v) === savedKey)
+                    || voices.find(v => v.name === savedKey);
 
                 if (!selected) {
                     selected = audioService.getBestVoice('female') || voices[0];
                 }
 
-                audioService.setSettings({ rate, voiceName: selected?.name });
-                setSelectedVoiceName(selected?.name || null);
+                if (selected) {
+                    audioService.setSettings({ voiceName: voiceKey(selected) });
+                    setSelectedVoiceKey(voiceKey(selected));
+                }
             }
         };
 
@@ -105,7 +163,8 @@ export const AudioSettings = () => {
 
         if (isNative) {
             // Native: listen to onRangeStart to highlight words
-            const voiceIndex = availableVoices.findIndex(v => v.name === selectedVoiceName);
+            // Match by voiceURI (unique) not name (duplicated locale string)
+            const voiceIndex = availableVoices.findIndex(v => voiceKey(v) === selectedVoiceKey);
 
             // Build a char→wordIndex map
             let charOffset = 0;
@@ -143,8 +202,11 @@ export const AudioSettings = () => {
             utt.rate = rate;
             utt.pitch = 1.0;
 
-            if (selectedVoiceName) {
-                const v = window.speechSynthesis.getVoices().find(v => v.name === selectedVoiceName);
+            if (selectedVoiceKey) {
+                const allWebVoices = window.speechSynthesis.getVoices();
+                // Match by voiceURI (unique) first, then by name
+                const v = allWebVoices.find(wv => wv.voiceURI === selectedVoiceKey)
+                    || allWebVoices.find(wv => wv.name === selectedVoiceKey);
                 if (v) utt.voice = v;
             }
 
@@ -175,9 +237,10 @@ export const AudioSettings = () => {
     };
 
     const handleVoiceSelect = (voice: VoiceInfo) => {
-        audioService.setSettings({ voiceName: voice.name });
-        setSelectedVoiceName(voice.name);
-        settingsService.updateSettings({ ttsVoice: voice.name });
+        const key = voiceKey(voice);
+        audioService.setSettings({ voiceName: key });
+        setSelectedVoiceKey(key);
+        settingsService.updateSettings({ ttsVoice: key });
     };
 
     const handleRateChange = (newRate: number) => {
@@ -186,15 +249,32 @@ export const AudioSettings = () => {
         settingsService.updateSettings({ ttsRate: newRate });
     };
 
-    const sortedVoices = availableVoices
-        .filter(v => v.lang.startsWith('en') || v.lang.startsWith(navigator.language.split('-')[0]))
-        .sort((a, b) => {
-            const aPriority = a.name.includes('Natural') || a.name.includes('Google') || a.name.includes('Premium') || a.name.includes('Enhanced');
-            const bPriority = b.name.includes('Natural') || b.name.includes('Google') || b.name.includes('Premium') || b.name.includes('Enhanced');
-            if (aPriority && !bPriority) return -1;
-            if (!aPriority && bPriority) return 1;
-            return a.name.localeCompare(b.name);
+    const sortedVoices = (() => {
+        const userLang = navigator.language.split('-')[0];
+        const filtered = availableVoices
+            .filter(v => v.lang.startsWith('en') || v.lang.startsWith(userLang));
+
+        // Deduplicate by voiceURI (truly unique on Android)
+        const seen = new Set<string>();
+        const deduped = filtered.filter(v => {
+            const key = voiceKey(v);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
         });
+
+        return deduped.sort((a, b) => {
+            // Network (enhanced) voices first, then local
+            const aNet = a.localService === false;
+            const bNet = b.localService === false;
+            if (aNet && !bNet) return -1;
+            if (!aNet && bNet) return 1;
+            // Within same tier, sort by lang then voiceURI
+            const langCmp = a.lang.localeCompare(b.lang);
+            if (langCmp !== 0) return langCmp;
+            return voiceKey(a).localeCompare(voiceKey(b));
+        });
+    })();
 
     const rateLabel = rate <= 0.7 ? 'Slow' : rate <= 1.2 ? 'Normal' : rate <= 1.6 ? 'Fast' : 'Very Fast';
 
@@ -239,7 +319,12 @@ export const AudioSettings = () => {
                                 Active Voice
                             </span>
                             <h2 className="text-xl font-black text-white tracking-tight leading-tight">
-                                {selectedVoiceName || 'Select a Voice'}
+                                {selectedVoiceKey
+                                    ? prettifyVoiceURI(
+                                        selectedVoiceKey,
+                                        sortedVoices.find(v => voiceKey(v) === selectedVoiceKey)?.name || selectedVoiceKey
+                                      ).label
+                                    : 'Select a Voice'}
                             </h2>
                             <p className="text-indigo-100/70 text-xs font-medium mt-0.5">
                                 Tap Play to preview with karaoke highlighting
@@ -371,13 +456,15 @@ export const AudioSettings = () => {
                             </div>
                         ) : (
                             sortedVoices.map((v) => {
-                                const isSelected = selectedVoiceName === v.name;
-                                const isPremium = v.name.includes('Natural') || v.name.includes('Premium') || v.name.includes('Google') || v.name.includes('Enhanced');
-                                const isLocal = v.localService !== false;
+                                const key = voiceKey(v);
+                                const isSelected = selectedVoiceKey === key;
+                                // On Android, voiceURI is unique — derive display label from it
+                                const { label, quality, network } = prettifyVoiceURI(v.voiceURI || '', v.name);
+                                const isEnhanced = network || v.localService === false;
 
                                 return (
                                     <button
-                                        key={v.name}
+                                        key={key}
                                         onClick={() => handleVoiceSelect(v)}
                                         className={clsx(
                                             'w-full flex items-center justify-between p-4 rounded-2xl border transition-all text-left active:scale-[0.98]',
@@ -389,16 +476,20 @@ export const AudioSettings = () => {
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 flex-wrap">
                                                 <span className={clsx('font-bold text-sm', isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300')}>
-                                                    {v.name}
+                                                    {label}
                                                 </span>
-                                                {isPremium && (
-                                                    <span className="bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded shadow-sm">
-                                                        Premium
+                                                {isEnhanced ? (
+                                                    <span className="bg-gradient-to-r from-violet-500 to-indigo-500 text-white text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded shadow-sm">
+                                                        Enhanced
                                                     </span>
-                                                )}
-                                                {isLocal && (
+                                                ) : (
                                                     <span className="bg-green-500/10 text-green-600 dark:text-green-400 text-[8px] font-bold px-1.5 py-0.5 rounded">
                                                         Offline
+                                                    </span>
+                                                )}
+                                                {quality && quality !== 'Enhanced' && quality !== 'Local' && (
+                                                    <span className="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[8px] font-bold px-1.5 py-0.5 rounded">
+                                                        {quality}
                                                     </span>
                                                 )}
                                             </div>

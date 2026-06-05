@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MoreHorizontal, Play, Pause, FastForward, Rewind, Music, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus, WandSparkles } from 'lucide-react';
+import { MoreHorizontal, Pause, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus, WandSparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -16,6 +16,7 @@ import { Header } from '../components/Header';
 import { useChapterPullNavigation } from '../hooks/useChapterPullNavigation';
 import { ChapterSidebar } from '../components/ChapterSidebar';
 import { ReaderScroller } from '../components/ReaderScroller';
+import { AudioPlayer } from '../components/AudioPlayer';
 import { useAutoScroll } from '../hooks/useAutoScroll';
 import { rewriterService } from '../services/rewriter.service';
 
@@ -93,7 +94,6 @@ export const Reader = () => {
 
     // Audio State
     const [isSpeaking, setIsSpeaking] = useState(false);
-    const [isMusicPlaying, setIsMusicPlaying] = useState(false);
     const [wordBoundary, setWordBoundary] = useState<WordBoundary | null>(null);
 
     // User Settings State (Global)
@@ -170,7 +170,6 @@ export const Reader = () => {
         // Sync with global audio state
         const audioUnsub = audioService.subscribe((state) => {
             setIsSpeaking(state.isTtsPlaying && !state.isTtsPaused);
-            setIsMusicPlaying(state.isBgmPlaying);
             setWordBoundary(state.wordBoundary);
         });
 
@@ -705,34 +704,6 @@ export const Reader = () => {
     };
 
 
-    const toggleTTS = () => {
-        if (isSpeaking) {
-            audioService.pause();
-        } else {
-            if (audioService.currentState.isTtsPaused) {
-                audioService.resume();
-            } else if (chapter?.content) {
-                // Ensure content is loaded and strip minimal HTML if needed, though audioService handles it
-                audioService.speak(chapter.content, chapter.title, novel?.title || 'Unknown Novel', novel?.coverUrl);
-            }
-        }
-    };
-
-    const toggleMusic = () => {
-        if (isMusicPlaying) {
-            audioService.stopBGM();
-            setIsMusicPlaying(false);
-        } else {
-            const currentAmbience = audioService.getAmbienceTrack();
-            if (currentAmbience) {
-                audioService.playAmbience(currentAmbience);
-            } else {
-                audioService.playBGM('fantasy');
-            }
-            setIsMusicPlaying(true);
-        }
-    };
-
     const getThemeClass = () => {
         switch (theme) {
             case 'sepia': return 'reader-content-sepia';
@@ -1123,20 +1094,6 @@ export const Reader = () => {
             </div>
 
 
-            {/* AI Music Indicator */}
-            {
-                isMusicPlaying && (
-                    <div className="absolute bottom-64 left-4 bg-primary/20 backdrop-blur-md border border-primary/30 rounded-lg p-2 flex items-center gap-3 animate-in fade-in slide-in-from-left">
-                        <div className="size-8 bg-primary rounded-md flex items-center justify-center">
-                            <Music className="text-white text-sm animate-pulse" size={16} />
-                        </div>
-                        <div>
-                            <p className="text-[10px] text-primary-200 uppercase font-bold tracking-tighter">AI Soundtrack</p>
-                            <p className="text-xs text-white font-medium">Fantasy Ambient</p>
-                        </div>
-                    </div>
-                )
-            }
 
             {/* Customization Overlay */}
             <AnimatePresence>
@@ -1163,33 +1120,6 @@ export const Reader = () => {
                                 <div className="w-10 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
                             </div>
                             <div className="px-5 pb-8 space-y-5">
-                                {/* TTS Controls */}
-                                <div className="flex items-center justify-between gap-3">
-                                    <button onClick={toggleMusic} className={clsx("flex-1 flex items-center justify-center gap-2 h-11 rounded-xl font-semibold transition-colors text-sm", isMusicPlaying ? "bg-primary/20 text-primary border border-primary/50" : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300")}>
-                                        <Music size={18} />
-                                        <span>{isMusicPlaying ? 'On' : 'Off'}</span>
-                                    </button>
-                                    <button
-                                        onClick={handlePrevChapter}
-                                        disabled={!prevChapter}
-                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-11 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm", !prevChapter && "opacity-30")}
-                                    >
-                                        <Rewind size={16} />
-                                        Prev
-                                    </button>
-                                    <button onClick={toggleTTS} className="size-14 shrink-0 flex items-center justify-center bg-primary rounded-full shadow-lg shadow-primary/30 active:scale-95 transition-transform">
-                                        {isSpeaking ? <Pause className="text-white fill-white" size={28} /> : <Play className="text-white fill-white ml-0.5" size={28} />}
-                                    </button>
-                                    <button
-                                        onClick={handleNextChapter}
-                                        disabled={!nextChapter}
-                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-11 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm", !nextChapter && "opacity-30")}
-                                    >
-                                        Next
-                                        <FastForward size={16} />
-                                    </button>
-                                </div>
-
                                 {/* Quick Actions Grid */}
                                 <div className="grid grid-cols-4 gap-2.5">
                                     <button
@@ -1402,7 +1332,19 @@ export const Reader = () => {
                 onClose={() => setShowSummary(false)}
                 summary={summaryData}
                 isLoading={isSummarizing}
-                onReload={() => handleShowSummary(true)}
+                onReload={() => {
+                    setSummaryData(null);
+                    handleShowSummary(true);
+                }}
+            />
+
+            <AudioPlayer
+                chapter={chapter}
+                novel={novel}
+                onPrevChapter={handlePrevChapter}
+                onNextChapter={handleNextChapter}
+                hasPrev={!!prevChapter}
+                hasNext={!!nextChapter}
             />
 
             {/* Chapter Sidebar */}
