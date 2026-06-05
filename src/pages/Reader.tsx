@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MoreHorizontal, Pause, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus, WandSparkles, Headphones } from 'lucide-react';
+import { MoreHorizontal, Pause, Play, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus, WandSparkles, Rewind, FastForward } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -1127,15 +1127,40 @@ export const Reader = () => {
                                 <div className="w-10 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
                             </div>
                             <div className="px-5 pb-8 space-y-5">
-                                {/* Start Audio Button */}
-                                <button
-                                    onClick={handleStartAudio}
-                                    disabled={!chapter?.content || isSpeaking}
-                                    className="w-full flex items-center justify-center gap-2 h-14 rounded-2xl bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-500/20 transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100"
-                                >
-                                    <Headphones size={22} />
-                                    <span>Listen to Chapter</span>
-                                </button>
+                                {/* TTS & Chapter Navigation (Historic Design) */}
+                                <div className="flex items-center justify-between gap-3">
+                                    <button
+                                        onClick={handlePrevChapter}
+                                        disabled={!prevChapter}
+                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-11 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm active:scale-95", !prevChapter && "opacity-30")}
+                                    >
+                                        <Rewind size={16} />
+                                        Prev
+                                    </button>
+                                    
+                                    <button 
+                                        onClick={() => {
+                                            if (isSpeaking) {
+                                                audioService.stopSpeaking(true);
+                                            } else {
+                                                handleStartAudio();
+                                            }
+                                        }}
+                                        disabled={!chapter?.content && !isSpeaking}
+                                        className="size-14 shrink-0 flex items-center justify-center bg-primary rounded-full shadow-lg shadow-primary/30 active:scale-95 transition-transform disabled:opacity-50"
+                                    >
+                                        {isSpeaking ? <Pause className="text-white fill-white" size={28} /> : <Play className="text-white fill-white ml-0.5" size={28} />}
+                                    </button>
+
+                                    <button
+                                        onClick={handleNextChapter}
+                                        disabled={!nextChapter}
+                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-11 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm active:scale-95", !nextChapter && "opacity-30")}
+                                    >
+                                        Next
+                                        <FastForward size={16} />
+                                    </button>
+                                </div>
 
                                 {/* Quick Actions Grid */}
                                 <div className="grid grid-cols-4 gap-2.5">
