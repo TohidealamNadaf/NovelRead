@@ -18,7 +18,9 @@ export const PullToRefresh = forwardRef<HTMLDivElement, PullToRefreshProps>(
         
         useImperativeHandle(ref, () => containerRef.current as HTMLDivElement);
     const startY = useRef(0);
+    const startX = useRef(0);
     const currentY = useRef(0);
+    const currentX = useRef(0);
     const isPulling = useRef(false);
     const controls = useAnimation();
     const y = useMotionValue(0);
@@ -36,8 +38,11 @@ export const PullToRefresh = forwardRef<HTMLDivElement, PullToRefreshProps>(
         if (container.scrollTop > 0) return;
 
         const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+        const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
         startY.current = clientY;
+        startX.current = clientX;
         currentY.current = clientY;
+        currentX.current = clientX;
         isPulling.current = true;
     };
 
@@ -51,16 +56,26 @@ export const PullToRefresh = forwardRef<HTMLDivElement, PullToRefreshProps>(
         }
 
         const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+        const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
         currentY.current = clientY;
+        currentX.current = clientX;
 
-        const pullDistance = currentY.current - startY.current;
+        const pullDistanceY = currentY.current - startY.current;
+        const pullDistanceX = Math.abs(currentX.current - startX.current);
 
-        if (pullDistance > 0) {
+        // If the user is scrolling more horizontally than vertically, cancel pull
+        if (pullDistanceX > Math.abs(pullDistanceY) && pullDistanceX > 5) {
+            isPulling.current = false;
+            return;
+        }
+
+        // Only start pulling if dragged down by at least a small threshold
+        if (pullDistanceY > 5) {
             // Prevent default scrolling when pulling down
             if (e.cancelable) e.preventDefault();
             
             // Apply resistance to the pull
-            const resistance = pullDistance * 0.4;
+            const resistance = (pullDistanceY - 5) * 0.4;
             const boundedPull = Math.min(resistance, MAX_PULL);
             y.set(boundedPull);
         }

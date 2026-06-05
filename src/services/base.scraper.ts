@@ -17,7 +17,9 @@ export abstract class BaseScraper {
         if (!url) return null;
         
         try {
-            const finalUrl = proxyPrefix ? `${proxyPrefix}${encodeURIComponent(url)}` : url;
+            const separator = url.includes('?') ? '&' : '?';
+            const bustedUrl = `${url}${separator}_t=${Date.now()}`;
+            const finalUrl = proxyPrefix ? `${proxyPrefix}${encodeURIComponent(bustedUrl)}` : bustedUrl;
             
             const isCapacitor = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
             
@@ -27,7 +29,9 @@ export abstract class BaseScraper {
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.5'
+                        'Accept-Language': 'en-US,en;q=0.5',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
                     }
                 });
                 
@@ -42,9 +46,12 @@ export abstract class BaseScraper {
                         : `/api/proxy?url=${encodeURIComponent(url)}`);
 
                 const response = await fetch(fetchUrl, {
+                    cache: 'no-cache',
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
                         'Accept': 'text/html',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
                     }
                 });
                 

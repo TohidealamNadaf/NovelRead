@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MoreHorizontal, Pause, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus, WandSparkles } from 'lucide-react';
+import { MoreHorizontal, Pause, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus, WandSparkles, Headphones } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -704,6 +704,13 @@ export const Reader = () => {
     };
 
 
+    const handleStartAudio = () => {
+        if (chapter?.content) {
+            audioService.speak(chapter.content, chapter.title, novel?.title || 'Unknown Novel', novel?.coverUrl);
+            setShowSettings(false);
+        }
+    };
+
     const getThemeClass = () => {
         switch (theme) {
             case 'sepia': return 'reader-content-sepia';
@@ -1120,6 +1127,16 @@ export const Reader = () => {
                                 <div className="w-10 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
                             </div>
                             <div className="px-5 pb-8 space-y-5">
+                                {/* Start Audio Button */}
+                                <button
+                                    onClick={handleStartAudio}
+                                    disabled={!chapter?.content || isSpeaking}
+                                    className="w-full flex items-center justify-center gap-2 h-14 rounded-2xl bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-500/20 transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100"
+                                >
+                                    <Headphones size={22} />
+                                    <span>Listen to Chapter</span>
+                                </button>
+
                                 {/* Quick Actions Grid */}
                                 <div className="grid grid-cols-4 gap-2.5">
                                     <button
