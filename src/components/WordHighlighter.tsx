@@ -1,12 +1,9 @@
 import { useMemo, useEffect, useRef } from 'react';
+import { audioService } from '../services/audio.service';
 
 interface WordHighlighterProps {
     /** Raw HTML content from the chapter */
     htmlContent: string;
-    /** Active word start char index (from onRangeStart) */
-    activeStart: number | null;
-    /** Active word end char index */
-    activeEnd: number | null;
     /** Extra CSS class applied to the wrapper */
     className?: string;
     /** ID applied to the root element */
@@ -29,8 +26,6 @@ interface WordHighlighterProps {
  */
 export function WordHighlighter({
     htmlContent,
-    activeStart,
-    activeEnd,
     className = '',
     id,
 }: WordHighlighterProps) {
@@ -118,28 +113,43 @@ export function WordHighlighter({
 
     /**
      * Imperatively highlight the active word.
-     * We use dataset lookups rather than React re-renders for O(1) DOM updates.
+     * We use dataset lookups and a direct audioService subscription rather than 
+     * React props/re-renders to achieve true O(1) DOM updates without freezing the UI.
      */
     useEffect(() => {
         if (!rootRef.current) return;
 
-        // Remove previous highlight
-        if (activeSpanRef.current) {
-            activeSpanRef.current.classList.remove('tts-active-word');
-            activeSpanRef.current = null;
-        }
+        const unsub = audioService.subscribe((state) => {
+            if (!rootRef.current) return;
 
-        if (activeStart == null || activeEnd == null) return;
+            const isSpeaking = state.isTtsPlaying && !state.isTtsPaused;
+            const activeStart = (isSpeaking && state.wordBoundary) ? state.wordBoundary.start : null;
+            const activeEnd = (isSpeaking && state.wordBoundary) ? state.wordBoundary.end : null;
 
-        // Find the span that contains this word range.
-        // We search from the first span whose data-s >= activeStart - tolerance.
-        // Using a TreeWalker filtered to only .tts-word spans is O(n) worst case
-        // but in practice the spans are dense so we binary-search-style skip ahead.
-        //
-        // Optimized: use querySelectorAll with attribute selectors is cached by browser.
-        const target = rootRef.current.querySelector<HTMLElement>(
-            `[data-s="${activeStart}"]`
-        );
+            if (activeStart == null || activeEnd == null) {
+                // Remove previous highlight
+                if (activeSpanRef.current) {
+                    activeSpanRef.current.classList.remove('tts-active-word');
+                    activeSpanRef.current = null;
+                }
+                return;
+            }
+
+            // Skip if it's already the active span
+            if (activeSpanRef.current && parseInt(activeSpanRef.current.dataset.s || '-1') === activeStart) {
+                return;
+            }
+
+            // Remove previous highlight
+            if (activeSpanRef.current) {
+                activeSpanRef.current.classList.remove('tts-active-word');
+                activeSpanRef.current = null;
+            }
+
+            // Find the span that contains this word range.
+            const target = rootRef.current.querySelector<HTMLElement>(
+                `[data-s="${activeStart}"]`
+            );
 
         if (target) {
             target.classList.add('tts-active-word');
@@ -168,7 +178,10 @@ export function WordHighlighter({
                 }
             }
         }
-    }, [activeStart, activeEnd]);
+        });
+
+        return () => unsub();
+    }, []);
 
     return (
         <div

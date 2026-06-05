@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { dbService, type Novel, type Chapter } from '../services/db.service';
 import { audioService } from '../services/audio.service';
-import type { WordBoundary } from '../services/ttsEngine';
+
 import { settingsService } from '../services/settings.service';
 import { WordHighlighter } from '../components/WordHighlighter';
 import { scraperService } from '../services/scraper.service';
@@ -94,7 +94,6 @@ export const Reader = () => {
 
     // Audio State
     const [isSpeaking, setIsSpeaking] = useState(false);
-    const [wordBoundary, setWordBoundary] = useState<WordBoundary | null>(null);
 
     // User Settings State (Global)
     const [settings, setSettings] = useState(settingsService.getSettings());
@@ -170,7 +169,7 @@ export const Reader = () => {
         // Sync with global audio state
         const audioUnsub = audioService.subscribe((state) => {
             setIsSpeaking(state.isTtsPlaying && !state.isTtsPaused);
-            setWordBoundary(state.wordBoundary);
+            // WordHighlighter listens to wordBoundary directly now
         });
 
         // Sync with global app settings
@@ -1038,8 +1037,6 @@ export const Reader = () => {
                             <WordHighlighter
                                 id="reader-content-container"
                                 htmlContent={chapter.content || ''}
-                                activeStart={isSpeaking && wordBoundary ? wordBoundary.start : null}
-                                activeEnd={isSpeaking && wordBoundary ? wordBoundary.end : null}
                             />
 
                             {/* End of Chapter - Next Chapter Hint */}
