@@ -11,7 +11,7 @@ import { Capacitor } from '@capacitor/core';
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const PREVIEW_TEXT = "The night was dark, the wind was cold, and she ran through the ancient forest as if the whole world was chasing her dreams.";
+const PREVIEW_TEXT = "The night was dark, and she ran through the forest.";
 
 /**
  * Convert a raw Android voiceURI (e.g. "en-au-x-axf-local") into a readable label.
@@ -299,26 +299,27 @@ export const AudioSettings = () => {
                 transparent
             />
 
-            <div className="flex-1 overflow-y-auto px-5 pb-40 space-y-5">
+            <div className="flex-1 overflow-y-auto px-4 pb-32 space-y-5 relative">
 
-                {/* ── Karaoke Preview Card ── */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="relative mt-4 rounded-3xl overflow-hidden bg-gradient-to-br from-indigo-500 via-purple-600 to-violet-700 shadow-xl shadow-indigo-500/20"
-                >
-                    {/* Background decoration */}
+                {/* ── Sticky Karaoke Preview Card ── */}
+                <div className="sticky top-0 z-30 pt-4 pb-3 bg-[#f8fafc]/95 dark:bg-[#0b0f19]/95 backdrop-blur-xl -mx-4 px-4 -mt-4 shadow-sm dark:shadow-black/20">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="relative rounded-[20px] overflow-hidden bg-gradient-to-br from-indigo-500 via-purple-600 to-violet-700 shadow-lg shadow-indigo-500/25 ring-1 ring-white/10"
+                    >
+                        {/* Background decoration */}
                     <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
-                        <Activity size={130} className="text-white" />
+                        <Activity size={100} className="text-white" />
                     </div>
 
-                    <div className="relative z-10 p-5 space-y-4">
+                    <div className="relative z-10 p-3.5 space-y-2.5">
                         {/* Badge + Active voice name */}
                         <div>
-                            <span className="inline-block px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-[10px] font-bold tracking-widest uppercase mb-3">
+                            <span className="inline-block px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white text-[8px] font-bold tracking-widest uppercase mb-1 shadow-sm">
                                 Active Voice
                             </span>
-                            <h2 className="text-xl font-black text-white tracking-tight leading-tight">
+                            <h2 className="text-[14px] font-black text-white tracking-tight leading-tight drop-shadow-sm line-clamp-2">
                                 {selectedVoiceKey
                                     ? prettifyVoiceURI(
                                         selectedVoiceKey,
@@ -332,12 +333,12 @@ export const AudioSettings = () => {
                         </div>
 
                         {/* Karaoke text display */}
-                        <div className="bg-black/20 backdrop-blur-sm rounded-2xl px-4 py-3 min-h-[60px] flex flex-wrap gap-x-1.5 gap-y-1 items-center">
+                        <div className="bg-black/25 backdrop-blur-md rounded-lg px-3 py-2 min-h-[40px] flex flex-wrap gap-x-1 gap-y-0.5 items-center ring-1 ring-white/10 shadow-inner">
                             {previewWords.map((word, i) => (
                                 <AnimatePresence key={i} mode="wait">
                                     <motion.span
                                         className={clsx(
-                                            'text-sm font-semibold transition-all duration-100 rounded px-0.5',
+                                            'text-[11px] font-semibold transition-all duration-100 rounded px-0.5',
                                             previewWordIndex === i
                                                 ? 'text-yellow-300 bg-yellow-300/20 scale-110'
                                                 : isPreviewing && previewWordIndex !== null && i < previewWordIndex
@@ -357,7 +358,7 @@ export const AudioSettings = () => {
                         <button
                             onClick={handlePreview}
                             className={clsx(
-                                'w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-sm backdrop-blur-md transition-all active:scale-95',
+                                'w-full flex items-center justify-center gap-1.5 py-2 rounded-lg font-bold text-[12px] backdrop-blur-md transition-all active:scale-95',
                                 isPreviewing
                                     ? 'bg-white/30 text-white border border-white/30'
                                     : 'bg-white text-indigo-600 shadow-lg hover:shadow-xl'
@@ -370,25 +371,26 @@ export const AudioSettings = () => {
                         </button>
                     </div>
                 </motion.div>
+                </div>
 
                 {/* ── Reading Speed ── */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.08 }}
-                    className="bg-white dark:bg-[#151a2a] rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-white/5"
+                    className="bg-white dark:bg-[#151a2a] rounded-[16px] p-3.5 shadow-sm border border-slate-200/60 dark:border-white/5"
                 >
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                            <div className="size-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                                <FastForward className="text-violet-500" size={18} />
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2.5">
+                            <div className="size-8 rounded-lg bg-violet-500/10 flex items-center justify-center shadow-inner">
+                                <FastForward className="text-violet-500" size={14} />
                             </div>
                             <div>
                                 <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">Reading Speed</h3>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">{rateLabel} pace</p>
                             </div>
                         </div>
-                        <div className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-white/10">
+                        <div className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-white/10 shadow-sm">
                             <span className="text-violet-500 font-black text-sm">{rate.toFixed(1)}x</span>
                         </div>
                     </div>
@@ -436,20 +438,20 @@ export const AudioSettings = () => {
                 >
                     <div className="flex items-center justify-between mb-3 px-1">
                         <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                            <Mic size={16} className="text-indigo-500" />
+                            <Mic size={16} className="text-indigo-500 drop-shadow-sm" />
                             Available Voices
                         </h3>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                             <Volume2 size={12} className="text-slate-400" />
-                            <span className="text-[10px] font-bold text-slate-400 bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-200/80 dark:bg-slate-800 px-2 py-0.5 rounded-md shadow-sm">
                                 {sortedVoices.length} Found
                             </span>
                         </div>
                     </div>
 
-                    <div className="space-y-2.5">
+                    <div className="space-y-2">
                         {sortedVoices.length === 0 ? (
-                            <div className="p-6 text-center text-slate-400 text-sm bg-white dark:bg-[#151a2a] rounded-3xl border border-slate-100 dark:border-white/5">
+                            <div className="p-4 text-center text-slate-400 text-xs bg-white dark:bg-[#151a2a] rounded-[16px] border border-slate-200/60 dark:border-white/5 shadow-sm">
                                 {isNative
                                     ? 'Loading voices from your device...'
                                     : 'No voices found. Check your browser TTS settings.'}
@@ -467,15 +469,15 @@ export const AudioSettings = () => {
                                         key={key}
                                         onClick={() => handleVoiceSelect(v)}
                                         className={clsx(
-                                            'w-full flex items-center justify-between p-4 rounded-2xl border transition-all text-left active:scale-[0.98]',
+                                            'w-full flex items-center justify-between py-2.5 px-3.5 rounded-xl border transition-all text-left active:scale-[0.98]',
                                             isSelected
-                                                ? 'bg-indigo-500/10 border-indigo-500/50 dark:bg-indigo-500/20 shadow-sm'
-                                                : 'bg-white dark:bg-[#151a2a] border-slate-100 dark:border-white/5 hover:border-indigo-500/30'
+                                                ? 'bg-indigo-50/80 border-indigo-500/40 dark:bg-indigo-500/20 shadow-sm ring-1 ring-indigo-500/20'
+                                                : 'bg-white dark:bg-[#151a2a] border-slate-200/80 dark:border-white/5 hover:border-indigo-500/30 shadow-sm'
                                         )}
                                     >
                                         <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <span className={clsx('font-bold text-sm', isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300')}>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className={clsx('font-bold text-[13px]', isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-200')}>
                                                     {label}
                                                 </span>
                                                 {isEnhanced ? (
@@ -493,14 +495,14 @@ export const AudioSettings = () => {
                                                     </span>
                                                 )}
                                             </div>
-                                            <span className="text-[11px] text-slate-400 font-medium">{v.lang}</span>
+                                            <span className="text-[10px] text-slate-400 font-medium">{v.lang}</span>
                                         </div>
 
                                         <div className={clsx(
-                                            'size-5 rounded-full border-2 flex items-center justify-center ml-3 shrink-0 transition-colors',
-                                            isSelected ? 'border-indigo-500' : 'border-slate-300 dark:border-slate-600'
+                                            'size-4 rounded-full border-[1.5px] flex items-center justify-center ml-2 shrink-0 transition-all shadow-inner',
+                                            isSelected ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800'
                                         )}>
-                                            {isSelected && <div className="size-2.5 bg-indigo-500 rounded-full" />}
+                                            {isSelected && <div className="size-2 bg-indigo-500 rounded-full shadow-sm" />}
                                         </div>
                                     </button>
                                 );
