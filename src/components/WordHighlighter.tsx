@@ -145,8 +145,12 @@ export function WordHighlighter({
             target.classList.add('tts-active-word');
             activeSpanRef.current = target;
 
-            // Smooth scroll the word into view (centered)
-            target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+            // Only scroll if the word is getting outside the comfortable viewing area
+            const rect = target.getBoundingClientRect();
+            const viewportHeight = window.innerHeight;
+            if (rect.top < 100 || rect.bottom > viewportHeight - 200) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
         } else {
             // Fallback: find by overlap — the span whose [data-s, data-e] contains activeStart
             const allSpans = rootRef.current.querySelectorAll<HTMLElement>('.tts-word');
@@ -156,7 +160,10 @@ export function WordHighlighter({
                 if (s <= activeStart && activeStart < e) {
                     span.classList.add('tts-active-word');
                     activeSpanRef.current = span;
-                    span.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    const rect = span.getBoundingClientRect();
+                    if (rect.top < 100 || rect.bottom > window.innerHeight - 200) {
+                        span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                     break;
                 }
             }
