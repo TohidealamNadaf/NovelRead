@@ -185,7 +185,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
                             {/* Secondary Controls (Speed & Settings) */}
                             <div className="flex items-center justify-between px-4">
                                 <Link 
-                                    to="/audio-settings"
+                                    to="/audio"
                                     onClick={() => setIsExpanded(false)}
                                     className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-bold text-slate-600 dark:text-slate-300 active:scale-95 transition-all"
                                 >
