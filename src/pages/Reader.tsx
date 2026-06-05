@@ -5,8 +5,9 @@ import clsx from 'clsx';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { dbService, type Novel, type Chapter } from '../services/db.service';
 import { audioService } from '../services/audio.service';
-import type { TTSSegment } from '../services/ttsEngine';
+import type { WordBoundary } from '../services/ttsEngine';
 import { settingsService } from '../services/settings.service';
+import { WordHighlighter } from '../components/WordHighlighter';
 import { scraperService } from '../services/scraper.service';
 import { CompletionModal } from '../components/CompletionModal';
 import { SummaryModal } from '../components/SummaryModal';
@@ -93,8 +94,7 @@ export const Reader = () => {
     // Audio State
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isMusicPlaying, setIsMusicPlaying] = useState(false);
-    const [currentSegment, setCurrentSegment] = useState<TTSSegment | null>(null);
-    const [currentWordBoundary, setCurrentWordBoundary] = useState<{charIndex: number, charLength: number} | null>(null);
+    const [wordBoundary, setWordBoundary] = useState<WordBoundary | null>(null);
 
     // User Settings State (Global)
     const [settings, setSettings] = useState(settingsService.getSettings());
@@ -171,8 +171,7 @@ export const Reader = () => {
         const audioUnsub = audioService.subscribe((state) => {
             setIsSpeaking(state.isTtsPlaying && !state.isTtsPaused);
             setIsMusicPlaying(state.isBgmPlaying);
-            setCurrentSegment(state.currentSegment);
-            setCurrentWordBoundary(state.currentWordBoundary);
+            setWordBoundary(state.wordBoundary);
         });
 
         // Sync with global app settings
@@ -186,99 +185,8 @@ export const Reader = () => {
         };
     }, [novelId, chapterId, location.state]);
 
-    // TTS text highlighting effect - O(1) performance to prevent crashing
-    useEffect(() => {
-        const contentEl = document.getElementById('reader-content-container');
-        if (!contentEl || !currentSegment || !isSpeaking) {
-            const container = document.getElementById('tts-segment-container');
-            if (container && container.parentNode) {
-                container.parentNode.replaceChild(document.createTextNode(container.textContent || ''), container);
-            }
-            return;
-        }
-
-        const segmentText = currentSegment.text;
-        let container = document.getElementById('tts-segment-container');
-
-        // If segment container doesn't exist or is for a different segment, create it
-        if (!container || container.getAttribute('data-segment-id') !== String(currentSegment.id)) {
-            if (container && container.parentNode) {
-                container.parentNode.replaceChild(document.createTextNode(container.textContent || ''), container);
-            }
-
-            const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null);
-            let node;
-            while ((node = walker.nextNode())) {
-                const text = node.textContent || '';
-                const segmentIndex = text.indexOf(segmentText);
-
-                if (segmentIndex !== -1) {
-                    const before = text.slice(0, segmentIndex);
-                    const match = text.slice(segmentIndex, segmentIndex + segmentText.length);
-                    const after = text.slice(segmentIndex + segmentText.length);
-
-                    const parent = node.parentNode;
-                    if (parent) {
-                        const fragment = document.createDocumentFragment();
-                        if (before) fragment.appendChild(document.createTextNode(before));
-
-                        container = document.createElement('span');
-                        container.id = 'tts-segment-container';
-                        container.setAttribute('data-segment-id', String(currentSegment.id));
-                        container.textContent = match;
-                        fragment.appendChild(container);
-
-                        if (after) fragment.appendChild(document.createTextNode(after));
-                        parent.replaceChild(fragment, node);
-
-                        // Only scroll when finding a new segment
-                        container.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                    break;
-                }
-            }
-        }
-
-        // Apply word highlight safely inside the isolated container
-        if (container) {
-            if (currentWordBoundary) {
-                // Handle Chrome Android bug where it fires 1 word boundary for the whole sentence
-                const isFakeWord = currentWordBoundary.charLength >= segmentText.length - 2;
-                
-                if (isFakeWord) {
-                    const span = document.createElement('span');
-                    span.className = 'tts-highlight';
-                    span.textContent = segmentText;
-                    container.innerHTML = '';
-                    container.appendChild(span);
-                } else {
-                    const charIndex = currentWordBoundary.charIndex;
-                    const charLength = currentWordBoundary.charLength;
-                    
-                    if (charIndex + charLength <= segmentText.length) {
-                        const before = segmentText.slice(0, charIndex);
-                        const match = segmentText.slice(charIndex, charIndex + charLength);
-                        const after = segmentText.slice(charIndex + charLength);
-                        
-                        const matchSpan = document.createElement('span');
-                        matchSpan.className = 'tts-highlight tts-word-highlight';
-                        matchSpan.textContent = match;
-                        
-                        container.innerHTML = '';
-                        if (before) container.appendChild(document.createTextNode(before));
-                        container.appendChild(matchSpan);
-                        if (after) container.appendChild(document.createTextNode(after));
-                    }
-                }
-            } else {
-                const span = document.createElement('span');
-                span.className = 'tts-highlight';
-                span.textContent = segmentText;
-                container.innerHTML = '';
-                container.appendChild(span);
-            }
-        }
-    }, [currentSegment, currentWordBoundary, isSpeaking]);
+    // TTS highlighting is handled inside WordHighlighter via imperative classList toggle.
+    // No useEffect needed here — word boundary updates flow through wordBoundary state.
 
     const loadData = async (nid: string, cid: string) => {
         setLoading(true);
@@ -1149,7 +1057,12 @@ export const Reader = () => {
                                 fontFamily: font === 'comfortable' ? 'Georgia, "Merriweather", "Palatino Linotype", "Book Antiqua", Inter, Roboto, serif' : undefined
                             }}
                         >
-                            <div id="reader-content-container" dangerouslySetInnerHTML={{ __html: chapter.content || '' }} />
+                            <WordHighlighter
+                                id="reader-content-container"
+                                htmlContent={chapter.content || ''}
+                                activeStart={isSpeaking && wordBoundary ? wordBoundary.start : null}
+                                activeEnd={isSpeaking && wordBoundary ? wordBoundary.end : null}
+                            />
 
                             {/* End of Chapter - Next Chapter Hint */}
                             {nextChapter && (

@@ -1,439 +1,185 @@
 /**
- * TTS Engine - Emotion-Aware Text-to-Speech System
- * 
- * This engine provides human-natural speech by:
- * 1. Segmenting text into narration, dialogue, inner monologue, and action
- * 2. Applying emotion via speech parameters (rate, pitch) per segment type
- * 3. Enabling pause/resume at segment boundaries
- * 4. Tracking current segment for text highlighting
- * 
- * WHY EMOTION IS SIMULATED THIS WAY:
- * - Uses ONLY native OS TTS (no cloud APIs, no API keys, fully offline)
- * - Emotion is conveyed through pacing and pitch variation
- * - No rewriting of text - preserves original author intent
- * 
- * WHY NO CLOUD TTS:
- * - Works offline after system voice pack download
- * - No API costs or rate limits
- * - Safe for Play Store distribution
- * - Fast and lightweight
+ * TTS Engine — Optimal Implementation
+ *
+ * APPROACH (same as Amazon Kindle Assistive Reader & Google Play Books):
+ *
+ * 1. Pass the FULL plain text to a single speak() call.
+ * 2. On Android (native): listen to `onRangeStart` from the Capacitor plugin.
+ *    The Android UtteranceProgressListener fires `onRangeStart(start, end)`
+ *    with the absolute character indices of the word being spoken.
+ * 3. On Web/browser: use Web Speech API `onboundary` for word tracking.
+ *
+ * This eliminates the complex sentence-chunking that was the root cause of
+ * TTS not working on Android (Web Speech API is not available in WebViews).
+ *
+ * KEY BENEFITS:
+ * - Single speak() call = native pause/resume works correctly
+ * - onRangeStart gives word-precise char indices → karaoke highlighting
+ * - Fully offline, free, uses device's own TTS (Google TTS)
+ * - Works on Android 8.1+
  */
 
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import { App } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+import type { PluginListenerHandle } from '@capacitor/core';
 
-// Segment types for emotion mapping
-export type SegmentType = 'narration' | 'dialogue' | 'inner' | 'action';
-
-export interface TTSSegment {
-    id: number;
-    text: string;
-    type: SegmentType;
-    rate: number;
-    pitch: number;
-    startIndex: number;  // For text highlighting in original content
-    endIndex: number;
+export interface WordBoundary {
+    start: number;   // Absolute char index in plain text
+    end: number;     // Absolute char end index
+    word: string;    // The word being spoken
 }
 
-// Speech parameters per segment type - tuned for natural audiobook feel
-const EMOTION_MAP: Record<SegmentType, { rate: number; pitch: number }> = {
-    narration: { rate: 0.98, pitch: 1.0 },   // Calm storytelling
-    dialogue: { rate: 1.02, pitch: 1.05 },    // Expressive, slightly faster
-    inner: { rate: 0.95, pitch: 0.95 },       // Intimate, slower, lower
-    action: { rate: 1.05, pitch: 1.05 },      // Urgent, faster
-};
-
-// Keywords for detecting segment types (heuristic, no NLP)
-const INNER_KEYWORDS = ['thought', 'felt', 'wondered', 'remembered', 'realized', 'knew', 'believed', 'hoped', 'feared', 'wished'];
-const ACTION_VERBS = ['ran', 'jumped', 'struck', 'grabbed', 'slashed', 'dodged', 'threw', 'kicked', 'punched', 'charged', 'leaped', 'crashed', 'exploded', 'sprinted', 'attacked', 'blocked', 'parried'];
-
-type SegmentChangeCallback = (segment: TTSSegment | null, index: number) => void;
 type StateChangeCallback = (isPlaying: boolean, isPaused: boolean) => void;
+type WordChangeCallback = (boundary: WordBoundary) => void;
+type CompleteCallback = () => void;
 
 export class TTSEngine {
-    private segments: TTSSegment[] = [];
-    private currentIndex: number = 0;
-    private isPlaying: boolean = false;
-    private isPaused: boolean = false;
-    private shouldStop: boolean = false;
-    private isNative: boolean = false; // Forced to false to use Web Speech API for word highlighting
+    private isPlaying = false;
+    private isPaused = false;
+    private shouldStop = false;
 
-    // User settings
-    private baseRate: number = 1.0;
-    private basePitch: number = 1.0;
-    private webVoice: any | null = null;
+    // Whether we're running in a real Capacitor native app (Android/iOS)
+    readonly isNative: boolean;
+
+    // Settings
+    private baseRate = 1.0;
+    private basePitch = 1.0;
+    private webVoice: SpeechSynthesisVoice | null = null;
+    private nativeVoiceIndex = -1;
+
+    // Native listener handle (for cleanup)
+    private nativeRangeListener: PluginListenerHandle | null = null;
+
+    // Web Speech API — current text for resume from current position
+    private currentText = '';
+    private currentResumeOffset = 0; // char index where we resume from after pause
 
     // Callbacks
-    private onSegmentChange: SegmentChangeCallback | null = null;
-    private onWordChange: ((segment: TTSSegment, charIndex: number, charLength: number) => void) | null = null;
+    private onWordChange: WordChangeCallback | null = null;
     private onStateChange: StateChangeCallback | null = null;
-    private onComplete: (() => void) | null = null;
+    private onComplete: CompleteCallback | null = null;
 
     constructor() {
-        // We enforce web implementation for precise word boundary highlighting
-        this.isNative = false; 
-        this.setupEventListeners();
+        this.isNative = Capacitor.isNativePlatform();
+        console.log(`[TTSEngine] Platform: ${this.isNative ? 'NATIVE (Android/iOS)' : 'WEB (browser)'}`);
+        this.setupLifecycleListeners();
     }
 
-    private setupEventListeners() {
-        // Pause on background
+    private setupLifecycleListeners() {
+        // Pause when app goes to background
         App.addListener('appStateChange', ({ isActive }) => {
             if (!isActive && this.isPlaying && !this.isPaused) {
-                console.log('[TTS] App backgrounded, pausing...');
                 this.pause();
             }
         });
 
-        // Pause on screen lock / visibility change
+        // Pause when tab/window hidden
         if (typeof document !== 'undefined') {
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden && this.isPlaying && !this.isPaused) {
-                    console.log('[TTS] Document hidden, pausing...');
                     this.pause();
                 }
             });
         }
     }
 
-    /**
-     * Set callbacks for UI updates
-     */
+    // ─── PUBLIC API ──────────────────────────────────────────────────────────
+
     setCallbacks(options: {
-        onSegmentChange?: SegmentChangeCallback;
-        onWordChange?: (segment: TTSSegment, charIndex: number, charLength: number) => void;
+        onWordChange?: WordChangeCallback;
         onStateChange?: StateChangeCallback;
-        onComplete?: () => void;
+        onComplete?: CompleteCallback;
     }) {
-        if (options.onSegmentChange) this.onSegmentChange = options.onSegmentChange;
-        if (options.onWordChange) this.onWordChange = options.onWordChange;
-        if (options.onStateChange) this.onStateChange = options.onStateChange;
-        if (options.onComplete) this.onComplete = options.onComplete;
+        if (options.onWordChange !== undefined) this.onWordChange = options.onWordChange;
+        if (options.onStateChange !== undefined) this.onStateChange = options.onStateChange;
+        if (options.onComplete !== undefined) this.onComplete = options.onComplete;
     }
 
-    /**
-     * Set speech settings
-     */
-    setSettings(options: { rate?: number; pitch?: number; voiceIndex?: number; voice?: any }) {
+    setSettings(options: {
+        rate?: number;
+        pitch?: number;
+        voice?: any;        // SpeechSynthesisVoice (web) or VoiceInfo (native)
+        voiceIndex?: number; // Native voice index
+    }) {
         if (options.rate !== undefined) this.baseRate = options.rate;
         if (options.pitch !== undefined) this.basePitch = options.pitch;
-        
-        if (options.voice !== undefined) {
+        if (options.voiceIndex !== undefined) this.nativeVoiceIndex = options.voiceIndex;
+
+        if (options.voice !== undefined && !this.isNative) {
+            // Web: resolve voice object from synthesis API
             if (options.voice && typeof window !== 'undefined' && window.speechSynthesis) {
-                const webVoices = window.speechSynthesis.getVoices();
-                this.webVoice = webVoices.find(v => v.name === options.voice.name) || options.voice;
+                const voices = window.speechSynthesis.getVoices();
+                this.webVoice = voices.find(v => v.name === options.voice?.name) || options.voice || null;
             } else {
-                this.webVoice = options.voice;
+                this.webVoice = options.voice || null;
             }
         }
     }
 
     /**
-     * Segment text into speech chunks with emotion parameters
+     * Speak the given plain text (HTML should be stripped before calling).
+     * Resumes from the beginning each time — resuming mid-text is handled separately.
      */
-    segmentText(htmlContent: string): TTSSegment[] {
-        // Use DOMParser for safer text extraction
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlContent, 'text/html');
-        const text = doc.body.textContent || '';
+    async speak(plainText: string): Promise<void> {
+        // Stop any current speech first
+        await this.stop(false); // false = don't clear "shouldStop" so we can restart
 
-        // Clean up whitespace but preserve paragraph breaks if needed (though we just take textContent here)
-        // For better experience, we might want to process block elements separately, but sticking to text extraction for now
-        const cleanText = text.replace(/\s+/g, ' ').trim();
-
-        const segments: TTSSegment[] = [];
-        let id = 0;
-        let currentPos = 0;
-
-        // Split into sentences/phrases for natural pauses
-        const chunks = this.splitIntoChunks(cleanText);
-
-        for (const chunk of chunks) {
-            if (!chunk.trim()) continue;
-
-            const type = this.detectSegmentType(chunk);
-            const emotion = EMOTION_MAP[type];
-
-            // Note: indexOf might match earlier occurrences. 
-            // For rigorous highlighting, we'd need to track position more carefully or use unique IDs in DOM.
-            // This is a "good enough" heuristic for now given the constraints.
-            const startIndex = cleanText.indexOf(chunk, currentPos);
-            const endIndex = startIndex + chunk.length;
-
-            segments.push({
-                id: id++,
-                text: chunk.trim(),
-                type,
-                rate: emotion.rate,
-                pitch: emotion.pitch,
-                startIndex,
-                endIndex,
-            });
-
-            currentPos = endIndex;
-        }
-
-        return segments;
-    }
-
-    /**
-     * Split text into speakable chunks (sentences or dialogue blocks)
-     * Supports smart quotes for better dialogue detection
-     */
-    private splitIntoChunks(text: string): string[] {
-        const chunks: string[] = [];
-        let remaining = text;
-
-        // Smart quote pairs: "" “” ‘’
-        const quoteRegex = /^["“'‘]([^"”'’]+)["”'’]/;
-
-        while (remaining.length > 0) {
-            remaining = remaining.trim();
-            if (!remaining) break;
-
-            // Check for quoted dialogue first
-            const dialogueMatch = remaining.match(quoteRegex);
-            if (dialogueMatch) {
-                chunks.push(dialogueMatch[0]);
-                remaining = remaining.slice(dialogueMatch[0].length);
-                continue;
-            }
-
-            // Find sentence boundaries: . ! ? followed by whitespace or end of string
-            // We also want to stop at start of quotes to keep dialogue separate
-            const sentenceEndMatch = remaining.match(/([.!?]+)(\s|$)|(["“'‘])/);
-
-            if (sentenceEndMatch) {
-                if (sentenceEndMatch[3]) {
-                    // Found a quote start before end of sentence -> split before quote
-                    const splitIndex = sentenceEndMatch.index!;
-                    if (splitIndex === 0) {
-                        // Should be caught by dialogue match, but safe fallback
-                        chunks.push(remaining[0]);
-                        remaining = remaining.slice(1);
-                    } else {
-                        chunks.push(remaining.slice(0, splitIndex).trim());
-                        remaining = remaining.slice(splitIndex);
-                    }
-                } else {
-                    // Normal sentence end
-                    const endPos = sentenceEndMatch.index! + sentenceEndMatch[0].length;
-                    chunks.push(remaining.slice(0, endPos).trim());
-                    remaining = remaining.slice(endPos);
-                }
-            } else {
-                // No sentence end found, take remaining
-                chunks.push(remaining.trim());
-                break;
-            }
-        }
-
-        return chunks;
-    }
-
-    /**
-     * Detect segment type using heuristics
-     */
-    private detectSegmentType(text: string): SegmentType {
-        const lowerText = text.toLowerCase();
-        const trimmed = text.trim();
-
-        // Check for dialogue (quoted text with smart quotes)
-        if (
-            (/^["“'‘]/.test(trimmed) && /["”'’]$/.test(trimmed)) || // Standard wrapped quotes
-            (/^["“]/.test(trimmed) && !/["”]/.test(trimmed)) // Open quote (continuation) - debatable
-        ) {
-            return 'dialogue';
-        }
-
-        // Check for inner monologue keywords
-        for (const keyword of INNER_KEYWORDS) {
-            if (lowerText.includes(keyword)) {
-                return 'inner';
-            }
-        }
-
-        // Check for action verbs
-        for (const verb of ACTION_VERBS) {
-            if (lowerText.includes(verb)) {
-                return 'action';
-            }
-        }
-
-        // Default to narration
-        return 'narration';
-    }
-
-    /**
-     * Start speaking from beginning or resume
-     */
-    async speak(htmlContent: string, startFromIndex: number = 0): Promise<void> {
-        // Parse and segment if starting fresh
-        if (startFromIndex === 0 || this.segments.length === 0) {
-            this.segments = this.segmentText(htmlContent);
-        }
-
-        this.currentIndex = startFromIndex;
+        this.currentText = plainText;
+        this.currentResumeOffset = 0;
         this.isPlaying = true;
         this.isPaused = false;
         this.shouldStop = false;
+        this.notifyState();
 
-        this.notifyStateChange();
-
-        await this.speakLoop();
-    }
-
-    /**
-     * Main speech loop - speaks segments sequentially with batching
-     */
-    private async speakLoop(): Promise<void> {
-        let activePromises: Promise<void>[] = [];
-        let queuedIndex = this.currentIndex;
-
-        while (queuedIndex < this.segments.length && !this.shouldStop) {
-            if (this.isPaused) {
-                await this.sleep(200);
-                continue;
-            }
-
-            // Maintain a buffer of 2 utterances to prevent spin-up latency between sentences
-            if (activePromises.length >= 2) {
-                await Promise.race(activePromises);
-                continue;
-            }
-
-            const segment = this.segments[queuedIndex];
-            const indexBeingQueued = queuedIndex;
-            queuedIndex++;
-
-            const p = this.speakWeb(segment, segment.rate * this.baseRate, segment.pitch * this.basePitch, indexBeingQueued)
-                .catch(e => {
-                    if (!this.shouldStop && !this.isPaused) {
-                        console.error('[TTS] Speak failed:', e);
-                    }
-                });
-
-            const trackedPromise = p.finally(() => {
-                activePromises = activePromises.filter(x => x !== trackedPromise);
-            });
-            
-            activePromises.push(trackedPromise);
-        }
-
-        // Wait for all to finish
-        while (activePromises.length > 0 && !this.shouldStop) {
-            await Promise.race(activePromises);
-        }
-
-        if (!this.shouldStop) {
-            this.cleanup();
+        if (this.isNative) {
+            await this.speakNative(plainText);
+        } else {
+            await this.speakWeb(plainText);
         }
     }
 
-    private cleanup() {
-        this.isPlaying = false;
-        this.isPaused = false;
-        this.onSegmentChange?.(null, -1);
-        this.notifyStateChange();
-
-        if (!this.shouldStop) {
-            this.onComplete?.();
-        }
-
-        // Memory cleanup
-        if (this.shouldStop) {
-            this.segments = []; // Clear segments to free memory
-        }
-    }
-
-    /**
-     * Web Speech API implementation
-     */
-    private speakWeb(segment: TTSSegment, rate: number, pitch: number, index?: number): Promise<void> {
-        return new Promise((resolve, reject) => {
-            if (typeof window === 'undefined' || !window.speechSynthesis) {
-                reject(new Error('Speech synthesis not available'));
-                return;
-            }
-
-            const utterance = new SpeechSynthesisUtterance(segment.text);
-            utterance.rate = rate;
-            utterance.pitch = pitch;
-            if (this.webVoice) {
-                utterance.voice = this.webVoice;
-            }
-
-            utterance.onstart = () => {
-                if (index !== undefined) {
-                    this.currentIndex = index;
-                }
-                this.onSegmentChange?.(segment, segment.id);
-            };
-
-            utterance.onend = () => resolve();
-            utterance.onerror = (e) => reject(e);
-            utterance.onboundary = (e) => {
-                if (e.name === 'word') {
-                    // e.charIndex is relative to the segment text
-                    // e.charLength is provided by some engines, but we can fallback to finding next space
-                    let charLength = e.charLength;
-                    if (!charLength) {
-                        const remaining = segment.text.slice(e.charIndex);
-                        const match = remaining.match(/^.*?[\w\u00C0-\u017F]+/);
-                        charLength = match ? match[0].length : (remaining.indexOf(' ') > 0 ? remaining.indexOf(' ') : 1);
-                    }
-                    this.onWordChange?.(segment, e.charIndex, charLength);
-                }
-            };
-
-            window.speechSynthesis.speak(utterance);
-        });
-    }
-
-
-
-    /**
-     * Pause speaking (stops at segment boundary)
-     */
     pause(): void {
-        if (this.isPlaying && !this.isPaused) {
-            this.isPaused = true;
-            this.notifyStateChange();
+        if (!this.isPlaying || this.isPaused) return;
 
-            // Stop current native speech
-            if (this.isNative) {
-                TextToSpeech.stop().catch(console.error);
-            } else if (typeof window !== 'undefined' && window.speechSynthesis) {
-                window.speechSynthesis.cancel();
-            }
+        this.isPaused = true;
+        this.notifyState();
+
+        if (this.isNative) {
+            TextToSpeech.stop().catch(console.error);
+        } else if (typeof window !== 'undefined' && window.speechSynthesis) {
+            // Record the last spoken position for resume
+            // (charIndex of onboundary events track this)
+            window.speechSynthesis.pause();
         }
     }
 
-    /**
-     * Resume speaking from current position
-     */
     async resume(): Promise<void> {
-        if (this.isPaused && this.segments.length > 0) {
-            this.isPaused = false;
-            this.notifyStateChange();
-            // Loop will continue automatically
-        } else if (!this.isPlaying && this.segments.length > 0) {
-            // Restart from current position
-            this.isPlaying = true;
-            this.isPaused = false;
-            this.shouldStop = false;
-            this.notifyStateChange();
-            await this.speakLoop();
+        if (!this.isPaused) return;
+
+        this.isPaused = false;
+        this.notifyState();
+
+        if (this.isNative) {
+            // Android native has no "resume" — re-speak from offset
+            const textFromOffset = this.currentText.slice(this.currentResumeOffset);
+            await this.speakNative(textFromOffset, this.currentResumeOffset);
+        } else if (typeof window !== 'undefined' && window.speechSynthesis) {
+            window.speechSynthesis.resume();
         }
     }
 
-    /**
-     * Stop speaking completely
-     */
-    async stop(): Promise<void> {
+    async stop(resetState = true): Promise<void> {
         this.shouldStop = true;
-        this.isPaused = false;
         this.isPlaying = false;
-        this.currentIndex = 0;
+        this.isPaused = false;
+        this.currentResumeOffset = 0;
+
+        // Remove native listener
+        if (this.nativeRangeListener) {
+            await this.nativeRangeListener.remove().catch(() => {});
+            this.nativeRangeListener = null;
+        }
 
         if (this.isNative) {
             await TextToSpeech.stop().catch(console.error);
@@ -441,35 +187,147 @@ export class TTSEngine {
             window.speechSynthesis.cancel();
         }
 
-        this.cleanup();
+        if (resetState) {
+            this.currentText = '';
+            this.onWordChange?.(null as any); // clear highlight
+            this.notifyState();
+        }
     }
 
-    /**
-     * Get current state
-     */
     getState() {
-        return {
-            isPlaying: this.isPlaying,
-            isPaused: this.isPaused,
-            currentIndex: this.currentIndex,
-            totalSegments: this.segments.length,
-            currentSegment: this.currentIndex < this.segments.length ? this.segments[this.currentIndex] : null,
-        };
+        return { isPlaying: this.isPlaying, isPaused: this.isPaused };
     }
+
+    // ─── NATIVE (Android / iOS) ──────────────────────────────────────────────
 
     /**
-     * Get all segments (for highlighting UI)
+     * Speak via Capacitor TextToSpeech plugin.
+     * The plugin's `onRangeStart` listener returns absolute {start, end} indices
+     * into the text string passed to speak() — exactly like Kindle/Google Books.
+     *
+     * @param text         Plain text to speak
+     * @param globalOffset Char offset if this is a resume from mid-text
      */
-    getSegments(): TTSSegment[] {
-        return this.segments;
+    private async speakNative(text: string, globalOffset = 0): Promise<void> {
+        // Clean up any previous listener
+        if (this.nativeRangeListener) {
+            await this.nativeRangeListener.remove().catch(() => {});
+            this.nativeRangeListener = null;
+        }
+
+        // Register onRangeStart listener BEFORE calling speak()
+        this.nativeRangeListener = await TextToSpeech.addListener(
+            'onRangeStart',
+            (data: { start: number; end: number; spokenWord: string }) => {
+                if (this.shouldStop || this.isPaused) return;
+
+                const absoluteStart = globalOffset + data.start;
+                const absoluteEnd = globalOffset + data.end;
+
+                // Track the last spoken position for accurate resume
+                this.currentResumeOffset = absoluteStart;
+
+                this.onWordChange?.({
+                    start: absoluteStart,
+                    end: absoluteEnd,
+                    word: data.spokenWord,
+                });
+            }
+        );
+
+        try {
+            await TextToSpeech.speak({
+                text,
+                lang: 'en-US',
+                rate: Math.max(0.5, Math.min(2.0, this.baseRate)),
+                pitch: Math.max(0.5, Math.min(2.0, this.basePitch)),
+                volume: 1.0,
+                ...(this.nativeVoiceIndex >= 0 ? { voice: this.nativeVoiceIndex } : {}),
+            });
+
+            // speak() resolves when done (or if stop() was called)
+            if (!this.shouldStop && !this.isPaused) {
+                this.isPlaying = false;
+                this.onWordChange?.(null as any); // clear highlight
+                this.notifyState();
+                this.onComplete?.();
+            }
+        } catch (e: any) {
+            const msg = e?.message || String(e);
+            // "interrupted" is expected when stop()/pause() is called
+            if (!this.shouldStop && !this.isPaused && !msg.includes('interrupted')) {
+                console.error('[TTSEngine-Native] Speak error:', e);
+            }
+        } finally {
+            // Remove listener when speech ends (whether completed or interrupted)
+            if (this.nativeRangeListener) {
+                await this.nativeRangeListener.remove().catch(() => {});
+                this.nativeRangeListener = null;
+            }
+        }
     }
 
-    private notifyStateChange(): void {
+    // ─── WEB (browser) ──────────────────────────────────────────────────────
+
+    private async speakWeb(text: string): Promise<void> {
+        if (typeof window === 'undefined' || !window.speechSynthesis) {
+            console.error('[TTSEngine-Web] speechSynthesis not available');
+            this.isPlaying = false;
+            this.notifyState();
+            return;
+        }
+
+        return new Promise<void>((resolve) => {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = this.baseRate;
+            utterance.pitch = this.basePitch;
+            if (this.webVoice) utterance.voice = this.webVoice;
+
+            utterance.onboundary = (e) => {
+                if (e.name !== 'word' || this.shouldStop || this.isPaused) return;
+
+                const start = e.charIndex;
+                // charLength may be missing in some engines — derive it
+                let length = (e as any).charLength;
+                if (!length) {
+                    const slice = text.slice(start);
+                    const nextSpace = slice.search(/\s|$|[.,!?;:]/);
+                    length = nextSpace > 0 ? nextSpace : 1;
+                }
+                const end = start + length;
+                this.currentResumeOffset = start;
+
+                this.onWordChange?.({
+                    start,
+                    end,
+                    word: text.slice(start, end),
+                });
+            };
+
+            utterance.onend = () => {
+                if (!this.shouldStop) {
+                    this.isPlaying = false;
+                    this.onWordChange?.(null as any);
+                    this.notifyState();
+                    this.onComplete?.();
+                }
+                resolve();
+            };
+
+            utterance.onerror = (e) => {
+                if (!this.shouldStop && e.error !== 'interrupted' && e.error !== 'canceled') {
+                    console.error('[TTSEngine-Web] Error:', e.error);
+                }
+                resolve();
+            };
+
+            window.speechSynthesis.cancel(); // flush any pending
+            window.speechSynthesis.speak(utterance);
+        });
+    }
+
+    private notifyState(): void {
         this.onStateChange?.(this.isPlaying, this.isPaused);
-    }
-
-    private sleep(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
 

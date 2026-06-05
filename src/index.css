@@ -140,13 +140,30 @@ body::-webkit-scrollbar {
   @apply translate-x-0.5;
 }
 
-/* TTS Text Highlighting */
+/* TTS Word Highlighting — Karaoke Style (used by WordHighlighter) */
+.tts-word {
+  display: inline;
+  border-radius: 3px;
+  transition: background-color 0.08s ease, color 0.08s ease;
+}
+
+.tts-active-word {
+  background-color: rgba(93, 88, 240, 0.22);
+  color: rgb(93, 88, 240);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.dark .tts-active-word {
+  background-color: rgba(139, 92, 246, 0.32);
+  color: rgb(196, 181, 253);
+}
+
+/* Legacy classes kept for backwards compat */
 .tts-highlight {
   background-color: rgba(93, 88, 240, 0.2);
   border-radius: 2px;
-  transition: background-color 0.1s ease-in-out;
 }
-
 .dark .tts-highlight {
   background-color: rgba(93, 88, 240, 0.4);
 }
