@@ -32,7 +32,9 @@ export abstract class BaseScraper {
                         'Accept-Language': 'en-US,en;q=0.5',
                         'Cache-Control': 'no-cache',
                         'Pragma': 'no-cache'
-                    }
+                    },
+                    connectTimeout: 8000,
+                    readTimeout: 10000
                 });
                 
                 if (response.status >= 200 && response.status < 300) {
@@ -45,18 +47,29 @@ export abstract class BaseScraper {
                         ? `/api/proxy?url=${encodeURIComponent(url)}`
                         : `/api/proxy?url=${encodeURIComponent(url)}`);
 
-                const response = await fetch(fetchUrl, {
-                    cache: 'no-cache',
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                        'Accept': 'text/html',
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache'
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                try {
+                    const response = await fetch(fetchUrl, {
+                        cache: 'no-cache',
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                            'Accept': 'text/html',
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
+                        },
+                        signal: controller.signal
+                    });
+                    
+                    clearTimeout(timeoutId);
+
+                    if (response.ok) {
+                        return await response.text();
                     }
-                });
-                
-                if (response.ok) {
-                    return await response.text();
+                } catch (fetchErr) {
+                    clearTimeout(timeoutId);
+                    throw fetchErr;
                 }
             }
             return null;
