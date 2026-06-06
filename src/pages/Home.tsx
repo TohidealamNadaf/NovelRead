@@ -210,7 +210,7 @@ export const Home = () => {
             {/* Main Content Area */}
             <div
                 ref={containerRef}
-                className="flex-1 overflow-y-auto overflow-x-hidden touch-pan-y relative"
+                className="flex-1 overflow-y-auto overflow-x-hidden touch-pan-y relative pb-24 hide-scrollbar"
                 onScroll={handleScroll}
             >
                 {/* Header Section - Sticky Frosted Glass */}
@@ -319,14 +319,8 @@ export const Home = () => {
                 </motion.div>
             </motion.div>
 
-            {/* Scrollable Content */}
-            <div
-                ref={containerRef}
-                onScroll={handleScroll}
-                className="flex-1 overflow-y-auto pb-24 hide-scrollbar"
-            >
-                {/* Main Content Area */}
-                <div className="pt-2">
+            {/* Main Content Area */}
+            <div className="pt-2">
                     {/* Hero Banner for Continue Reading */}
                     {!searchQuery && selectedCategory === 'All' && heroNovel && !editMode && (
                         <motion.div 
