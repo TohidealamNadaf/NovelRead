@@ -1128,7 +1128,7 @@ export const Reader = () => {
                             </div>
                             <div className="px-5 pb-8 space-y-5">
                                 {/* TTS & Chapter Navigation (Historic Design) */}
-                                <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2.5">
                                     <button
                                         onClick={() => {
                                             if (chapter?.content) {
@@ -1138,7 +1138,7 @@ export const Reader = () => {
                                                 setTimeout(() => setIsCopied(false), 2000);
                                             }
                                         }}
-                                        className="w-11 shrink-0 flex items-center justify-center h-11 bg-gray-100 dark:bg-gray-800 rounded-xl active:scale-95 transition-transform text-gray-700 dark:text-gray-300"
+                                        className="w-12 shrink-0 flex items-center justify-center h-12 bg-gray-100 dark:bg-gray-800 rounded-xl active:scale-95 transition-transform text-gray-700 dark:text-gray-300"
                                         title="Copy Chapter"
                                     >
                                         {isCopied ? <Check size={18} className="text-green-500" /> : <Copy size={18} />}
@@ -1147,7 +1147,7 @@ export const Reader = () => {
                                     <button
                                         onClick={handlePrevChapter}
                                         disabled={!prevChapter}
-                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-11 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm active:scale-95", !prevChapter && "opacity-30")}
+                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-12 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm active:scale-95", !prevChapter && "opacity-30")}
                                     >
                                         <Rewind size={16} />
                                         Prev
@@ -1170,14 +1170,11 @@ export const Reader = () => {
                                     <button
                                         onClick={handleNextChapter}
                                         disabled={!nextChapter}
-                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-11 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm active:scale-95", !nextChapter && "opacity-30")}
+                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-12 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm active:scale-95", !nextChapter && "opacity-30")}
                                     >
                                         Next
                                         <FastForward size={16} />
                                     </button>
-
-                                    {/* Invisible spacer to perfectly balance the Copy button on the left */}
-                                    <div className="w-11 shrink-0"></div>
                                 </div>
 
                                 {/* Quick Actions Grid */}
