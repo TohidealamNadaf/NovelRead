@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MoreHorizontal, Pause, Play, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus, WandSparkles, Rewind, FastForward } from 'lucide-react';
+import { MoreHorizontal, Pause, Play, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus, WandSparkles, Rewind, FastForward, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -109,6 +109,9 @@ export const Reader = () => {
     // Rewrite State
     const [isRewriting, setIsRewriting] = useState(false);
     const [rewriteProgress, setRewriteProgress] = useState('');
+
+    // Copy State
+    const [isCopied, setIsCopied] = useState(false);
 
     // Auto-Scroll
     const {
@@ -1126,14 +1129,30 @@ export const Reader = () => {
                             <div className="px-5 pb-8 space-y-5">
                                 {/* TTS & Chapter Navigation (Historic Design) */}
                                 <div className="flex items-center justify-between gap-3">
-                                    <button
-                                        onClick={handlePrevChapter}
-                                        disabled={!prevChapter}
-                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-11 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm active:scale-95", !prevChapter && "opacity-30")}
-                                    >
-                                        <Rewind size={16} />
-                                        Prev
-                                    </button>
+                                    <div className="flex-1 flex gap-2">
+                                        <button
+                                            onClick={handlePrevChapter}
+                                            disabled={!prevChapter}
+                                            className={clsx("flex-1 flex items-center justify-center gap-1.5 h-11 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm active:scale-95", !prevChapter && "opacity-30")}
+                                        >
+                                            <Rewind size={16} />
+                                            Prev
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                if (chapter?.content) {
+                                                    const doc = new DOMParser().parseFromString(chapter.content, 'text/html');
+                                                    navigator.clipboard.writeText(doc.body.textContent || '');
+                                                    setIsCopied(true);
+                                                    setTimeout(() => setIsCopied(false), 2000);
+                                                }
+                                            }}
+                                            className="w-11 shrink-0 flex items-center justify-center h-11 bg-gray-100 dark:bg-gray-800 rounded-xl active:scale-95 transition-transform text-gray-700 dark:text-gray-300"
+                                            title="Copy Chapter"
+                                        >
+                                            {isCopied ? <Check size={18} className="text-green-500" /> : <Copy size={18} />}
+                                        </button>
+                                    </div>
                                     
                                     <button 
                                         onClick={() => {
