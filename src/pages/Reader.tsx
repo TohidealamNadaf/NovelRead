@@ -5,7 +5,6 @@ import clsx from 'clsx';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { dbService, type Novel, type Chapter } from '../services/db.service';
 import { audioService } from '../services/audio.service';
-
 import { settingsService } from '../services/settings.service';
 import { WordHighlighter } from '../components/WordHighlighter';
 import { scraperService } from '../services/scraper.service';
@@ -1152,8 +1151,8 @@ export const Reader = () => {
                                         <Rewind size={16} />
                                         Prev
                                     </button>
-                                    
-                                    <button 
+
+                                    <button
                                         onClick={() => {
                                             if (isSpeaking) {
                                                 audioService.stopSpeaking(true);

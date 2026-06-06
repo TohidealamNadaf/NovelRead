@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { RefreshCcw, Filter, Search, X } from 'lucide-react';
 import { Header } from '../Header';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useQuickReturnHeader } from '../../hooks/useQuickReturnHeader';
 
 interface DiscoverHeaderProps {
     profileImage: string;
@@ -19,6 +20,7 @@ interface DiscoverHeaderProps {
     navigate: (path: string) => void;
     isCollapsed: boolean;
     onSearchIconClick: () => void;
+    scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 export const DiscoverHeader = memo(({
@@ -35,10 +37,21 @@ export const DiscoverHeader = memo(({
     setMode,
     navigate,
     isCollapsed,
-    onSearchIconClick
+    onSearchIconClick,
+    scrollContainerRef
 }: DiscoverHeaderProps) => {
+    const isHidden = useQuickReturnHeader(scrollContainerRef);
+
     return (
-        <div className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md">
+        <motion.div 
+            variants={{
+                visible: { y: 0 },
+                hidden: { y: "-100%" },
+            }}
+            animate={isHidden ? "hidden" : "visible"}
+            transition={{ duration: 0.35, ease: "easeInOut" }}
+            className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md"
+        >
             <Header
                 title="Discover"
                 transparent
@@ -176,6 +189,6 @@ export const DiscoverHeader = memo(({
                     ))}
                 </div>
             </motion.div>
-        </div>
+        </motion.div>
     );
 });

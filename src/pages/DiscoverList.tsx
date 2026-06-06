@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Search, Bolt, TrendingUp, BookOpen, RefreshCw } from 'lucide-react';
 import { FooterNavigation } from '../components/FooterNavigation';
 import { Header } from '../components/Header';
+import { motion } from 'framer-motion';
+import { useQuickReturnHeader } from '../hooks/useQuickReturnHeader';
 import { scraperService } from '../services/scraper.service';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { useLocation } from 'react-router-dom';
@@ -27,6 +29,7 @@ export const DiscoverList = () => {
     const [hasMore, setHasMore] = useState(true);
     const isLoadingRef = useRef(false);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const isHeaderHidden = useQuickReturnHeader(scrollContainerRef);
 
     // Save scroll position when navigating away
     const handleScroll = () => {
@@ -174,8 +177,22 @@ export const DiscoverList = () => {
 
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white h-screen w-full flex flex-col font-display overflow-hidden">
-            {/* Header - Fixed at top */}
-            <div className="bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md z-40 shrink-0">
+            {/* Grid Content - Independent Scroll */}
+            <div
+                ref={scrollContainerRef}
+                onScroll={handleScroll}
+                className="flex-1 overflow-y-auto px-4 pt-0 pb-32 relative"
+            >
+                {/* Header - Fixed at top */}
+                <motion.div 
+                    variants={{
+                        visible: { y: 0 },
+                        hidden: { y: "-100%" },
+                    }}
+                    animate={isHeaderHidden ? "hidden" : "visible"}
+                    transition={{ duration: 0.35, ease: "easeInOut" }}
+                    className="sticky top-0 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md z-40 shrink-0 -mx-4 px-4 pb-2 pt-2 shadow-sm"
+                >
                 <Header
                     title={title}
                     showBack
@@ -220,14 +237,8 @@ export const DiscoverList = () => {
                         ))}
                     </div>
                 )}
-            </div>
+                </motion.div>
 
-            {/* Grid Content - Independent Scroll */}
-            <div
-                ref={scrollContainerRef}
-                onScroll={handleScroll}
-                className="flex-1 overflow-y-auto px-4 pt-2 pb-32"
-            >
                 {isLoading ? (
                     <div className="flex flex-col items-center justify-center py-20 opacity-50">
                         <RefreshCw size={40} className="animate-spin mb-4 text-primary" />

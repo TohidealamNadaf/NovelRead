@@ -7,6 +7,7 @@ import { Search, Bell, Plus, X, BookOpen, Clock, ArrowUp, Play, ChevronRight } f
 import { notificationService } from '../services/notification.service';
 import { useProfileImage } from '../hooks/useProfileImage';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useQuickReturnHeader } from '../hooks/useQuickReturnHeader';
 
 // Custom hook for responsive grid columns
 function useResponsiveColumns() {
@@ -40,6 +41,7 @@ export const Home = () => {
     const location = useLocation();
 
     const COLUMN_COUNT = useResponsiveColumns();
+    const isHeaderHidden = useQuickReturnHeader(containerRef);
 
     // Long Press Edit Mode Tracking
     const pressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -205,9 +207,23 @@ export const Home = () => {
 
     return (
         <div className="relative h-screen w-full flex flex-col bg-background-light dark:bg-[#0f111a] overflow-hidden font-sans">
-            {/* Header Section - Sticky Frosted Glass */}
-            <div className={`z-30 transition-all duration-300 ${isScrolled ? 'bg-white/80 dark:bg-[#0f111a]/80 backdrop-blur-xl shadow-sm' : 'bg-transparent'}`}>
-                <Header
+            {/* Main Content Area */}
+            <div
+                ref={containerRef}
+                className="flex-1 overflow-y-auto overflow-x-hidden touch-pan-y relative"
+                onScroll={handleScroll}
+            >
+                {/* Header Section - Sticky Frosted Glass */}
+                <motion.div 
+                    variants={{
+                        visible: { y: 0 },
+                        hidden: { y: "-100%" },
+                    }}
+                    animate={isHeaderHidden ? "hidden" : "visible"}
+                    transition={{ duration: 0.35, ease: "easeInOut" }}
+                    className={`sticky top-0 z-30 transition-all duration-300 ${isScrolled ? 'bg-white/80 dark:bg-[#0f111a]/80 backdrop-blur-xl shadow-sm' : 'bg-transparent'}`}
+                >
+                    <Header
                     title="Library"
                     leftContent={
                         <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
@@ -301,7 +317,7 @@ export const Home = () => {
                         ))}
                     </div>
                 </motion.div>
-            </div>
+            </motion.div>
 
             {/* Scrollable Content */}
             <div

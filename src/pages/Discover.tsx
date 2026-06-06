@@ -322,21 +322,21 @@ export const Discover = () => {
             navigate={navigate}
             isCollapsed={isHeaderCollapsed}
             onSearchIconClick={handleSearchIconClick}
+            scrollContainerRef={scrollContainerRef}
         />
     );
 
     return (
         <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark font-sans selection:bg-primary/30 overflow-hidden">
-            {header}
-
             {/* Scrollable Content */}
             <PullToRefresh 
                 ref={scrollContainerRef}
                 onRefresh={() => syncHomeData()}
                 isDisabled={isGlobalScraping}
-                className="pb-24"
+                className="flex-1 overflow-y-auto pb-24 relative"
                 onScroll={handleScroll}
             >
+                {header}
 
                 {isOffline && (
                     <div className="bg-red-500 text-white text-xs font-bold text-center py-1">
