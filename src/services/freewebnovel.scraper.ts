@@ -134,14 +134,12 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         const chapters: ScrapedChapter[] = [];
         const seenLinks = new Set<string>();
 
-        $('.m-newest2 ul li').each((_, el) => {
-            const anchor = $(el).find('a').first();
-            if (!anchor.length) return;
-
-            const link = anchor.attr('href') || anchor.attr('title') && '';
+        $('.m-newest2 ul li a').each((_, el: any) => {
+            const link = el.attribs?.href || el.attribs?.title || '';
             if (!link) return;
 
-            const rawTitle = anchor.attr('title')?.trim() || anchor.text().trim();
+            const anchor = $(el);
+            const rawTitle = el.attribs?.title?.trim() || anchor.text().trim();
             const cleanTitle = this.cleanChapterTitle(rawTitle);
             const fullUrl = this.resolveUrl(baseUrl, link);
 
@@ -159,14 +157,12 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
 
         // Some pages might use `.m-newest1 ul li` or similar
         if (chapters.length === 0) {
-            $('ul.list-chapter li, .chapters li, .chapter-list li').each((_, el) => {
-                const anchor = $(el).find('a').first();
-                if (!anchor.length) return;
-
-                const link = anchor.attr('href');
+            $('ul.list-chapter li a, .chapters li a, .chapter-list li a').each((_, el: any) => {
+                const link = el.attribs?.href;
                 if (!link) return;
 
-                const rawTitle = anchor.text().trim() || anchor.attr('title')?.trim() || '';
+                const anchor = $(el);
+                const rawTitle = anchor.text().trim() || el.attribs?.title?.trim() || '';
                 const cleanTitle = this.cleanChapterTitle(rawTitle);
                 const fullUrl = this.resolveUrl(baseUrl, link);
 
@@ -231,6 +227,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
 
     private async scrapeChapterList(url: string): Promise<ScrapedChapter[]> {
         const allChapters: ScrapedChapter[] = [];
+        const chapterUrlSet = new Set<string>();
         let currentUrl = url;
         const visitedUrls = new Set<string>();
         let pageCount = 0;
@@ -249,7 +246,8 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     const newChapters = this.extractChapters($, currentUrl);
 
                     for (const ch of newChapters) {
-                        if (!allChapters.some(c => c.url === ch.url)) {
+                        if (!chapterUrlSet.has(ch.url)) {
+                            chapterUrlSet.add(ch.url);
                             allChapters.push(ch);
                         }
                     }
@@ -321,6 +319,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         }
 
         const allChapters: ScrapedChapter[] = [];
+        const chapterUrlSet = new Set<string>();
         const proxyOrder = workingProxy ? [workingProxy, ...this.getProxies().filter(p => p !== workingProxy)] : this.getProxies();
         let currentUrl = url;
         const visitedUrls = new Set<string>();
@@ -340,7 +339,8 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     const newChapters = this.extractChapters($, currentUrl);
 
                     for (const ch of newChapters) {
-                        if (!allChapters.some(c => c.url === ch.url)) {
+                        if (!chapterUrlSet.has(ch.url)) {
+                            chapterUrlSet.add(ch.url);
                             allChapters.push(ch);
                         }
                     }

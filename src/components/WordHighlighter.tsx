@@ -31,6 +31,8 @@ export function WordHighlighter({
 }: WordHighlighterProps) {
     const rootRef = useRef<HTMLDivElement>(null);
     const activeSpanRef = useRef<HTMLElement | null>(null);
+    const spanIndexRef = useRef<{ span: HTMLElement, s: number, e: number }[]>([]);
+    const lastScrollCheckRef = useRef<number>(0);
 
     /**
      * Build the rendered HTML string once.
@@ -111,10 +113,27 @@ export function WordHighlighter({
         return html;
     }, [htmlContent]);
 
+    // Build an in-memory index of all spans so we don't have to query the DOM
+    // on every single word tick, which is incredibly slow on mobile.
+    useEffect(() => {
+        if (!rootRef.current) return;
+        const allSpans = rootRef.current.querySelectorAll<HTMLElement>('.tts-word');
+        const arr = new Array(allSpans.length);
+        for (let i = 0; i < allSpans.length; i++) {
+            const span = allSpans[i];
+            arr[i] = {
+                span,
+                s: parseInt(span.dataset.s || '-1', 10),
+                e: parseInt(span.dataset.e || '-1', 10)
+            };
+        }
+        spanIndexRef.current = arr;
+    }, [processedHTML]);
+
     /**
      * Imperatively highlight the active word.
-     * We use dataset lookups and a direct audioService subscription rather than 
-     * React props/re-renders to achieve true O(1) DOM updates without freezing the UI.
+     * We use memory lookups and a direct audioService subscription rather than 
+     * React props/re-renders to achieve true O(1) updates without freezing the UI.
      */
     useEffect(() => {
         if (!rootRef.current) return;
@@ -140,44 +159,63 @@ export function WordHighlighter({
                 return;
             }
 
-            // Remove previous highlight
-            if (activeSpanRef.current) {
-                activeSpanRef.current.classList.remove('tts-active-word');
-                activeSpanRef.current = null;
-            }
-
-            // Find the span that contains this word range.
-            const target = rootRef.current.querySelector<HTMLElement>(
-                `[data-s="${activeStart}"]`
-            );
-
-        if (target) {
-            target.classList.add('tts-active-word');
-            activeSpanRef.current = target;
-
-            // Only scroll if the word is getting outside the comfortable viewing area
-            const rect = target.getBoundingClientRect();
-            const viewportHeight = window.innerHeight;
-            if (rect.top < 100 || rect.bottom > viewportHeight - 200) {
-                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-        } else {
-            // Fallback: find by overlap — the span whose [data-s, data-e] contains activeStart
-            const allSpans = rootRef.current.querySelectorAll<HTMLElement>('.tts-word');
-            for (const span of allSpans) {
-                const s = parseInt(span.dataset.s || '-1', 10);
-                const e = parseInt(span.dataset.e || '-1', 10);
-                if (s <= activeStart && activeStart < e) {
-                    span.classList.add('tts-active-word');
-                    activeSpanRef.current = span;
-                    const rect = span.getBoundingClientRect();
-                    if (rect.top < 100 || rect.bottom > window.innerHeight - 200) {
-                        span.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
+            // Binary search the span array
+            const spans = spanIndexRef.current;
+            let target: HTMLElement | null = null;
+            
+            // Fast binary search to find the span containing the word boundary
+            let left = 0;
+            let right = spans.length - 1;
+            while (left <= right) {
+                const mid = Math.floor((left + right) / 2);
+                const item = spans[mid];
+                
+                if (activeStart >= item.s && activeStart < item.e) {
+                    target = item.span;
                     break;
+                } else if (activeStart < item.s) {
+                    right = mid - 1;
+                } else {
+                    left = mid + 1;
                 }
             }
-        }
+
+            // Fallback sequential search if binary search misses (due to overlapping or weird HTML parsing)
+            if (!target) {
+                for (let i = 0; i < spans.length; i++) {
+                    if (spans[i].s <= activeStart && activeStart < spans[i].e) {
+                        target = spans[i].span;
+                        break;
+                    }
+                }
+            }
+
+            if (target) {
+                // Remove previous highlight
+                if (activeSpanRef.current) {
+                    activeSpanRef.current.classList.remove('tts-active-word');
+                }
+                
+                target.classList.add('tts-active-word');
+                activeSpanRef.current = target;
+
+                // Only check layout every 500ms to prevent massive reflow-induced CPU spikes/heating
+                const now = Date.now();
+                if (now - lastScrollCheckRef.current > 500) {
+                    lastScrollCheckRef.current = now;
+                    const rect = target.getBoundingClientRect();
+                    const viewportHeight = window.innerHeight;
+                    if (rect.top < 100 || rect.bottom > viewportHeight - 200) {
+                        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }
+            } else {
+                // Completely clear highlight if we jumped to an un-highlightable word
+                if (activeSpanRef.current) {
+                    activeSpanRef.current.classList.remove('tts-active-word');
+                    activeSpanRef.current = null;
+                }
+            }
         });
 
         return () => unsub();
