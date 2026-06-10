@@ -526,6 +526,7 @@ export class AsuraScraperService {
         }
 
         let chapters: { title: string; url: string; date?: string }[] = [];
+        const chapterUrlSetAsura = new Set<string>();
 
         // --- NEW ASTRO DATA EXTRACTION ---
         // Asura now uses Astro, which stores the full chapter list in <astro-island> props
@@ -557,7 +558,8 @@ export class AsuraScraperService {
                                 let chapTitle = titleVal ? String(titleVal) : `Chapter ${numVal}`;
                                 if (numVal && titleVal) chapTitle = `Chapter ${numVal}: ${titleVal}`;
                                 
-                                if (!chapters.some(c => c.url === chapterUrl)) {
+                                if (!chapterUrlSetAsura.has(chapterUrl)) {
+                                    chapterUrlSetAsura.add(chapterUrl);
                                     chapters.push({
                                         title: chapTitle,
                                         url: chapterUrl,
@@ -677,7 +679,8 @@ export class AsuraScraperService {
                     chapTitle = chapTitle.replace(/\s+/g, ' ').trim();
 
                     // Deduplicate
-                    if (!chapters.some(c => c.url === chapterUrl)) {
+                    if (!chapterUrlSetAsura.has(chapterUrl)) {
+                        chapterUrlSetAsura.add(chapterUrl);
                         chapters.push({
                             title: chapTitle,
                             url: chapterUrl,

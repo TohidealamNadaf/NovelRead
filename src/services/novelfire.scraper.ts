@@ -324,6 +324,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         }
 
         const allChapters: ScrapedChapter[] = [];
+        const chapterUrlSet = new Set<string>();
         const visitedUrls = new Set<string>();
         let pageCount = 0;
         let currentUrl = listUrl;
@@ -342,7 +343,8 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                     const newChapters = this.extractChaptersFromPage($, currentUrl);
 
                     for (const ch of newChapters) {
-                        if (!allChapters.some(c => c.url === ch.url)) {
+                        if (!chapterUrlSet.has(ch.url)) {
+                            chapterUrlSet.add(ch.url);
                             allChapters.push(ch);
                         }
                     }
@@ -439,6 +441,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         }
 
         const allChapters: ScrapedChapter[] = [];
+        const chapterUrlSet = new Set<string>();
         const visitedUrls = new Set<string>();
         let pageCount = 0;
         let currentUrl = listUrl;
@@ -459,7 +462,8 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                     const newChapters = this.extractChaptersFromPage($, currentUrl);
 
                     for (const ch of newChapters) {
-                        if (!allChapters.some(c => c.url === ch.url)) {
+                        if (!chapterUrlSet.has(ch.url)) {
+                            chapterUrlSet.add(ch.url);
                             allChapters.push(ch);
                         }
                     }

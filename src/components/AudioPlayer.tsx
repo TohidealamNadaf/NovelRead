@@ -30,10 +30,16 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     const [hasActiveSession, setHasActiveSession] = useState(false);
 
     useEffect(() => {
+        let prevSpeaking: boolean | null = null;
+        let prevPaused: boolean | null = null;
+        let prevActive: boolean | null = null;
         const unsub = audioService.subscribe((state) => {
-            setIsSpeaking(state.isTtsPlaying && !state.isTtsPaused);
-            setIsPaused(state.isTtsPaused);
-            setHasActiveSession(state.isTtsPlaying || state.isTtsPaused || state.currentTrack !== null);
+            const nowSpeaking = state.isTtsPlaying && !state.isTtsPaused;
+            const nowPaused = state.isTtsPaused;
+            const nowActive = state.isTtsPlaying || state.isTtsPaused || state.currentTrack !== null;
+            if (nowSpeaking !== prevSpeaking) { prevSpeaking = nowSpeaking; setIsSpeaking(nowSpeaking); }
+            if (nowPaused !== prevPaused) { prevPaused = nowPaused; setIsPaused(nowPaused); }
+            if (nowActive !== prevActive) { prevActive = nowActive; setHasActiveSession(nowActive); }
         });
         return () => unsub();
     }, []);

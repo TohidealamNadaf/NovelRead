@@ -263,6 +263,7 @@ export class ManhwaScraperService {
 
         const publishers = new Set<string>();
         const chapters: { title: string; url: string }[] = [];
+        const chapterUrlSet = new Set<string>();
 
         if (chaptersData?.chapters) {
             for (const ch of chaptersData.chapters) {
@@ -279,7 +280,8 @@ export class ManhwaScraperService {
                 const chTitle = ch.title ? `Ch. ${chNum} - ${ch.title}` : `Chapter ${chNum}`;
                 const chUrl = `https://comick.art/comic/${slug}/${ch.hid}-chapter-${chNum}-en`;
 
-                if (!chapters.some(c => c.url === chUrl)) {
+                if (!chapterUrlSet.has(chUrl)) {
+                    chapterUrlSet.add(chUrl);
                     chapters.push({
                         title: chTitle,
                         url: ch.hid // Store the HID for API access
@@ -302,7 +304,8 @@ export class ManhwaScraperService {
                     const chNum = ch.chap || '0';
                     const chTitle = ch.title ? `Ch. ${chNum} - ${ch.title}` : `Chapter ${chNum}`;
 
-                    if (!chapters.some(c => c.url === ch.hid)) {
+                    if (!chapterUrlSet.has(ch.hid)) {
+                        chapterUrlSet.add(ch.hid);
                         chapters.push({ title: chTitle, url: ch.hid });
                     }
                 }
@@ -332,6 +335,7 @@ export class ManhwaScraperService {
         if (!slug) return [];
 
         const chapters: { title: string; url: string }[] = [];
+        const chapterUrlSet = new Set<string>();
         let page = 0;
 
         while (true) {
@@ -346,7 +350,8 @@ export class ManhwaScraperService {
                     const chNum = ch.chap || '0';
                     const chTitle = ch.title ? `Ch. ${chNum} - ${ch.title}` : `Chapter ${chNum}`;
 
-                    if (!chapters.some(c => c.url === ch.hid)) {
+                    if (!chapterUrlSet.has(ch.hid)) {
+                        chapterUrlSet.add(ch.hid);
                         chapters.push({ title: chTitle, url: ch.hid });
                     }
                 }
@@ -474,6 +479,7 @@ export class ManhwaScraperService {
 
         // Extract chapters - try multiple selectors
         const chapters: { title: string; url: string }[] = [];
+        const chapterUrlSetKagane = new Set<string>();
 
         // Selector 1: Kagane standard
         const chapterSelectors = [
@@ -493,7 +499,8 @@ export class ManhwaScraperService {
                     || a.text().trim();
                 const chUrl = a.attr('href');
 
-                if (chTitle && chUrl && !chapters.some(c => c.url === chUrl)) {
+                if (chTitle && chUrl && !chapterUrlSetKagane.has(chUrl)) {
+                    chapterUrlSetKagane.add(chUrl);
                     chapters.push({ title: chTitle, url: chUrl });
                 }
             });
@@ -535,10 +542,11 @@ export class ManhwaScraperService {
         const coverUrl = $('img[src*="cover"], .summary_image img, img.wp-post-image').attr('src') || '';
 
         const chapters: { title: string; url: string }[] = [];
+        const chapterUrlSetGeneric = new Set<string>();
         $('li .chapter-item a, .wp-manga-chapter a, #chapterlist li a, .eph-num a').each((_, el) => {
             const t = $(el).text().trim();
             const u = $(el).attr('href');
-            if (t && u && !chapters.some(c => c.url === u)) chapters.push({ title: t, url: u });
+            if (t && u && !chapterUrlSetGeneric.has(u)) { chapterUrlSetGeneric.add(u); chapters.push({ title: t, url: u }); }
         });
         if (chapters.length > 0) chapters.reverse();
 

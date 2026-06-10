@@ -11,37 +11,30 @@ export const ReadingProgressBar: React.FC<ReadingProgressBarProps> = ({ containe
         const container = containerRef.current;
         if (!container) return;
 
+        // Check overflow style ONCE on mount, not on every scroll frame
+        const computedOverflow = getComputedStyle(container).overflowY;
+        const isContainerScroll = computedOverflow === 'auto' || computedOverflow === 'scroll';
+
+        let rafId = 0;
         const handleScroll = () => {
-            // For window scroll (if body is scrolling)
-            const scrollTop = window.scrollY || document.documentElement.scrollTop;
-            const scrollHeight = document.documentElement.scrollHeight;
-            const clientHeight = document.documentElement.clientHeight;
-
-            // If we were scrolling a specific container, we'd use container.scrollTop etc.
-            // But usually the reader page scrolls the body or a main wrapper.
-            // Let's assume body scroll for now as per standard mobile web apps, 
-            // unless the container itself has overflow-y: scroll.
-
-            // Checking if container has overflow
-            const isContainerScroll = getComputedStyle(container).overflowY === 'auto' || getComputedStyle(container).overflowY === 'scroll';
-
-            if (isContainerScroll) {
-                const total = container.scrollHeight - container.clientHeight;
-                const current = container.scrollTop;
-                setProgress((current / total) * 100);
-            } else {
-                const total = scrollHeight - clientHeight;
-                setProgress((scrollTop / total) * 100);
-            }
+            // Throttle to one update per animation frame to prevent jank
+            if (rafId) return;
+            rafId = requestAnimationFrame(() => {
+                rafId = 0;
+                if (isContainerScroll) {
+                    const total = container.scrollHeight - container.clientHeight;
+                    if (total > 0) setProgress((container.scrollTop / total) * 100);
+                } else {
+                    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+                    const total = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+                    if (total > 0) setProgress((scrollTop / total) * 100);
+                }
+            });
         };
 
-        // Attach to window or container depending on architecture
-        // In the ManhwaReader, we might stick to window scroll for better mobile feel
-        window.addEventListener('scroll', handleScroll);
-
-        // Also check container if it's the one scrolling
+        window.addEventListener('scroll', handleScroll, { passive: true });
         if (container) {
-            container.addEventListener('scroll', handleScroll);
+            container.addEventListener('scroll', handleScroll, { passive: true });
         }
 
         return () => {
@@ -49,6 +42,7 @@ export const ReadingProgressBar: React.FC<ReadingProgressBarProps> = ({ containe
             if (container) {
                 container.removeEventListener('scroll', handleScroll);
             }
+            if (rafId) cancelAnimationFrame(rafId);
         };
     }, [containerRef]);
 

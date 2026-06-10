@@ -168,9 +168,16 @@ export const Reader = () => {
             setNavChapters([...location.state.chapters]);
         }
 
-        // Sync with global audio state
+        // Sync with global audio state — ONLY update React state when speaking status
+        // actually changes. wordBoundary events fire on every word but the isSpeaking
+        // boolean stays the same, so we must guard against needless re-renders.
+        let prevSpeaking: boolean | null = null;
         const audioUnsub = audioService.subscribe((state) => {
-            setIsSpeaking(state.isTtsPlaying && !state.isTtsPaused);
+            const nowSpeaking = state.isTtsPlaying && !state.isTtsPaused;
+            if (nowSpeaking !== prevSpeaking) {
+                prevSpeaking = nowSpeaking;
+                setIsSpeaking(nowSpeaking);
+            }
             // WordHighlighter listens to wordBoundary directly now
         });
 
