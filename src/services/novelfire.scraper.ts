@@ -122,7 +122,12 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                 $('.novel-item, .list-novel .row, .item').each((_, el) => {
                     const $el = $(el);
                     const titleEl = $el.find('.novel-title a, h3 a, a[title]').first();
-                    let title = titleEl.text().trim() || titleEl.attr('title')?.trim() || '';
+                    let title = titleEl.attr('title')?.trim() || '';
+                    if (!title) {
+                        const clone = titleEl.clone();
+                        clone.find('span, div, i, b').remove();
+                        title = clone.text().trim();
+                    }
                     if (!title) return;
 
                     let novelUrl = titleEl.attr('href') || '';

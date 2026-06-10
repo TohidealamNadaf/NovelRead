@@ -271,20 +271,11 @@ export class AudioService {
         return () => { this.listeners = this.listeners.filter(l => l !== listener); };
     }
 
-    private _notifyScheduled = false;
     private notify() {
-        // Batch notifications: during active TTS, word boundary events fire 5-15x/sec.
-        // Broadcasting to all subscribers on every tick causes React re-renders and GC pressure.
-        // We batch into a single microtask so multiple rapid state changes coalesce into one broadcast.
-        if (this._notifyScheduled) return;
-        this._notifyScheduled = true;
-        queueMicrotask(() => {
-            this._notifyScheduled = false;
-            const snapshot = { ...this.state };
-            for (let i = 0; i < this.listeners.length; i++) {
-                this.listeners[i](snapshot);
-            }
-        });
+        const snapshot = { ...this.state };
+        for (let i = 0; i < this.listeners.length; i++) {
+            this.listeners[i](snapshot);
+        }
     }
 
     getState() { return this.state; }

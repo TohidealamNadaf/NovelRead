@@ -56,6 +56,7 @@ export class TTSEngine {
     private currentText = '';
     private currentResumeOffset = 0; // char index where we resume from after pause
     private currentActiveChunkOffset = 0; // offset of the currently speaking chunk (Native)
+    private currentUtterance: SpeechSynthesisUtterance | null = null; // Prevent Chrome GC bug
 
     // Callbacks
     private onWordChange: WordChangeCallback | null = null;
@@ -109,17 +110,22 @@ export class TTSEngine {
         if (options.voiceIndex !== undefined) this.nativeVoiceIndex = options.voiceIndex;
 
         if (options.voice !== undefined) {
-            // Save the specific locale of the voice so Android doesn't override it
-            if (options.voice.lang) this.nativeVoiceLang = options.voice.lang;
-            
-            if (!this.isNative) {
-                // Web: resolve voice object from synthesis API
-                if (typeof window !== 'undefined' && window.speechSynthesis) {
-                    const voices = window.speechSynthesis.getVoices();
-                    const v = options.voice;
-                    this.webVoice = voices.find(
-                        voice => voice.voiceURI === v.voiceURI || voice.name === v.name
-                    ) || null;
+            if (options.voice === null) {
+                this.webVoice = null;
+                this.nativeVoiceLang = 'en-US';
+            } else {
+                // Save the specific locale of the voice so Android doesn't override it
+                if (options.voice.lang) this.nativeVoiceLang = options.voice.lang;
+                
+                if (!this.isNative) {
+                    // Web: resolve voice object from synthesis API
+                    if (typeof window !== 'undefined' && window.speechSynthesis) {
+                        const voices = window.speechSynthesis.getVoices();
+                        const v = options.voice;
+                        this.webVoice = voices.find(
+                            voice => voice.voiceURI === v.voiceURI || voice.name === v.name
+                        ) || null;
+                    }
                 }
             }
         }
@@ -320,6 +326,7 @@ export class TTSEngine {
 
         return new Promise<void>((resolve) => {
             const utterance = new SpeechSynthesisUtterance(text);
+            this.currentUtterance = utterance; // Prevent GC
             utterance.rate = this.baseRate;
             utterance.pitch = this.basePitch;
             if (this.webVoice) utterance.voice = this.webVoice;
@@ -352,6 +359,7 @@ export class TTSEngine {
                     this.notifyState();
                     this.onComplete?.();
                 }
+                if (this.currentUtterance === utterance) this.currentUtterance = null;
                 resolve();
             };
 
@@ -359,6 +367,7 @@ export class TTSEngine {
                 if (!this.shouldStop && e.error !== 'interrupted' && e.error !== 'canceled') {
                     console.error('[TTSEngine-Web] Error:', e.error);
                 }
+                if (this.currentUtterance === utterance) this.currentUtterance = null;
                 resolve();
             };
 
