@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useRef, useState, useLayoutEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { RefreshCcw, Filter, Search, X } from 'lucide-react';
 import { Header } from '../Header';
@@ -40,18 +40,59 @@ export const DiscoverHeader = memo(({
     onSearchIconClick,
     scrollContainerRef
 }: DiscoverHeaderProps) => {
-    const isHidden = useQuickReturnHeader(scrollContainerRef);
+    const headerWrapperRef = useRef<HTMLDivElement>(null);
+    const [baseHeaderHeight, setBaseHeaderHeight] = useState(0);
+
+    useLayoutEffect(() => {
+        const measureBase = () => {
+            if (headerWrapperRef.current) {
+                const headerElement = headerWrapperRef.current.firstElementChild;
+                if (headerElement) {
+                    setBaseHeaderHeight(headerElement.getBoundingClientRect().height);
+                }
+            }
+        };
+        measureBase();
+        
+        // Small delay to ensure accurate measurement after DOM settles
+        setTimeout(measureBase, 100);
+        
+        window.addEventListener('resize', measureBase);
+        return () => window.removeEventListener('resize', measureBase);
+    }, []);
+
+    const SEARCH_BLOCK_HEIGHT = 60;
+    const TAB_BLOCK_HEIGHT = 54;
+    const totalHeaderHeight = baseHeaderHeight + (isCollapsed ? 0 : SEARCH_BLOCK_HEIGHT + TAB_BLOCK_HEIGHT);
+
+    // Pass the precise dynamic `totalHeaderHeight` as the threshold to guarantee
+    // the header only hides after enough content has scrolled up behind it.
+    const isHidden = useQuickReturnHeader(scrollContainerRef, totalHeaderHeight);
 
     return (
-        <motion.div 
-            variants={{
-                visible: { y: 0 },
-                hidden: { y: "-100%" },
-            }}
-            animate={isHidden ? "hidden" : "visible"}
-            transition={{ duration: 0.35, ease: "easeInOut" }}
-            className="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md"
-        >
+        <>
+            {/* 
+                FIX: Static spacer sized to the active header height.
+                It lives inside the scroll container and scrolls out of view naturally.
+                This breaks the feedback loop while reserving layout space.
+            */}
+            <motion.div 
+                initial={false}
+                animate={{ height: totalHeaderHeight }}
+                transition={{ type: "spring", stiffness: 220, damping: 28 }}
+                className="shrink-0 w-full"
+            />
+            
+            <motion.div 
+                ref={headerWrapperRef}
+                variants={{
+                    visible: { y: 0 },
+                    hidden: { y: "-100%" },
+                }}
+                animate={isHidden ? "hidden" : "visible"}
+                transition={{ duration: 0.35, ease: "easeInOut" }}
+                className="fixed top-0 inset-x-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md"
+            >
             <Header
                 title="Discover"
                 transparent
@@ -190,5 +231,6 @@ export const DiscoverHeader = memo(({
                 </div>
             </motion.div>
         </motion.div>
+        </>
     );
 });
