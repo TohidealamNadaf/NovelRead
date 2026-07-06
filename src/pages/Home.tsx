@@ -229,17 +229,18 @@ export const Home = () => {
                 className="flex-1 overflow-y-auto overflow-x-hidden touch-pan-y relative pb-24 hide-scrollbar"
             >
                 {/* 
-                    FIX: The spacer is now statically sized based on the actual header content (search bar expanded or not),
-                    and NEVER collapses based on `isHeaderHidden`. 
-                    Because this spacer is inside the scroll container, it simply scrolls out of view naturally.
-                    When the quick-return header slides up, it reveals the novel grid that has already scrolled underneath it.
-                    This perfectly breaks the feedback loop while preserving the standard overlay UI pattern.
+                    Static height = max possible header size (never animates).
+                    Previously this animated `height` directly, which is a layout property —
+                    every frame of the spring forced a reflow of the hero banner, carousel,
+                    and grid below it, compounding with scroll-driven paint/composite work
+                    and causing visible stutter right at the collapse threshold.
+                    Now the spacer never changes size; the visual "collapse" is achieved by
+                    translating the content below it instead (see the wrapping motion.div below),
+                    which is a compositor-only operation.
                 */}
-                <motion.div 
-                    initial={false}
-                    animate={{ height: totalHeaderHeight }}
-                    transition={{ type: "spring", stiffness: 220, damping: 28 }}
+                <div 
                     className="shrink-0 w-full"
+                    style={{ height: baseHeaderHeight + SEARCH_BLOCK_HEIGHT }}
                 />
 
                 {/* Header Section - Sticky Frosted Glass */}
@@ -359,7 +360,13 @@ export const Home = () => {
                 </motion.div>
 
             {/* Main Content Area */}
-            <div className="pt-2">
+            <motion.div 
+                initial={false}
+                animate={{ y: isSearchExpanded ? 0 : -SEARCH_BLOCK_HEIGHT }}
+                transition={{ type: "spring", stiffness: 220, damping: 28 }}
+                className="pt-2"
+                style={{ willChange: 'transform' }}
+            >
                     {/* Hero Banner for Continue Reading */}
                     {!searchQuery && selectedCategory === 'All' && heroNovel && !editMode && (
                         <motion.div 
@@ -464,7 +471,7 @@ export const Home = () => {
                         preventLinkIfEdit={preventLinkIfEdit}
                         handleDeleteNovel={handleDeleteNovel}
                     />
-                </div>
+                </motion.div>
             </div>
 
             {/* Scroll to Top Button */}
