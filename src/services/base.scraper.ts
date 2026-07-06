@@ -33,12 +33,13 @@ export abstract class BaseScraper {
                         'Cache-Control': 'no-cache',
                         'Pragma': 'no-cache'
                     },
+                    responseType: 'text',
                     connectTimeout: 8000,
                     readTimeout: 10000
                 });
                 
                 if (response.status >= 200 && response.status < 300) {
-                    return response.data;
+                    return typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
                 }
             } else {
                 const fetchUrl = proxyPrefix 
