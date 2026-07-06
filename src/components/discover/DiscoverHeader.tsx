@@ -67,7 +67,7 @@ export const DiscoverHeader = memo(({
 
     // Pass the precise dynamic `totalHeaderHeight` as the threshold to guarantee
     // the header only hides after enough content has scrolled up behind it.
-    const isHidden = useQuickReturnHeader(scrollContainerRef, totalHeaderHeight);
+    const { hidden: isHidden } = useQuickReturnHeader(scrollContainerRef, totalHeaderHeight);
 
     return (
         <>

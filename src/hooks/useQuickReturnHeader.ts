@@ -9,7 +9,7 @@ import type { RefObject } from "react";
  * 
  * @param containerRef Optional reference to the scroll container (defaults to window)
  * @param threshold The scroll distance in pixels before hiding starts (default 50)
- * @returns boolean `hidden` indicating if the header should be hidden
+ * @returns Object containing `hidden` (boolean) and `scrollY` (MotionValue)
  */
 export function useQuickReturnHeader<T extends HTMLElement = HTMLElement>(containerRef?: RefObject<T | null>, threshold = 50) {
     const { scrollY } = useScroll(containerRef ? { container: containerRef as any } : undefined);
@@ -55,5 +55,5 @@ export function useQuickReturnHeader<T extends HTMLElement = HTMLElement>(contai
         }
     });
 
-    return hidden;
+    return { hidden, scrollY };
 }

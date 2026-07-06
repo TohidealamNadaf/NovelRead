@@ -1,13 +1,14 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { FooterNavigation } from '../components/FooterNavigation';
 import { Header } from '../components/Header';
 import { dbService, type Novel } from '../services/db.service';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Bell, Plus, X, BookOpen, Clock, ArrowUp, Play, ChevronRight } from 'lucide-react';
+import { Search, Bell, X, Clock, Play, ArrowUp } from 'lucide-react';
 import { notificationService } from '../services/notification.service';
 import { useProfileImage } from '../hooks/useProfileImage';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValueEvent } from 'framer-motion';
 import { useQuickReturnHeader } from '../hooks/useQuickReturnHeader';
+import { NovelGrid } from '../components/NovelGrid';
 
 // Custom hook for responsive grid columns
 function useResponsiveColumns() {
@@ -40,17 +41,13 @@ export const Home = () => {
     // FIX 2: We only measure the base header row's height once on mount (and resize).
     // The total height is computed analytically rather than firing continuously 
     // during the search-bar's spring animation, which saves numerous React re-renders.
-    const headerWrapperRef = useRef<HTMLDivElement>(null);
+    const headerRowRef = useRef<HTMLDivElement>(null);
     const [baseHeaderHeight, setBaseHeaderHeight] = useState(0);
 
     useLayoutEffect(() => {
         const measureBase = () => {
-            if (headerWrapperRef.current) {
-                // The first child is the actual <Header /> component
-                const headerElement = headerWrapperRef.current.firstElementChild;
-                if (headerElement) {
-                    setBaseHeaderHeight(headerElement.getBoundingClientRect().height);
-                }
+            if (headerRowRef.current) {
+                setBaseHeaderHeight(headerRowRef.current.getBoundingClientRect().height);
             }
         };
         measureBase();
@@ -74,7 +71,28 @@ export const Home = () => {
     // By tying the threshold exactly to the header's true rendered height, 
     // it is guaranteed that 160px of real content has already scrolled up behind it
     // *before* it slides away, ensuring a seamless reveal.
-    const isHeaderHidden = useQuickReturnHeader(containerRef, totalHeaderHeight);
+    const { hidden: isHeaderHidden, scrollY } = useQuickReturnHeader(containerRef, totalHeaderHeight);
+
+    useMotionValueEvent(scrollY, "change", (latest) => {
+        if (!sessionStorageTimeoutRef.current) {
+            sessionStorageTimeoutRef.current = setTimeout(() => {
+                sessionStorage.setItem('homeScroll', scrollY.get().toString());
+                sessionStorageTimeoutRef.current = null;
+            }, 150);
+        }
+
+        const targetShowScrollTop = latest > 500;
+        setShowScrollTop(prev => prev !== targetShowScrollTop ? targetShowScrollTop : prev);
+
+        const targetScrolled = latest > 10;
+        setIsScrolled(prev => prev !== targetScrolled ? targetScrolled : prev);
+        
+        setIsHeaderCollapsed(prev => {
+            if (latest > 80) return true;
+            if (latest < 15) return false;
+            return prev;
+        });
+    });
 
     // Long Press Edit Mode Tracking
     const pressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -90,7 +108,7 @@ export const Home = () => {
         };
     }, []);
 
-    const handlePointerDown = () => {
+    const handlePointerDown = useCallback(() => {
         if (editMode) return;
         wasLongPressed.current = false;
         pressTimer.current = setTimeout(() => {
@@ -98,20 +116,20 @@ export const Home = () => {
             setEditMode(true);
             if (navigator.vibrate) navigator.vibrate(50);
         }, 800); // Shorter long press for better UX
-    };
+    }, [editMode]);
 
-    const handlePointerUpOrMove = () => {
+    const handlePointerUpOrMove = useCallback(() => {
         if (pressTimer.current) {
             clearTimeout(pressTimer.current);
             pressTimer.current = null;
         }
-    };
+    }, []);
 
-    const preventLinkIfEdit = (e: React.MouseEvent) => {
+    const preventLinkIfEdit = useCallback((e: React.MouseEvent) => {
         if (wasLongPressed.current || editMode) {
             e.preventDefault();
         }
-    };
+    }, [editMode]);
 
     // Scroll restoration
     useEffect(() => {
@@ -141,33 +159,7 @@ export const Home = () => {
         }
     };
 
-    const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-        const scrollTop = e.currentTarget.scrollTop;
 
-        // Debounce writing scroll position to sessionStorage
-        if (sessionStorageTimeoutRef.current) {
-            clearTimeout(sessionStorageTimeoutRef.current);
-        }
-        sessionStorageTimeoutRef.current = setTimeout(() => {
-            sessionStorage.setItem('homeScroll', scrollTop.toString());
-        }, 150);
-
-        // Only update states when the thresholds are actually crossed
-        const targetShowScrollTop = scrollTop > 500;
-        setShowScrollTop(prev => prev !== targetShowScrollTop ? targetShowScrollTop : prev);
-
-        const targetScrolled = scrollTop > 10;
-        setIsScrolled(prev => prev !== targetScrolled ? targetScrolled : prev);
-        
-        setIsHeaderCollapsed(prev => {
-            if (scrollTop > 80) {
-                return true;
-            } else if (scrollTop < 15) {
-                return false;
-            }
-            return prev;
-        });
-    };
 
     const handleSearchIconClick = () => {
         containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -184,7 +176,7 @@ export const Home = () => {
         containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleDeleteNovel = async (novelId: string, e: React.MouseEvent) => {
+    const handleDeleteNovel = useCallback(async (novelId: string, e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -197,7 +189,7 @@ export const Home = () => {
                 console.error('Failed to delete novel:', error);
             }
         }
-    };
+    }, [novels.length]);
 
     // Filter Logic
     const filteredNovels = useMemo(() => {
@@ -227,14 +219,7 @@ export const Home = () => {
 
     const profileImage = useProfileImage();
 
-    // Animation Variants
-    const jiggleVariants: any = {
-        idle: { rotate: 0 },
-        jiggle: {
-            rotate: [-1, 1, -1],
-            transition: { repeat: Infinity, duration: 0.3, ease: "easeInOut" }
-        }
-    };
+
 
     return (
         <div className="relative h-screen w-full flex flex-col bg-background-light dark:bg-[#0f111a] overflow-hidden font-sans">
@@ -242,7 +227,6 @@ export const Home = () => {
             <div
                 ref={containerRef}
                 className="flex-1 overflow-y-auto overflow-x-hidden touch-pan-y relative pb-24 hide-scrollbar"
-                onScroll={handleScroll}
             >
                 {/* 
                     FIX: The spacer is now statically sized based on the actual header content (search bar expanded or not),
@@ -260,114 +244,119 @@ export const Home = () => {
 
                 {/* Header Section - Sticky Frosted Glass */}
                 <motion.div 
-                    ref={headerWrapperRef}
                     variants={{
                         visible: { y: 0 },
                         hidden: { y: "-100%" },
                     }}
                     animate={isHeaderHidden ? "hidden" : "visible"}
                     transition={{ duration: 0.35, ease: "easeInOut" }}
-                    // FIX 1: Changed `sticky` to `fixed top-0 inset-x-0`.
-                    // `position: sticky` always reserves its layout box regardless of transforms,
-                    // which caused the blank gap when `translateY(-100%)` hid the header.
-                    // `fixed` removes it from the flow entirely.
-                    className={`fixed top-0 inset-x-0 z-30 transition-colors duration-300 ${isScrolled ? 'bg-white/80 dark:bg-[#0f111a]/80 backdrop-blur-xl shadow-sm' : 'bg-transparent'}`}
+                    className="fixed top-0 inset-x-0 z-30"
                 >
-                    <Header
-                    title="Library"
-                    leftContent={
-                        <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
-                            <img src={profileImage} alt="Profile" className="size-full object-cover" loading="lazy" />
-                        </Link>
-                    }
-                    rightActions={
-                        <div className="flex items-center gap-1">
-                            <AnimatePresence>
-                                {isHeaderCollapsed && !editMode && (
-                                    <motion.button
-                                        initial={{ opacity: 0, scale: 0.6, width: 0 }}
-                                        animate={{ opacity: 1, scale: 1, width: 'auto' }}
-                                        exit={{ opacity: 0, scale: 0.6, width: 0 }}
-                                        onClick={handleSearchIconClick}
-                                        className="flex items-center justify-center p-2.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors overflow-hidden shrink-0"
-                                    >
-                                        <Search size={22} className="text-slate-700 dark:text-white" />
-                                    </motion.button>
-                                )}
-                            </AnimatePresence>
-                            {novels.length > 0 && (
-                                <button
-                                    onClick={() => setEditMode(!editMode)}
-                                    className={`text-sm font-bold px-4 py-2 rounded-full transition-all active:scale-95 ${editMode ? 'bg-red-500 text-white shadow-lg shadow-red-500/30' : 'text-primary hover:bg-primary/10'}`}
-                                >
-                                    {editMode ? 'Done' : 'Edit'}
-                                </button>
-                            )}
-                            <Link to="/notifications" className="flex items-center justify-center p-2.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors relative active:scale-95">
-                                <Bell size={22} className="text-slate-700 dark:text-white" />
-                                {unreadCount > 0 && (
-                                    <motion.span 
-                                        initial={{ scale: 0 }} animate={{ scale: 1 }}
-                                        className="absolute top-1 right-1 size-4.5 bg-primary text-white text-[10px] font-bold flex items-center justify-center rounded-full ring-2 ring-white dark:ring-[#0f111a]"
-                                    >
-                                        {unreadCount}
-                                    </motion.span>
-                                )}
-                            </Link>
+                    <div 
+                        className="absolute inset-0 bg-white/80 dark:bg-[#0f111a]/80 backdrop-blur-xl shadow-sm transition-opacity duration-300 pointer-events-none"
+                        style={{ opacity: isScrolled ? 1 : 0 }}
+                    />
+                    
+                    <div className="relative z-10">
+                        <div ref={headerRowRef}>
+                            <Header
+                                title="Library"
+                            autoElevate={false}
+                            leftContent={
+                                <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
+                                    <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${profileImage || 'https://img.freepik.com/free-psd/3d-illustration-person-with-sunglasses_23-2149436188.jpg'}")` }}></div>
+                                </Link>
+                            }
+                            rightActions={
+                                <div className="flex items-center gap-1">
+                                    <AnimatePresence>
+                                        {isHeaderCollapsed && !editMode && (
+                                            <motion.button
+                                                initial={{ opacity: 0, scale: 0.6, width: 0 }}
+                                                animate={{ opacity: 1, scale: 1, width: 'auto' }}
+                                                exit={{ opacity: 0, scale: 0.6, width: 0 }}
+                                                onClick={handleSearchIconClick}
+                                                className="flex items-center justify-center p-2.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors overflow-hidden shrink-0"
+                                            >
+                                                <Search size={22} className="text-slate-700 dark:text-white" />
+                                            </motion.button>
+                                        )}
+                                    </AnimatePresence>
+                                    {novels.length > 0 && (
+                                        <button
+                                            onClick={() => setEditMode(!editMode)}
+                                            className={`text-sm font-bold px-4 py-2 rounded-full transition-all active:scale-95 ${editMode ? 'bg-red-500 text-white shadow-lg shadow-red-500/30' : 'text-primary hover:bg-primary/10'}`}
+                                        >
+                                            {editMode ? 'Done' : 'Edit'}
+                                        </button>
+                                    )}
+                                    <Link to="/notifications" className="flex items-center justify-center p-2.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors relative active:scale-95">
+                                        <Bell size={22} className="text-slate-700 dark:text-white" />
+                                        {unreadCount > 0 && (
+                                            <motion.span 
+                                                initial={{ scale: 0 }} animate={{ scale: 1 }}
+                                                className="absolute top-1 right-1 size-4.5 bg-primary text-white text-[10px] font-bold flex items-center justify-center rounded-full ring-2 ring-white dark:ring-[#0f111a]"
+                                            >
+                                                {unreadCount}
+                                            </motion.span>
+                                        )}
+                                    </Link>
+                                </div>
+                            }
+                            transparent
+                        />
                         </div>
-                    }
-                    transparent
-                />
 
-                {/* Search & Categories (Hidden in Edit Mode or when Collapsed) */}
-                <motion.div 
-                    initial={false}
-                    animate={{ 
-                        opacity: (editMode || isHeaderCollapsed) ? 0 : 1, 
-                        height: (editMode || isHeaderCollapsed) ? 0 : 118,
-                        pointerEvents: (editMode || isHeaderCollapsed) ? 'none' : 'auto'
-                    }}
-                    transition={{ type: "spring", stiffness: 220, damping: 28 }}
-                    className="overflow-hidden"
-                >
-                    {/* Search Bar */}
-                    <div className="px-4 py-2">
-                        <div className="flex w-full items-center rounded-2xl bg-slate-100/80 dark:bg-white/5 border border-transparent focus-within:border-primary/50 focus-within:bg-white dark:focus-within:bg-white/10 focus-within:shadow-sm transition-all duration-300">
-                            <div className="pl-4 text-slate-400">
-                                <Search size={18} />
+                        {/* Search & Categories (Hidden in Edit Mode or when Collapsed) */}
+                        <motion.div 
+                            initial={false}
+                            animate={{ 
+                                opacity: (editMode || isHeaderCollapsed) ? 0 : 1, 
+                                height: (editMode || isHeaderCollapsed) ? 0 : 118,
+                                pointerEvents: (editMode || isHeaderCollapsed) ? 'none' : 'auto'
+                            }}
+                            transition={{ type: "spring", stiffness: 220, damping: 28 }}
+                            className="overflow-hidden"
+                        >
+                            {/* Search Bar */}
+                            <div className="px-4 py-2">
+                                <div className="flex w-full items-center rounded-2xl bg-slate-100/80 dark:bg-white/5 border border-transparent focus-within:border-primary/50 focus-within:bg-white dark:focus-within:bg-white/10 focus-within:shadow-sm transition-all duration-300">
+                                    <div className="pl-4 text-slate-400">
+                                        <Search size={18} />
+                                    </div>
+                                    <input
+                                        id="library-search-input"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="flex-1 bg-transparent border-none py-3 px-3 text-[15px] focus:outline-none placeholder:text-slate-400 dark:text-slate-200"
+                                        placeholder="Search your collection..."
+                                    />
+                                    {searchQuery && (
+                                        <button onClick={() => setSearchQuery('')} className="pr-4 text-slate-400 hover:text-slate-600 transition-colors">
+                                            <X size={18} />
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-                            <input
-                                id="library-search-input"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="flex-1 bg-transparent border-none py-3 px-3 text-[15px] focus:outline-none placeholder:text-slate-400 dark:text-slate-200"
-                                placeholder="Search your collection..."
-                            />
-                            {searchQuery && (
-                                <button onClick={() => setSearchQuery('')} className="pr-4 text-slate-400 hover:text-slate-600 transition-colors">
-                                    <X size={18} />
-                                </button>
-                            )}
-                        </div>
-                    </div>
 
-                    {/* Categories */}
-                    <div className="flex gap-2 px-4 pb-3 overflow-x-auto hide-scrollbar">
-                        {categories.map((cat) => (
-                            <button
-                                key={cat}
-                                onClick={() => setSelectedCategory(cat)}
-                                className={`flex h-9 shrink-0 items-center justify-center rounded-full px-5 text-sm font-semibold transition-all active:scale-95 ${selectedCategory === cat
-                                    ? 'bg-primary text-white shadow-lg shadow-primary/30 scale-105'
-                                    : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'
-                                    }`}
-                            >
-                                {cat}
-                            </button>
-                        ))}
+                            {/* Categories */}
+                            <div className="flex gap-2 px-4 pb-3 overflow-x-auto hide-scrollbar">
+                                {categories.map((cat) => (
+                                    <button
+                                        key={cat}
+                                        onClick={() => setSelectedCategory(cat)}
+                                        className={`flex h-9 shrink-0 items-center justify-center rounded-full px-5 text-sm font-semibold transition-all active:scale-95 ${selectedCategory === cat
+                                            ? 'bg-primary text-white shadow-lg shadow-primary/30 scale-105'
+                                            : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'
+                                            }`}
+                                    >
+                                        {cat}
+                                    </button>
+                                ))}
+                            </div>
+                        </motion.div>
                     </div>
                 </motion.div>
-            </motion.div>
 
             {/* Main Content Area */}
             <div className="pt-2">
@@ -464,137 +453,17 @@ export const Home = () => {
                     )}
 
                     {/* Main Collection Grid */}
-                    <div className="px-4">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-xl font-extrabold text-slate-800 dark:text-white">
-                                {editMode ? 'Edit Library' : 'My Collection'} 
-                                <span className="text-sm font-medium text-slate-400 ml-2">({filteredNovels.length})</span>
-                            </h3>
-                        </div>
-
-                        {filteredNovels.length === 0 && !searchQuery ? (
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-20 text-center">
-                                <div className="size-24 rounded-full bg-primary/10 flex items-center justify-center mb-6">
-                                    <BookOpen size={48} className="text-primary/50" />
-                                </div>
-                                <h4 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Your library is empty</h4>
-                                <p className="text-sm text-slate-500 max-w-[250px] mb-6">Discover new worlds and add your favorite novels here.</p>
-                                <Link to="/discover" className="flex items-center gap-2 bg-primary text-white px-6 py-3 rounded-full font-bold shadow-lg shadow-primary/30 active:scale-95 transition-all">
-                                    Browse Discover <ChevronRight size={18} />
-                                </Link>
-                            </motion.div>
-                        ) : filteredNovels.length === 0 && searchQuery ? (
-                            <div className="text-center py-20 text-slate-500">
-                                <Search size={40} className="mx-auto mb-4 opacity-20" />
-                                <p className="font-medium">No results found for "{searchQuery}"</p>
-                            </div>
-                        ) : (
-                            <div 
-                                className="grid gap-3 sm:gap-4 pb-6"
-                                style={{ gridTemplateColumns: `repeat(${COLUMN_COUNT}, minmax(0, 1fr))` }}
-                            >
-                                {filteredNovels.map((novel) => (
-                                    <motion.div
-                                        key={novel.id}
-                                        variants={editMode ? jiggleVariants : {}}
-                                        animate={editMode ? "jiggle" : "idle"}
-                                    >
-                                        <Link
-                                            to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(novel.id)}` : `/novel/${encodeURIComponent(novel.id)}`)}
-                                            className={`flex flex-col gap-2 group relative w-full select-none touch-manipulation ${editMode ? 'cursor-default' : 'cursor-pointer'}`}
-                                            style={{ WebkitTapHighlightColor: 'transparent' }}
-                                            onTouchStart={handlePointerDown}
-                                            onTouchEnd={handlePointerUpOrMove}
-                                            onTouchMove={handlePointerUpOrMove}
-                                            onMouseDown={handlePointerDown}
-                                            onMouseUp={handlePointerUpOrMove}
-                                            onMouseLeave={handlePointerUpOrMove}
-                                            onContextMenu={(e) => { e.preventDefault(); }}
-                                            onClick={preventLinkIfEdit}
-                                        >
-                                            {/* Edit Mode Delete Button */}
-                                            <AnimatePresence>
-                                                {editMode && (
-                                                    <motion.button
-                                                        initial={{ scale: 0, opacity: 0 }}
-                                                        animate={{ scale: 1, opacity: 1 }}
-                                                        exit={{ scale: 0, opacity: 0 }}
-                                                        onClick={(e) => handleDeleteNovel(novel.id, e)}
-                                                        className="absolute -top-2 -right-2 z-20 size-8 bg-red-500/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl ring-2 ring-white dark:ring-[#0f111a] hover:bg-red-600 transition-colors"
-                                                    >
-                                                        <X size={16} className="text-white" strokeWidth={3} />
-                                                    </motion.button>
-                                                )}
-                                            </AnimatePresence>
-
-                                            <div className={`relative aspect-[2/3] w-full rounded-2xl overflow-hidden shadow-sm bg-slate-100 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 ${editMode ? 'ring-2 ring-red-500/50 shadow-red-500/20' : 'group-active:scale-[0.97] transition-all duration-200'}`}>
-                                                <img
-                                                    src={novel.coverUrl || '/placeholder-cover.jpg'}
-                                                    alt={novel.title}
-                                                    className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                                    loading="lazy"
-                                                />
-                                                
-                                                {/* Smooth Gradient Overlay */}
-                                                <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-80" />
-
-                                                {/* Type Badge */}
-                                                {novel.category && novel.category !== 'Unknown' && (
-                                                    <div className="absolute top-2 right-2 px-2 py-1 rounded-md bg-black/40 backdrop-blur-md ring-1 ring-white/20">
-                                                        <p className="text-[9px] font-extrabold text-white uppercase tracking-wider">{novel.category}</p>
-                                                    </div>
-                                                )}
-
-                                                {/* Embedded Info & Progress */}
-                                                <div className="absolute inset-x-0 bottom-0 p-2 sm:p-3 flex flex-col justify-end">
-                                                    <div className="h-1 bg-white/30 rounded-full overflow-hidden backdrop-blur-sm w-full shadow-inner mb-1.5">
-                                                        <div
-                                                            className="h-full bg-primary shadow-[0_0_8px_rgba(var(--color-primary),0.8)]"
-                                                            style={{ width: `${Math.min(100, ((novel.readChapters || 0) / (novel.totalChapters || 1)) * 100)}%` }}
-                                                        />
-                                                    </div>
-                                                    <div className="flex justify-between items-end gap-2">
-                                                        <p className="text-[10px] sm:text-xs text-white/90 truncate font-medium">
-                                                            Ch {novel.readChapters || 0}
-                                                        </p>
-                                                        <p className="text-[9px] text-white/60 font-semibold bg-white/10 px-1.5 py-0.5 rounded backdrop-blur-md">
-                                                            {Math.round(((novel.readChapters || 0) / (novel.totalChapters || 1)) * 100)}%
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex flex-col px-1">
-                                                <p className="font-bold text-xs sm:text-sm line-clamp-2 leading-tight group-hover:text-primary transition-colors text-slate-800 dark:text-slate-200">
-                                                    {novel.title}
-                                                </p>
-                                            </div>
-                                        </Link>
-                                    </motion.div>
-                                ))}
-
-                                {/* Import Button */}
-                                {!searchQuery && selectedCategory === 'All' && (
-                                    <Link to="/discover" className="relative aspect-[2/3] w-full rounded-2xl border-2 border-dashed border-slate-300 dark:border-white/10 flex flex-col items-center justify-center gap-3 hover:bg-primary/5 hover:border-primary/50 transition-all active:scale-[0.97] group">
-                                        <div className="size-12 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center group-hover:bg-primary group-hover:shadow-lg group-hover:shadow-primary/30 transition-all duration-300">
-                                            <Plus className="text-slate-400 group-hover:text-white transition-colors" size={24} />
-                                        </div>
-                                        <span className="text-xs font-bold text-slate-500 group-hover:text-primary">Add Novel</span>
-                                    </Link>
-                                )}
-                            </div>
-                        )}
-                        
-                        {/* Floating Import Button for when grid is full or empty */}
-                        {!searchQuery && selectedCategory === 'All' && filteredNovels.length > 0 && (
-                            <div className="flex justify-center mt-4 mb-6">
-                                <Link to="/discover" className="flex items-center gap-2 px-6 py-3 rounded-full bg-slate-100 dark:bg-white/5 text-sm font-bold hover:bg-primary hover:text-white transition-colors shadow-sm">
-                                    <Plus size={18} />
-                                    <span>Import Another Series</span>
-                                </Link>
-                            </div>
-                        )}
-                    </div>
+                    <NovelGrid
+                        filteredNovels={filteredNovels}
+                        searchQuery={searchQuery}
+                        selectedCategory={selectedCategory}
+                        editMode={editMode}
+                        COLUMN_COUNT={COLUMN_COUNT}
+                        handlePointerDown={handlePointerDown}
+                        handlePointerUpOrMove={handlePointerUpOrMove}
+                        preventLinkIfEdit={preventLinkIfEdit}
+                        handleDeleteNovel={handleDeleteNovel}
+                    />
                 </div>
             </div>
 

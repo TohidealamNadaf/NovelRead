@@ -29,7 +29,7 @@ export const DiscoverList = () => {
     const [hasMore, setHasMore] = useState(true);
     const isLoadingRef = useRef(false);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
-    const isHeaderHidden = useQuickReturnHeader(scrollContainerRef);
+    const { hidden: isHeaderHidden } = useQuickReturnHeader(scrollContainerRef);
 
     // Save scroll position when navigating away
     const handleScroll = () => {
