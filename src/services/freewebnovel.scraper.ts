@@ -178,6 +178,31 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                 }
             });
         }
+        
+        // Final fallback for AJAX fragments which might just be raw <li> tags without a <ul>
+        if (chapters.length === 0) {
+            $('a').each((_, el: any) => {
+                const link = el.attribs?.href;
+                if (!link || (!link.toLowerCase().includes('chapter') && !link.match(/\/\d+/))) return;
+
+                const anchor = $(el);
+                const rawTitle = el.attribs?.title?.trim() || anchor.text().trim() || '';
+                const cleanTitle = this.cleanChapterTitle(rawTitle);
+                const fullUrl = this.resolveUrl(baseUrl, link);
+
+                let finalTitle = cleanTitle;
+                if (!finalTitle || /^Chapter$/i.test(finalTitle)) {
+                    const urlMatch = fullUrl.match(/chapter[_\-]?(\d+)/i);
+                    if (urlMatch) finalTitle = `Chapter ${urlMatch[1]}`;
+                }
+
+                if (this.isValidChapterTitle(finalTitle) && !seenLinks.has(fullUrl)) {
+                    chapters.push({ title: finalTitle, url: fullUrl });
+                    seenLinks.add(fullUrl);
+                }
+            });
+        }
+
         return chapters;
     }
 
@@ -228,21 +253,31 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
     private async scrapeChapterList(url: string): Promise<ScrapedChapter[]> {
         const allChapters: ScrapedChapter[] = [];
         const chapterUrlSet = new Set<string>();
-        let currentUrl = url;
+        const pageQueue = [url];
         const visitedUrls = new Set<string>();
         let pageCount = 0;
 
-        while (currentUrl && !visitedUrls.has(currentUrl) && pageCount < 50) {
+        while (pageQueue.length > 0 && pageCount < 200) {
+            const currentUrl = pageQueue.shift()!;
+            if (visitedUrls.has(currentUrl)) continue;
             visitedUrls.add(currentUrl);
             pageCount++;
-            let pageFound = false;
 
             for (const proxyUrl of this.getProxies()) {
                 try {
-                    const html = await this.fetchHtml(currentUrl, proxyUrl);
-                    if (!html || html.length < 500) continue;
+                    const rawHtml = await this.fetchHtml(currentUrl, proxyUrl);
+                    if (!rawHtml || rawHtml.length < 10) continue;
                     
-                    const $ = cheerio.load(html);
+                    let htmlToParse = rawHtml;
+                    if (rawHtml.trim().startsWith('{')) {
+                        try {
+                            const data = JSON.parse(rawHtml);
+                            if (data.html) htmlToParse = data.html;
+                        } catch (e) {}
+                    }
+                    if (htmlToParse.length < 10) continue;
+                    
+                    const $ = cheerio.load(htmlToParse);
                     const newChapters = this.extractChapters($, currentUrl);
 
                     for (const ch of newChapters) {
@@ -252,29 +287,57 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                         }
                     }
 
-                    // FreeWebNovel chapter list usually doesn't paginate chapters on detail page,
-                    // but we look for standard pagination if they do
+                    const scripts = $('script').map((_, el) => $(el).html()).get().join(' ');
+                    const totalPageMatch = scripts.match(/totalPage\s*:\s*(\d+)/);
+                    let totalPage = 0;
+                    if (totalPageMatch) {
+                        totalPage = parseInt(totalPageMatch[1], 10);
+                    } else if ($('#indexselect option').length > 0) {
+                        totalPage = $('#indexselect option').length;
+                    }
+                    
+                    if (totalPage > 1 && !currentUrl.includes('ajax=chapters')) {
+                        const cleanUrl = currentUrl.split('?')[0];
+                        for (let p = 2; p <= totalPage; p++) {
+                            const ajaxUrl = `${cleanUrl}?ajax=chapters&page=${p}&pageSize=40`;
+                            if (!visitedUrls.has(ajaxUrl) && !pageQueue.includes(ajaxUrl)) {
+                                pageQueue.push(ajaxUrl);
+                            }
+                        }
+                    }
+
+                    // FreeWebNovel typically uses a <select> dropdown for pagination
+                    $('select option').each((_, el) => {
+                        const val = $(el).attr('value');
+                        if (val && val.length > 5 && !val.includes('javascript:') && !val.match(/^\d+$/)) {
+                            const fullPageUrl = this.resolveUrl(currentUrl, val);
+                            if (!visitedUrls.has(fullPageUrl) && !pageQueue.includes(fullPageUrl)) {
+                                pageQueue.push(fullPageUrl);
+                            }
+                        }
+                    });
+
+                    // Also look for standard pagination if they do use it
                     const nextSelectors = ['.pagination .next a', '.pager .next a'];
-                    const origin = new URL(currentUrl).origin;
-                    let nextPage = null;
                     for (const sel of nextSelectors) {
                         const el = $(sel);
                         const nextPath = el.attr('href');
                         if (nextPath) {
-                            nextPage = nextPath.startsWith('http') ? nextPath : `${origin}${nextPath.startsWith('/') ? '' : '/'}${nextPath}`;
-                            break;
+                            const fullNext = this.resolveUrl(currentUrl, nextPath);
+                            if (!visitedUrls.has(fullNext) && !pageQueue.includes(fullNext)) {
+                                pageQueue.push(fullNext);
+                            }
                         }
                     }
 
-                    currentUrl = nextPage && !visitedUrls.has(nextPage) ? nextPage : '';
-                    pageFound = true;
                     break;
                 } catch (e) {
                     console.warn(`[FreeWebNovel] Chapter page failed`, e);
                 }
             }
-            if (!pageFound) break;
-            if (pageCount > 0) await new Promise(resolve => setTimeout(resolve, 300));
+            if (pageQueue.length > 0 && pageCount > 0) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
         }
 
         return allChapters;
@@ -321,21 +384,31 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         const allChapters: ScrapedChapter[] = [];
         const chapterUrlSet = new Set<string>();
         const proxyOrder = workingProxy ? [workingProxy, ...this.getProxies().filter(p => p !== workingProxy)] : this.getProxies();
-        let currentUrl = url;
+        const pageQueue = [url];
         const visitedUrls = new Set<string>();
         let pageCount = 0;
 
-        while (currentUrl && !visitedUrls.has(currentUrl) && pageCount < 50) {
+        while (pageQueue.length > 0 && pageCount < 200) {
+            const currentUrl = pageQueue.shift()!;
+            if (visitedUrls.has(currentUrl)) continue;
             visitedUrls.add(currentUrl);
             pageCount++;
-            let pageFound = false;
 
             for (const proxyUrl of proxyOrder) {
                 try {
-                    const html = await this.fetchHtml(currentUrl, proxyUrl);
-                    if (!html || html.length < 500) continue;
+                    const rawHtml = await this.fetchHtml(currentUrl, proxyUrl);
+                    if (!rawHtml || rawHtml.length < 10) continue;
                     
-                    const $ = cheerio.load(html);
+                    let htmlToParse = rawHtml;
+                    if (rawHtml.trim().startsWith('{')) {
+                        try {
+                            const data = JSON.parse(rawHtml);
+                            if (data.html) htmlToParse = data.html;
+                        } catch (e) {}
+                    }
+                    if (htmlToParse.length < 10) continue;
+                    
+                    const $ = cheerio.load(htmlToParse);
                     const newChapters = this.extractChapters($, currentUrl);
 
                     for (const ch of newChapters) {
@@ -347,28 +420,59 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
 
                     onProgress?.(allChapters, pageCount, { title, author, summary, status, coverUrl });
 
-                    let nextPage = null;
+                    const scripts = $('script').map((_, el) => $(el).html()).get().join(' ');
+                    const totalPageMatch = scripts.match(/totalPage\s*:\s*(\d+)/);
+                    let totalPage = 0;
+                    if (totalPageMatch) {
+                        totalPage = parseInt(totalPageMatch[1], 10);
+                    } else if ($('#indexselect option').length > 0) {
+                        totalPage = $('#indexselect option').length;
+                    }
+                    
+                    if (totalPage > 1 && !currentUrl.includes('ajax=chapters')) {
+                        const cleanUrl = currentUrl.split('?')[0];
+                        for (let p = 2; p <= totalPage; p++) {
+                            const ajaxUrl = `${cleanUrl}?ajax=chapters&page=${p}&pageSize=40`;
+                            if (!visitedUrls.has(ajaxUrl) && !pageQueue.includes(ajaxUrl)) {
+                                pageQueue.push(ajaxUrl);
+                            }
+                        }
+                    }
+
+                    // FreeWebNovel typically uses a <select> dropdown for pagination
+                    $('select option').each((_, el) => {
+                        const val = $(el).attr('value');
+                        if (val && val.length > 5 && !val.includes('javascript:') && !val.match(/^\d+$/)) {
+                            const fullPageUrl = this.resolveUrl(currentUrl, val);
+                            if (!visitedUrls.has(fullPageUrl) && !pageQueue.includes(fullPageUrl)) {
+                                pageQueue.push(fullPageUrl);
+                            }
+                        }
+                    });
+
                     const nextSelectors = ['.pagination .next a', '.pager .next a'];
-                    const origin = new URL(currentUrl).origin;
                     for (const sel of nextSelectors) {
                         const el = $(sel);
                         const nextPath = el.attr('href');
                         if (nextPath) {
-                            nextPage = nextPath.startsWith('http') ? nextPath : `${origin}${nextPath.startsWith('/') ? '' : '/'}${nextPath}`;
-                            break;
+                            const fullNext = this.resolveUrl(currentUrl, nextPath);
+                            if (!visitedUrls.has(fullNext) && !pageQueue.includes(fullNext)) {
+                                pageQueue.push(fullNext);
+                            }
                         }
                     }
 
-                    currentUrl = nextPage && !visitedUrls.has(nextPage) ? nextPage : '';
-                    pageFound = true;
-                    if (proxyUrl !== proxyOrder[0]) workingProxy = proxyUrl;
+                    if (proxyUrl !== proxyOrder[0]) {
+                        workingProxy = proxyUrl;
+                    }
                     break;
                 } catch (e) {
                     console.warn(`[FreeWebNovel:Fast] Chapter page failed`, e);
                 }
             }
-            if (!pageFound) break;
-            if (pageCount > 0) await new Promise(resolve => setTimeout(resolve, 300));
+            if (pageQueue.length > 0 && pageCount > 0) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
         }
 
         if (!title && allChapters.length === 0) {
@@ -377,7 +481,10 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
 
         return {
             title: title || 'Unknown Title',
-            author, coverUrl, summary, status,
+            author,
+            coverUrl,
+            summary,
+            status,
             chapters: allChapters
         };
     }
