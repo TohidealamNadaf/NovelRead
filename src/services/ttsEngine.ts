@@ -22,7 +22,6 @@
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
-import type { PluginListenerHandle } from '@capacitor/core';
 
 export interface WordBoundary {
     start: number;   // Absolute char index in plain text
@@ -35,6 +34,12 @@ type WordChangeCallback = (boundary: WordBoundary) => void;
 type CompleteCallback = () => void;
 
 export class TTSEngine {
+    // TEMP DIAGNOSTIC: counts how many times the native onRangeStart callback
+    // fires per spoken word during a single test read. If the listener leak
+    // is truly fixed, this should NOT show multiple increments for the same
+    // word after several pause/resume cycles. Remove once verified.
+    public static rangeStartFireCount = 0;
+
     private isPlaying = false;
     private isPaused = false;
     private shouldStop = false;
@@ -49,8 +54,14 @@ export class TTSEngine {
     private nativeVoiceIndex = -1;
     private nativeVoiceLang = 'en-US';
 
-    // Native listener handle (for cleanup)
-    private nativeRangeListener: PluginListenerHandle | null = null;
+    // Native listener handle — registered ONCE for the engine's lifetime.
+    // Previously this was added/removed on every speak()/resume() call, which
+    // could leak native listeners if the plugin's remove() silently failed to
+    // fully detach (a known issue with some Capacitor TTS progress listeners).
+    // A leaked listener keeps firing on every future word, multiplying CPU/
+    // battery/memory cost with every pause-resume cycle. Registering once and
+    // reading mutable state inside the callback avoids this entirely.
+    private nativeListenerReady: Promise<void> | null = null;
 
     // Web Speech API — current text for resume from current position
     private currentText = '';
@@ -189,11 +200,11 @@ export class TTSEngine {
         this.isPaused = false;
         this.currentResumeOffset = 0;
 
-        // Remove native listener
-        if (this.nativeRangeListener) {
-            await this.nativeRangeListener.remove().catch(() => {});
-            this.nativeRangeListener = null;
-        }
+        // NOTE: the persistent onRangeStart listener (registered once via
+        // ensureNativeListener) is intentionally left attached across stop()
+        // calls — it stays idle via the shouldStop/isPaused checks in its
+        // callback and will be reused by the next speak() without needing
+        // to be re-registered.
 
         if (this.isNative) {
             await TextToSpeech.stop().catch(console.error);
@@ -215,6 +226,39 @@ export class TTSEngine {
     // ─── NATIVE (Android / iOS) ──────────────────────────────────────────────
 
     /**
+     * Registers the onRangeStart listener once for the engine's lifetime.
+     * Safe to call multiple times — only the first call actually registers.
+     * The callback reads live instance state (shouldStop, isPaused,
+     * currentActiveChunkOffset) so it stays correct across every speak/resume
+     * cycle without ever needing to be re-added or removed.
+     */
+    private ensureNativeListener(): Promise<void> {
+        if (!this.nativeListenerReady) {
+            this.nativeListenerReady = TextToSpeech.addListener(
+                'onRangeStart',
+                (data: { start: number; end: number; spokenWord: string }) => {
+                    TTSEngine.rangeStartFireCount++;
+                    if (this.shouldStop || this.isPaused) return;
+
+                    const absoluteStart = this.currentActiveChunkOffset + data.start;
+                    const absoluteEnd = this.currentActiveChunkOffset + data.end;
+
+                    this.currentResumeOffset = absoluteStart;
+
+                    this.onWordChange?.({
+                        start: absoluteStart,
+                        end: absoluteEnd,
+                        word: data.spokenWord,
+                    });
+                }
+            ).then(() => {
+                // handle intentionally discarded since listener lives for engine lifetime
+            });
+        }
+        return this.nativeListenerReady;
+    }
+
+    /**
      * Speak via Capacitor TextToSpeech plugin.
      * The plugin's `onRangeStart` listener returns absolute {start, end} indices
      * into the text string passed to speak() — exactly like Kindle/Google Books.
@@ -223,11 +267,9 @@ export class TTSEngine {
      * @param globalOffset Char offset if this is a resume from mid-text
      */
     private async speakNative(text: string, globalOffset = 0): Promise<void> {
-        // Clean up any previous listener
-        if (this.nativeRangeListener) {
-            await this.nativeRangeListener.remove().catch(() => {});
-            this.nativeRangeListener = null;
-        }
+        // Ensure the single persistent listener is registered. This no longer
+        // adds/removes a listener per call — see ensureNativeListener().
+        await this.ensureNativeListener();
 
         // Chunking for Android's 4000 char limit
         const chunks: { text: string; offset: number }[] = [];
@@ -254,26 +296,6 @@ export class TTSEngine {
             currentOffset += breakIndex;
             remaining = remaining.substring(breakIndex);
         }
-
-        // Register onRangeStart listener BEFORE calling speak()
-        this.nativeRangeListener = await TextToSpeech.addListener(
-            'onRangeStart',
-            (data: { start: number; end: number; spokenWord: string }) => {
-                if (this.shouldStop || this.isPaused) return;
-
-                const absoluteStart = this.currentActiveChunkOffset + data.start;
-                const absoluteEnd = this.currentActiveChunkOffset + data.end;
-
-                // Track the last spoken position for accurate resume
-                this.currentResumeOffset = absoluteStart;
-
-                this.onWordChange?.({
-                    start: absoluteStart,
-                    end: absoluteEnd,
-                    word: data.spokenWord,
-                });
-            }
-        );
 
         try {
             for (let i = 0; i < chunks.length; i++) {
@@ -305,13 +327,11 @@ export class TTSEngine {
             if (!this.shouldStop && !this.isPaused && !msg.includes('interrupted')) {
                 console.error('[TTSEngine-Native] Speak error:', e);
             }
-        } finally {
-            // Remove listener when speech ends (whether completed or interrupted)
-            if (this.nativeRangeListener) {
-                await this.nativeRangeListener.remove().catch(() => {});
-                this.nativeRangeListener = null;
-            }
         }
+        // NOTE: the onRangeStart listener is intentionally NOT removed here.
+        // It's a single persistent listener for the engine's lifetime (see
+        // ensureNativeListener) and stays safely idle when shouldStop/isPaused
+        // are true, since the callback checks those flags and returns early.
     }
 
     // ─── WEB (browser) ──────────────────────────────────────────────────────

@@ -79,6 +79,16 @@ export const Reader = () => {
         return null;
     }, [navChapters, navIndex]);
 
+    // Background prefetching for adjacent chapters to eliminate navigation latency
+    useEffect(() => {
+        if (nextChapter && (nextChapter.audioPath || nextChapter.url)) {
+            scraperService.fetchChapterContent(nextChapter.audioPath || nextChapter.url).catch(() => {});
+        }
+        if (prevChapter && (prevChapter.audioPath || prevChapter.url)) {
+            scraperService.fetchChapterContent(prevChapter.audioPath || prevChapter.url).catch(() => {});
+        }
+    }, [nextChapter, prevChapter]);
+
 
     const [liveError, setLiveError] = useState('');
     const [isSavingOffline, setIsSavingOffline] = useState(false);
@@ -979,13 +989,18 @@ export const Reader = () => {
                     }
                 }}
                 onClick={handleDoubleTap}
-                onScroll={(e) => {
-                    const target = e.currentTarget;
-                    if (nextChapter && target.scrollHeight - target.scrollTop - target.clientHeight < 50) {
-                        // Near bottom - could trigger auto-load or show hint
-                    }
-                }}
             >
+                {/* 
+                    NOTE: a near-bottom scroll detector previously lived here but had 
+                    no actual effect (empty branch) while still forcing a synchronous 
+                    layout read — scrollHeight/scrollTop/clientHeight — on every single 
+                    scroll event, unthrottled. This ran continuously during TTS 
+                    auto-scroll sessions, adding sustained CPU cost across the whole 
+                    reading session. Removed since it did nothing; if a "near end of 
+                    chapter" indicator is wanted later, implement it with a throttled 
+                    IntersectionObserver on a sentinel element near the bottom of the 
+                    content instead of a per-scroll-event layout read.
+                */}
                 <div
                     className="relative w-full"
                     style={{

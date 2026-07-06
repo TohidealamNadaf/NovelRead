@@ -490,20 +490,16 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
     }
 
     async fetchChapterContent(url: string): Promise<string> {
-        for (const proxyUrl of this.getProxies()) {
-            try {
-                const html = await this.fetchHtml(url, proxyUrl);
-                if (!html) continue;
+        try {
+            const html = await this.fetchHtmlWithProxies(url);
+            const $ = cheerio.load(html);
+            const contentHtml = $('.txt').html();
 
-                const $ = cheerio.load(html);
-                const contentHtml = $('.txt').html();
-
-                if (contentHtml && contentHtml.length > 100) {
-                    return this.enhanceContent(contentHtml);
-                }
-            } catch (error) {
-                console.warn(`[FreeWebNovel] Failed to fetch chapter via proxy`, error);
+            if (contentHtml && contentHtml.length > 100) {
+                return this.enhanceContent(contentHtml);
             }
+        } catch (error) {
+            console.warn(`[FreeWebNovel] Failed to fetch chapter content`, error);
         }
         throw new Error('Could not fetch chapter content from FreeWebNovel after trying all proxies.');
     }

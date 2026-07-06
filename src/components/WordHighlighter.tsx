@@ -110,6 +110,22 @@ export function WordHighlighter({
 
         let html = '';
         doc.body.childNodes.forEach(node => { html += processNode(node); });
+
+        // NOTE: every word becomes its own DOM span (needed for word-level TTS
+        // highlighting). For very long chapters this means thousands of DOM
+        // nodes created at once — a one-time cost at chapter-open, not a
+        // continuous drain, but worth knowing about for very long chapters.
+        if (import.meta.env.DEV) {
+            const wordCount = (html.match(/class="tts-word"/g) || []).length;
+            if (wordCount > 6000) {
+                console.warn(
+                    `[WordHighlighter] Chapter has ${wordCount} words wrapped in ` +
+                    `individual spans. Consider splitting extremely long chapters ` +
+                    `if this causes noticeable load lag on lower-end devices.`
+                );
+            }
+        }
+
         return html;
     }, [htmlContent]);
 

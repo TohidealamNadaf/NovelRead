@@ -13,12 +13,32 @@ export abstract class BaseScraper {
         return ['', ...this.PROXIES];
     }
 
-    public async fetchHtml(url: string, proxyPrefix: string = ''): Promise<string | null> {
+    /**
+     * Races all proxies (including direct connection) simultaneously.
+     * Reduces the overall timeout to 5000ms.
+     * Resolves with the first successful HTML response, or throws if all fail.
+     */
+    public async fetchHtmlWithProxies(url: string): Promise<string> {
+        if (!url) throw new Error("Invalid URL");
+
+        const proxies = this.getProxies();
+        
+        return Promise.any(
+            proxies.map(async (proxyPrefix) => {
+                const html = await this.fetchHtml(url, proxyPrefix, 5000);
+                if (!html) throw new Error(`Proxy ${proxyPrefix || 'direct'} returned null`);
+                return html;
+            })
+        );
+    }
+
+    public async fetchHtml(url: string, proxyPrefix: string = '', timeoutMs: number = 10000): Promise<string | null> {
         if (!url) return null;
         
         try {
             const separator = url.includes('?') ? '&' : '?';
-            const bustedUrl = `${url}${separator}_t=${Date.now()}`;
+            // Only cache-bust the direct connection. Proxies should use their own cache layer.
+            const bustedUrl = proxyPrefix === '' ? `${url}${separator}_t=${Date.now()}` : url;
             const finalUrl = proxyPrefix ? `${proxyPrefix}${encodeURIComponent(bustedUrl)}` : bustedUrl;
             
             const isCapacitor = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
@@ -34,8 +54,8 @@ export abstract class BaseScraper {
                         'Pragma': 'no-cache'
                     },
                     responseType: 'text',
-                    connectTimeout: 8000,
-                    readTimeout: 10000
+                    connectTimeout: Math.min(8000, timeoutMs),
+                    readTimeout: timeoutMs
                 });
                 
                 if (response.status >= 200 && response.status < 300) {
@@ -49,7 +69,7 @@ export abstract class BaseScraper {
                         : `/api/proxy?url=${encodeURIComponent(url)}`);
 
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
                 try {
                     const response = await fetch(fetchUrl, {

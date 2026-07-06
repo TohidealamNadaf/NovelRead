@@ -46,6 +46,10 @@ export class ScraperService {
     private novelfireScraper = new NovelFireScraper();
     private freewebnovelScraper = new FreeWebNovelScraper();
 
+    // In-memory cache for live reading and prefetching
+    // Ensures quick back/forth navigation and instant prefetch resolution
+    private chapterCache = new Map<string, { content: string, timestamp: number }>();
+
     get isScraping() { return this.isScrapingInternal; }
     get progress() { return this.currentProgress; }
     get activeNovelMetadata() { return this.activeNovel; }
@@ -100,7 +104,22 @@ export class ScraperService {
     }
 
     async fetchChapterContent(url: string): Promise<string> {
-        return this.getScraper(url).fetchChapterContent(url);
+        // Return from cache if fetched within the last 30 minutes
+        const cached = this.chapterCache.get(url);
+        if (cached && Date.now() - cached.timestamp < 30 * 60 * 1000) {
+            return cached.content;
+        }
+
+        const content = await this.getScraper(url).fetchChapterContent(url);
+        
+        // Save to cache and restrict size to ~20 chapters
+        this.chapterCache.set(url, { content, timestamp: Date.now() });
+        if (this.chapterCache.size > 20) {
+            const oldestKey = this.chapterCache.keys().next().value;
+            if (oldestKey) this.chapterCache.delete(oldestKey);
+        }
+
+        return content;
     }
 
     enhanceContent(html: string): string {

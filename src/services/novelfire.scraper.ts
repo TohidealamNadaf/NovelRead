@@ -501,30 +501,26 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
     }
 
     async fetchChapterContent(url: string): Promise<string> {
-        for (const proxyUrl of this.getProxies()) {
-            try {
-                const html = await this.fetchHtml(url, proxyUrl);
-                if (!html) continue;
+        try {
+            const html = await this.fetchHtmlWithProxies(url);
+            const $ = cheerio.load(html);
+            const contentSelectors = ['#content', '#chapter-container', '#chapter-content', '.chapter-content', '.txt'];
+            let contentHtml = '';
 
-                const $ = cheerio.load(html);
-                const contentSelectors = ['#content', '#chapter-container', '#chapter-content', '.chapter-content', '.txt'];
-                let contentHtml = '';
-
-                for (const selector of contentSelectors) {
-                    const el = $(selector);
-                    if (el.length > 0) {
-                        el.find('.ads, .advertisement, script, style').remove();
-                        contentHtml = el.html() || '';
-                        break;
-                    }
+            for (const selector of contentSelectors) {
+                const el = $(selector);
+                if (el.length > 0) {
+                    el.find('.ads, .advertisement, script, style').remove();
+                    contentHtml = el.html() || '';
+                    break;
                 }
-
-                if (contentHtml && contentHtml.length > 100) {
-                    return this.enhanceContent(contentHtml);
-                }
-            } catch (error) {
-                console.warn(`[NovelFire] Failed to fetch chapter via proxy`, error);
             }
+
+            if (contentHtml && contentHtml.length > 100) {
+                return this.enhanceContent(contentHtml);
+            }
+        } catch (error) {
+            console.warn(`[NovelFire] Failed to fetch chapter content`, error);
         }
         throw new Error('Could not fetch chapter content from NovelFire after trying all proxies.');
     }

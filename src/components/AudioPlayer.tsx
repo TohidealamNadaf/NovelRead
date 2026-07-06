@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Pause, FastForward, Rewind, Settings, ChevronDown, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { audioService } from '../services/audio.service';
+import { TTSEngine } from '../services/ttsEngine';
 import { type Chapter, type Novel } from '../services/db.service';
 
 interface AudioPlayerProps {
@@ -28,6 +29,18 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [hasActiveSession, setHasActiveSession] = useState(false);
+
+    // TEMP DIAGNOSTIC state
+    const [debugCount, setDebugCount] = useState(0);
+
+    useEffect(() => {
+        if (isExpanded) {
+            const interval = setInterval(() => {
+                setDebugCount(TTSEngine.rangeStartFireCount);
+            }, 1000);
+            return () => clearInterval(interval);
+        }
+    }, [isExpanded]);
 
     useEffect(() => {
         let prevSpeaking: boolean | null = null;
@@ -156,6 +169,11 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
                                 <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
                                     {novel?.title}
                                 </p>
+                                
+                                {/* TEMP DIAGNOSTIC */}
+                                <div className="mt-2 text-[10px] text-red-500 font-bold bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded-full inline-block">
+                                    DEBUG rangeStartFires: {debugCount}
+                                </div>
                             </div>
 
                             {/* Main Controls */}
