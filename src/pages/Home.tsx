@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { FooterNavigation } from '../components/FooterNavigation';
 import { Header } from '../components/Header';
 import { dbService, type Novel } from '../services/db.service';
@@ -35,13 +35,46 @@ export const Home = () => {
     const [editMode, setEditMode] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
-    const [showScrollTop, setShowScrollTop] = useState(false);
     const [isScrolled, setIsScrolled] = useState(false);
+    const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+    // FIX 2: We only measure the base header row's height once on mount (and resize).
+    // The total height is computed analytically rather than firing continuously 
+    // during the search-bar's spring animation, which saves numerous React re-renders.
+    const headerWrapperRef = useRef<HTMLDivElement>(null);
+    const [baseHeaderHeight, setBaseHeaderHeight] = useState(0);
+
+    useLayoutEffect(() => {
+        const measureBase = () => {
+            if (headerWrapperRef.current) {
+                // The first child is the actual <Header /> component
+                const headerElement = headerWrapperRef.current.firstElementChild;
+                if (headerElement) {
+                    setBaseHeaderHeight(headerElement.getBoundingClientRect().height);
+                }
+            }
+        };
+        measureBase();
+        window.addEventListener('resize', measureBase);
+        return () => window.removeEventListener('resize', measureBase);
+    }, []);
+
+    const SEARCH_BLOCK_HEIGHT = 118;
+    const isSearchExpanded = !editMode && !isHeaderCollapsed;
+    const totalHeaderHeight = baseHeaderHeight + (isSearchExpanded ? SEARCH_BLOCK_HEIGHT : 0);
+
+    const [showScrollTop, setShowScrollTop] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const location = useLocation();
 
     const COLUMN_COUNT = useResponsiveColumns();
-    const isHeaderHidden = useQuickReturnHeader(containerRef);
+    
+    // FIX: Pass the precise dynamic `totalHeaderHeight` as the threshold.
+    // If the header hides at the default 50px threshold while being 160px tall,
+    // it will reveal 110px of completely empty space, causing a visible gap.
+    // By tying the threshold exactly to the header's true rendered height, 
+    // it is guaranteed that 160px of real content has already scrolled up behind it
+    // *before* it slides away, ensuring a seamless reveal.
+    const isHeaderHidden = useQuickReturnHeader(containerRef, totalHeaderHeight);
 
     // Long Press Edit Mode Tracking
     const pressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -107,8 +140,6 @@ export const Home = () => {
             setNovels([]);
         }
     };
-
-    const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
 
     const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
         const scrollTop = e.currentTarget.scrollTop;
@@ -213,15 +244,34 @@ export const Home = () => {
                 className="flex-1 overflow-y-auto overflow-x-hidden touch-pan-y relative pb-24 hide-scrollbar"
                 onScroll={handleScroll}
             >
+                {/* 
+                    FIX: The spacer is now statically sized based on the actual header content (search bar expanded or not),
+                    and NEVER collapses based on `isHeaderHidden`. 
+                    Because this spacer is inside the scroll container, it simply scrolls out of view naturally.
+                    When the quick-return header slides up, it reveals the novel grid that has already scrolled underneath it.
+                    This perfectly breaks the feedback loop while preserving the standard overlay UI pattern.
+                */}
+                <motion.div 
+                    initial={false}
+                    animate={{ height: totalHeaderHeight }}
+                    transition={{ type: "spring", stiffness: 220, damping: 28 }}
+                    className="shrink-0 w-full"
+                />
+
                 {/* Header Section - Sticky Frosted Glass */}
                 <motion.div 
+                    ref={headerWrapperRef}
                     variants={{
                         visible: { y: 0 },
                         hidden: { y: "-100%" },
                     }}
                     animate={isHeaderHidden ? "hidden" : "visible"}
                     transition={{ duration: 0.35, ease: "easeInOut" }}
-                    className={`sticky top-0 z-30 transition-all duration-300 ${isScrolled ? 'bg-white/80 dark:bg-[#0f111a]/80 backdrop-blur-xl shadow-sm' : 'bg-transparent'}`}
+                    // FIX 1: Changed `sticky` to `fixed top-0 inset-x-0`.
+                    // `position: sticky` always reserves its layout box regardless of transforms,
+                    // which caused the blank gap when `translateY(-100%)` hid the header.
+                    // `fixed` removes it from the flow entirely.
+                    className={`fixed top-0 inset-x-0 z-30 transition-colors duration-300 ${isScrolled ? 'bg-white/80 dark:bg-[#0f111a]/80 backdrop-blur-xl shadow-sm' : 'bg-transparent'}`}
                 >
                     <Header
                     title="Library"
