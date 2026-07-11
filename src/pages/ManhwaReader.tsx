@@ -197,12 +197,19 @@ export const ManhwaReader = () => {
 
     const handleNextChapter = async () => {
         if (!chapter || !novelId) return;
-
-        // Find next chapter index
         const currentIndex = allChapters.findIndex(c => c.id === chapter.id);
         if (currentIndex !== -1 && currentIndex < allChapters.length - 1) {
             const nextChapter = allChapters[currentIndex + 1];
             navigate(`/manhwa/read/${encodeURIComponent(novelId!)}/${encodeURIComponent(nextChapter.id)}`, { replace: true });
+        }
+    };
+
+    const handlePrevChapter = () => {
+        if (!chapter || !novelId) return;
+        const currentIndex = allChapters.findIndex(c => c.id === chapter.id);
+        if (currentIndex > 0) {
+            const prevChapter = allChapters[currentIndex - 1];
+            navigate(`/manhwa/read/${encodeURIComponent(novelId!)}/${encodeURIComponent(prevChapter.id)}`, { replace: true });
         }
     };
 
@@ -266,10 +273,9 @@ export const ManhwaReader = () => {
         );
     }
 
-    const hasNextChapter = (() => {
-        const currentIndex = allChapters.findIndex(c => c.id === chapter.id);
-        return currentIndex !== -1 && currentIndex < allChapters.length - 1;
-    })();
+    const currentChapterIndex = allChapters.findIndex(c => c.id === chapter.id);
+    const hasNextChapter = currentChapterIndex !== -1 && currentChapterIndex < allChapters.length - 1;
+    const hasPrevChapter = currentChapterIndex > 0;
 
     return (
         <div
@@ -320,10 +326,10 @@ export const ManhwaReader = () => {
                 <ReaderControls
                     show={showControls}
                     onNext={handleNextChapter}
+                    onPrev={handlePrevChapter}
                     onHistory={() => setShowSidebar(true)}
                     hasNextChapter={hasNextChapter}
-                    isDarkMode={true}
-                    onToggleTheme={() => { }}
+                    hasPrevChapter={hasPrevChapter}
                 />
             </div>
 

@@ -40,7 +40,7 @@ const ChapterRow = React.memo(({
             isCurrent && "bg-primary/5 -mx-6 px-12 border-l-4 border-primary"
         )}
     >
-        <div className="flex items-center gap-4">
+        <div className={clsx("flex gap-4", viewDensity === 'compact' ? "items-start" : "items-center")}>
             {viewDensity === 'comfortable' && (
                 <div className={clsx(
                     "h-12 w-12 rounded-lg border flex items-center justify-center overflow-hidden shrink-0 font-bold text-xs relative",
@@ -48,39 +48,32 @@ const ChapterRow = React.memo(({
                         ? "bg-primary text-white border-primary"
                         : "bg-slate-200 dark:bg-[#1d1c27] border-slate-200 dark:border-white/5 text-slate-400"
                 )}>
-                    {chapter.isRead ? <CheckCircle2 size={20} className={isCurrent ? "text-white" : "text-green-500"} /> : <span>#{chapter.orderIndex + 1}</span>}
+                    <span>#{chapter.orderIndex + 1}</span>
                 </div>
             )}
-            <div className="flex flex-col">
-                <div className="flex items-center gap-2 flex-wrap">
-                    {viewDensity === 'compact' && (
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500">#{chapter.orderIndex + 1}</span>
-                            {chapter.isRead && <CheckCircle2 size={12} className="text-green-500" />}
-                        </div>
-                    )}
-                    <span className={clsx(
-                        "text-sm font-bold",
-                        chapter.isRead && !isCurrent ? "text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-white"
-                    )}>
-                        {chapter.title}
-                    </span>
-                    {viewDensity === 'compact' && chapter.date && (
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium ml-1">
-                            · {chapter.date}
-                        </span>
-                    )}
+            {viewDensity === 'compact' && (
+                <div className="shrink-0 w-9">
+                    <span className="text-xs font-bold text-slate-400 dark:text-slate-500">#{chapter.orderIndex + 1}</span>
                 </div>
+            )}
+            <div className="flex flex-col min-w-0">
+                <span className={clsx(
+                    "text-sm font-bold",
+                    chapter.isRead && !isCurrent ? "text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-white"
+                )}>
+                    {chapter.title}
+                </span>
 
-                {viewDensity === 'comfortable' && chapter.date && (
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                {chapter.date && (
+                    <span className={clsx(
+                        "text-[10px] text-slate-400 dark:text-slate-500 font-medium",
+                        viewDensity === 'compact' && "mt-0.5"
+                    )}>
                         {chapter.date}
                     </span>
                 )}
 
-                {viewDensity === 'comfortable' && !!chapter.isRead && (
-                    <span className="text-[10px] text-green-600 dark:text-green-500 font-medium whitespace-nowrap">Read</span>
-                )}
+                {/* Read label removed — dimmed text color is sufficient indicator */}
 
                 {isFailed && (
                     <span className="text-[10px] text-red-500 font-medium whitespace-nowrap">Download Failed</span>
@@ -132,11 +125,7 @@ const ChapterGridItem = React.memo(({
         )}>
             {chapter.title.replace(/Chapter\s*/i, '')}
         </span>
-        {chapter.isRead && (
-            <div className="absolute top-1 right-1 text-green-500">
-                <CheckCircle2 size={12} />
-            </div>
-        )}
+        {/* Read indicator removed — dimmed text color is sufficient */}
         {isCurrent && (
             <div className="absolute bottom-1 text-[10px] font-bold uppercase tracking-wider text-primary">
                 Current

@@ -7,246 +7,129 @@ const BASE_URL = 'https://asurascans.com';
 
 export class AsuraScraperService {
     async searchManga(query: string): Promise<NovelMetadata[]> {
-        const url = `${BASE_URL}/browse?search=${encodeURIComponent(query)}`;
-        const html = await this.fetchHtml(url);
-        if (!html) return [];
+        const trimmedQuery = query.trim().toLowerCase();
+        if (!trimmedQuery) return [];
 
-        const $ = cheerio.load(html);
         const results: NovelMetadata[] = [];
         const seenUrls = new Set<string>();
+        const maxPages = 20; // Enough to cover 400+ series (Asura typically has ~300-350)
+        const batchSize = 5; // Fetch multiple pages concurrently
 
-        // Find all links containing series/ (results are typically in a grid)
-        // We avoid strict parent selectors like 'div.grid' which may change on mobile
-        $('a[href*="/comics/"]').each((_, el) => {
-            const a = $(el);
-            const href = a.attr('href');
-            if (!href) return;
+        try {
+            for (let i = 1; i <= maxPages; i += batchSize) {
+                const batchPromises = [];
+                for (let j = 0; j < batchSize && (i + j) <= maxPages; j++) {
+                    batchPromises.push(this.fetchSeriesList(i + j));
+                }
 
-            // Ensure absolute URL and deduplicate
-            const sourceUrl = href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`;
-            if (seenUrls.has(sourceUrl)) return;
+                const batchResults = await Promise.all(batchPromises);
+                let anyResultsFoundInBatch = false;
 
-            // Skip genres or other non-series links (like direct chapter links)
-            if (sourceUrl.includes('?genre=') || sourceUrl.includes('/chapter/')) return;
+                for (const pageResults of batchResults) {
+                    if (pageResults.length > 0) anyResultsFoundInBatch = true;
+                    
+                    for (const item of pageResults) {
+                        const titleLower = item.title.toLowerCase();
+                        if (titleLower.includes(trimmedQuery)) {
+                            const sourceUrl = item.sourceUrl || '';
+                            if (!seenUrls.has(sourceUrl)) {
+                                seenUrls.add(sourceUrl);
+                                results.push(item);
+                            }
+                        }
+                    }
+                }
 
-            seenUrls.add(sourceUrl);
-
-            // Title detection: 
-            // 1. Specific spans used in grid (font-bold or text-white for mobile)
-            // 2. Headings (h3)
-            // 3. Fallback to any element with font-bold class or text-white
-            let title = a.find('span.font-bold').text().trim() ||
-                a.find('span.text-white').text().trim() ||
-                a.find('h3').text().trim() ||
-                a.find('.font-bold').first().text().trim() ||
-                a.find('.text-white').first().text().trim();
-
-            const isNoise = (t: string) => {
-                const upper = t.toUpperCase();
-                return !t || upper.includes('BETA SITE') || upper.includes('READ ON OUR') || upper === 'MANHWA' || upper === 'POSTER';
-            };
-
-            if (isNoise(title)) {
-                // Remove common UI elements and get pure text
-                const tempA = a.clone();
-                tempA.find('span.status, .status, .type, .px-1, .absolute, .hidden').remove();
-                title = tempA.text().trim();
-                if (title.includes('\n')) title = title.split('\n')[0].trim();
+                // If no results were found on ANY page in this batch, we've likely hit the end of the browse list.
+                if (!anyResultsFoundInBatch) break;
+                
+                // Stop early if we have collected enough matches
+                if (results.length >= 20) break;
             }
+        } catch (e) {
+            console.warn('[Asura] Search pagination failed', e);
+        }
 
-            // Final fallback to anchor text if still empty
-            if (isNoise(title)) title = a.text().trim();
-
-            // Cleanup title (remove extra spaces/newlines, and noisy labels)
-            title = title.replace(/\s+/g, ' ').replace('Chapter', '').replace('MANHWA', '').replace('Poster', '').trim();
-            if (isNoise(title)) return;
-
-            // Image detection: check multiple sources for lazy loading
-            const img = a.find('img');
-            const coverUrl = img.attr('src') ||
-                img.attr('data-src') ||
-                img.attr('data-lazy-src') ||
-                img.attr('srcset')?.split(' ')[0] ||
-                img.attr('data-srcset')?.split(' ')[0] || '';
-
-            const status = a.find('span.status, .status').text().trim() || 'Ongoing';
-
-            // Filter out obvious navigation/header links
-            if (title && title.length > 2 &&
-                !title.toLowerCase().includes('home') &&
-                !title.toLowerCase().includes('series') &&
-                !title.toLowerCase().includes('bookmark')) {
-                results.push({
-                    title,
-                    author: 'Asura Scans',
-                    coverUrl: coverUrl,
-                    chapters: [],
-                    sourceUrl: sourceUrl,
-                    sourceId: sourceUrl,
-                    status: status
-                });
-            }
-        });
-
-        return results;
+        // Cap at 20 results in case a single batch pushed us way over
+        return results.slice(0, 20);
     }
 
     async getDiscoverManga(): Promise<{ trending: NovelMetadata[], popular: NovelMetadata[], latest: NovelMetadata[] }> {
-        const url = BASE_URL;
-        const html = await this.fetchHtml(url);
-        if (!html) return { trending: [], popular: [], latest: [] };
-
-        const $ = cheerio.load(html);
         const trending: NovelMetadata[] = [];
         const popular: NovelMetadata[] = [];
-        const latest: NovelMetadata[] = [];
-        const seenUrls = new Set<string>();
+        let latest: NovelMetadata[] = [];
 
-        // Extract a single manhwa item from an anchor element
-        const extractItem = (a: any, parentEl?: any): NovelMetadata | null => {
-            const href = a.attr('href') || '';
-            if (!href || !href.includes('/comics/')) return null;
-            if (href.includes('/chapter/') || href.includes('recruitment') || href.includes('beta-site') || href.includes('?genre=')) return null;
+        try {
+            const [homeHtml, latestResults] = await Promise.all([
+                this.fetchHtml(BASE_URL).catch(() => null),
+                this.fetchSeriesList(1).catch((e) => {
+                    console.warn('[Asura] Failed to fetch latest from browse list', e);
+                    return [];
+                })
+            ]);
 
-            let sourceUrl = href.startsWith('http') ? href : `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`;
-            
-            // Clean dynamic build hash suffixes (-f6174291) to ensure stable URLs
-            sourceUrl = sourceUrl.replace(/-f[a-f0-9]{8}$/i, '');
-            
-            if (seenUrls.has(sourceUrl)) return null;
+            latest = latestResults || [];
 
-            // Title: Prefer h3 (actual title), then font-bold text, then direct text
-            // SKIP spans that are just ratings (numeric like "9.3")
-            let title = a.find('h3').first().text().trim()
-                || a.find('.font-bold').first().text().trim()
-                || a.find('span.font-bold').first().text().trim();
+            if (homeHtml) {
+                const $ = cheerio.load(homeHtml);
+                
+                const extractAstroComics = (obj: any, targetArray: NovelMetadata[]) => {
+                    if (!obj) return;
+                    if (Array.isArray(obj)) { obj.forEach(val => extractAstroComics(val, targetArray)); return; }
+                    if (typeof obj !== 'object') return;
+                    
+                    const getVal = (v: any) => Array.isArray(v) ? v[1] : v;
+                    const slug = getVal(obj.slug);
+                    const title = getVal(obj.title) || getVal(obj.name);
+                    
+                    if (slug && title && typeof slug === 'string' && typeof title === 'string') {
+                        if (targetArray.some(t => t.title === title)) return;
 
-            // If we got a rating as title, try harder
-            if (!title || this.isRating(title)) {
-                // Try all spans and find one that's not a rating
-                a.find('span').each((_: number, span: any) => {
-                    const t = $(span).text().trim();
-                    if (t && !this.isRating(t) && !this.isNoiseTitle(t) && t.length > 2) {
-                        title = t;
-                        return false; // break
+                        let sourceUrl = getVal(obj.public_url);
+                        if (typeof sourceUrl === 'string') {
+                            sourceUrl = sourceUrl.startsWith('http') ? sourceUrl : `${BASE_URL}${sourceUrl.startsWith('/') ? '' : '/'}${sourceUrl}`;
+                        } else {
+                            sourceUrl = `${BASE_URL}/comics/${slug}`;
+                        }
+                        
+                        targetArray.push({
+                            title,
+                            author: 'Asura Scans',
+                            coverUrl: getVal(obj.cover_url) || getVal(obj.coverUrl) || getVal(obj.cover) || getVal(obj.image) || '',
+                            chapters: [],
+                            sourceUrl,
+                            sourceId: sourceUrl,
+                            status: getVal(obj.status) || 'Ongoing',
+                            category: 'Manhwa'
+                        });
+                    } else {
+                        Object.values(obj).forEach(val => extractAstroComics(val, targetArray));
                     }
+                };
+
+                $('astro-island').each((_, el) => {
+                    const componentUrl = $(el).attr('component-url') || '';
+                    const props = $(el).attr('props');
+                    if (!props) return;
+
+                    try {
+                        const parsed = JSON.parse(props);
+                        if (componentUrl.includes('HeroCarouselEmbla') || componentUrl.includes('TrendingSection')) {
+                            extractAstroComics(parsed, trending);
+                        } else if (componentUrl.includes('PopularSidebar')) {
+                            extractAstroComics(parsed, popular);
+                        }
+                    } catch { /* ignore parse errors */ }
                 });
             }
-
-            // Final fallback: use the direct text 
-            if (!title || this.isRating(title)) {
-                title = a.text().trim().split('\n')[0].trim();
-            }
-
-            title = title.replace(/\s+/g, ' ').replace('MANHWA', '').replace('Poster', '').trim();
-            if (!title || this.isNoiseTitle(title) || this.isRating(title)) return null;
-
-            // Cover: try img inside the anchor first
-            let img = a.find('img').first();
-            let coverUrl = img.attr('src') || img.attr('data-src') || img.attr('data-lazy-src') || '';
-
-            // If no image inside the anchor, check sibling elements (for Latest Updates layout)
-            if (!coverUrl && parentEl) {
-                const siblingImg = parentEl.find('img').first();
-                coverUrl = siblingImg.attr('src') || siblingImg.attr('data-src') || '';
-            }
-
-            seenUrls.add(sourceUrl);
-            return {
-                title,
-                author: 'Asura Scans',
-                coverUrl,
-                chapters: [],
-                sourceUrl,
-                status: 'Ongoing',
-                category: 'Manhwa'
-            };
-        };
-
-        // ---- 1. Trending: top carousel/slider ----
-        // New structure uses a.slide-link or a.block.group
-        $('a[href*="/comics/"].slide-link, a.block.group[href*="/comics/"], a.block.cursor-pointer[href*="/comics/"]').each((_, el) => {
-            const item = extractItem($(el));
-            if (item && trending.length < 15) trending.push(item);
-        });
-
-        // Fallback: li.slide (old structure)
-        if (trending.length === 0) {
-            $('li.slide a[href*="/comics/"]').each((_, el) => {
-                const item = extractItem($(el));
-                if (item && trending.length < 15) trending.push(item);
-            });
+        } catch (e) {
+            console.warn('[Asura] Failed to load discover data', e);
         }
-
-        // ---- 2. Latest Updates ----
-        // New structure: grid items where image and title are in sibling elements
-        // Find all grid rows that contain /comics/ links
-        $('a.font-bold[href*="/comics/"], a[class*="font-bold"][href*="/comics/"]').each((_, el) => {
-            const a = $(el);
-            // Find the parent grid row to also grab the cover image
-            const gridRow = a.closest('[class*="grid"], [class*="col-span"]').parent();
-            const item = extractItem(a, gridRow);
-            if (item && latest.length < 20) latest.push(item);
-        });
-
-        // If Latest is still empty, try broader approach
-        if (latest.length === 0) {
-            // Find "Latest Updates" text and extract nearby links
-            $('*').filter((_, el) => {
-                const t = $(el).clone().children().remove().end().text().trim();
-                return t === 'Latest Updates' || t.includes('Latest');
-            }).each((_, headerEl) => {
-                const container = $(headerEl).parent().parent().parent();
-                container.find('a[href*="/comics/"]').each((_, el) => {
-                    const a = $(el);
-                    if (a.attr('href')?.includes('/chapter/')) return; // skip chapter links
-                    const row = a.closest('[class*="grid"]').parent();
-                    const item = extractItem(a, row);
-                    if (item && latest.length < 20) latest.push(item);
-                });
-            });
-        }
-
-        // ---- 3. Popular (sidebar) ----
-        // Popular items may not have <a> tags; try to extract from sidebar by text
-        $('*').filter((_, el) => {
-            const t = $(el).clone().children().remove().end().text().trim();
-            return t === 'Popular';
-        }).each((_, headerEl) => {
-            const container = $(headerEl).parent().parent().parent();
-            container.find('a[href*="/comics/"]').each((_, el) => {
-                const item = extractItem($(el));
-                if (item && popular.length < 15) popular.push(item);
-            });
-        });
-
-        // ---- 4. Broad fallback ----
-        if (trending.length === 0 && latest.length === 0) {
-            const allLinks: NovelMetadata[] = [];
-            $('a[href*="/comics/"]').each((_, el) => {
-                const item = extractItem($(el));
-                if (item) allLinks.push(item);
-            });
-
-            const half = Math.ceil(allLinks.length / 2);
-            trending.push(...allLinks.slice(0, Math.min(15, half)));
-            latest.push(...allLinks.slice(half, half + 20));
-        }
-
-        // Deduplicate and limit
-        const limitToUnique = (arr: NovelMetadata[]) => {
-            const seen = new Set<string>();
-            return arr.filter(item => {
-                if (seen.has(item.title)) return false;
-                seen.add(item.title);
-                return true;
-            }).slice(0, 15);
-        };
 
         return {
-            trending: limitToUnique(trending),
-            popular: limitToUnique(popular),
-            latest: limitToUnique(latest)
+            trending: trending.slice(0, 15),
+            popular: popular.slice(0, 15),
+            latest: latest.slice(0, 20)
         };
     }
 

@@ -52,7 +52,7 @@ const GlobalScrapingBar = memo(({ isGlobalScraping, scrapingProgress }: { isGlob
 export const Discover = () => {
     const navigate = useNavigate();
     const scrollContainerRef = useRef<HTMLDivElement>(null);
-    const [searchQuery, setSearchQuery] = useState('');
+    const [searchQuery, setSearchQuery] = useState(() => sessionStorage.getItem('discoverSearchQuery') || '');
     const [homeData, setHomeData] = useState<Record<string, any>>({});
     const [isSyncingHome, setIsSyncingHome] = useState(false);
     const [scrapingProgress, setScrapingProgress] = useState<ScraperProgress>(scraperService.progress);
@@ -66,15 +66,29 @@ export const Discover = () => {
     });
     const [manhwaData, setManhwaData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
     const [isLoadingManhwa, setIsLoadingManhwa] = useState(false);
-    const [novelSearchResults, setNovelSearchResults] = useState<NovelMetadata[]>([]);
+    const [novelSearchResults, setNovelSearchResults] = useState<NovelMetadata[]>(() => {
+        try {
+            const cached = sessionStorage.getItem('discoverNovelSearchResults');
+            return cached ? JSON.parse(cached) : [];
+        } catch {
+            return [];
+        }
+    });
     const [isSearchingNovels, setIsSearchingNovels] = useState(false);
     
     // Manhwa Search State
-    const [manhwaSearchResults, setManhwaSearchResults] = useState<NovelMetadata[]>([]);
+    const [manhwaSearchResults, setManhwaSearchResults] = useState<NovelMetadata[]>(() => {
+        try {
+            const cached = sessionStorage.getItem('discoverManhwaSearchResults');
+            return cached ? JSON.parse(cached) : [];
+        } catch {
+            return [];
+        }
+    });
     const [isSearchingManhwa, setIsSearchingManhwa] = useState(false);
     
     
-    const [searchPerformed, setSearchPerformed] = useState(false);
+    const [searchPerformed, setSearchPerformed] = useState(() => sessionStorage.getItem('discoverSearchPerformed') === 'true');
     const [isOffline, setIsOffline] = useState(!navigator.onLine);
     const profileImage = useProfileImage();
 
@@ -143,6 +157,19 @@ export const Discover = () => {
             window.removeEventListener('sync-complete', handleSyncComplete);
         };
     }, []);
+
+    useEffect(() => {
+        sessionStorage.setItem('discoverSearchQuery', searchQuery);
+        sessionStorage.setItem('discoverSearchPerformed', searchPerformed.toString());
+    }, [searchQuery, searchPerformed]);
+
+    useEffect(() => {
+        sessionStorage.setItem('discoverManhwaSearchResults', JSON.stringify(manhwaSearchResults));
+    }, [manhwaSearchResults]);
+
+    useEffect(() => {
+        sessionStorage.setItem('discoverNovelSearchResults', JSON.stringify(novelSearchResults));
+    }, [novelSearchResults]);
 
     // Load data when switching tabs
     useEffect(() => {
@@ -357,7 +384,14 @@ export const Discover = () => {
                             searchPerformed={searchPerformed}
                             novelSearchResults={novelSearchResults}
                             searchQuery={searchQuery}
-                            onClearSearch={() => { setSearchPerformed(false); setNovelSearchResults([]); setSearchQuery(''); }}
+                            onClearSearch={() => {
+                                setSearchPerformed(false);
+                                setNovelSearchResults([]);
+                                setSearchQuery('');
+                                sessionStorage.removeItem('discoverSearchPerformed');
+                                sessionStorage.removeItem('discoverNovelSearchResults');
+                                sessionStorage.removeItem('discoverSearchQuery');
+                            }}
                         />
                     ) : (
                         <ManhwaDiscoverSection
@@ -368,7 +402,14 @@ export const Discover = () => {
                             searchPerformed={searchPerformed}
                             manhwaSearchResults={manhwaSearchResults}
                             searchQuery={searchQuery}
-                            onClearSearch={() => { setSearchPerformed(false); setManhwaSearchResults([]); setSearchQuery(''); }}
+                            onClearSearch={() => {
+                                setSearchPerformed(false);
+                                setManhwaSearchResults([]);
+                                setSearchQuery('');
+                                sessionStorage.removeItem('discoverSearchPerformed');
+                                sessionStorage.removeItem('discoverManhwaSearchResults');
+                                sessionStorage.removeItem('discoverSearchQuery');
+                            }}
                         />
                     )}
                 </div>

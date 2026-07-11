@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, Eye, Book, Play, Bookmark } from 'lucide-react';
+import { Book, Play, Bookmark } from 'lucide-react';
 import type { Novel } from '../../services/db.service';
 
 interface SeriesHeroProps {
@@ -87,18 +87,10 @@ export const SeriesHero: React.FC<SeriesHeroProps> = ({
 
                     <div className="flex items-center gap-4 text-sm text-slate-700 dark:text-slate-300">
                         <div className="flex items-center gap-1">
-                            <Star size={18} className="text-yellow-500 fill-yellow-500" />
-                            <span className="font-bold">N/A</span>
+                            <Book size={18} />
+                            <span>{chapterCount} Chs</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                            <Eye size={18} />
-                            <span>N/A</span>
-                        </div>
-                                <div className="flex items-center gap-1">
-                                    <Book size={18} />
-                                    <span>{chapterCount} Chs</span>
-                                </div>
-                            </div>
+                    </div>
                         </div>
                     </div>
                 </div>
