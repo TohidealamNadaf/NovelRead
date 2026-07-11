@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import http from 'http'
 import https from 'https'
+import zlib from 'zlib'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -47,9 +48,15 @@ export default defineConfig({
               'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
               'Accept-Language': 'en-US,en;q=0.5',
-              // Intentionally omit Accept-Encoding so servers return plain (uncompressed) responses.
-              // If we forward gzip/br, servers compress the body and our pipe-through proxy
-              // cannot transparently decompress it, resulting in garbled binary content.
+              'Accept-Encoding': 'gzip, deflate, br',
+              'Sec-Fetch-Dest': 'document',
+              'Sec-Fetch-Mode': 'navigate',
+              'Sec-Fetch-Site': 'none',
+              'Sec-Fetch-User': '?1',
+              'Upgrade-Insecure-Requests': '1',
+              'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+              'sec-ch-ua-mobile': '?1',
+              'sec-ch-ua-platform': '"Android"',
               'Referer': targetUrl.origin + '/',
               'Connection': 'keep-alive',
               'Cache-Control': 'no-cache',
@@ -73,12 +80,27 @@ export default defineConfig({
               'Access-Control-Allow-Origin': '*',
               'Content-Type': proxyRes.headers['content-type'] || 'text/html; charset=utf-8',
             };
-            if (proxyRes.headers['content-encoding']) {
-              responseHeaders['Content-Encoding'] = proxyRes.headers['content-encoding'];
+            const encoding = proxyRes.headers['content-encoding'];
+            if (encoding && !['gzip', 'br', 'deflate'].includes(encoding)) {
+              responseHeaders['Content-Encoding'] = encoding;
             }
 
             res.writeHead(proxyRes.statusCode || 200, responseHeaders);
-            proxyRes.pipe(res);
+            
+            const handleError = (err: Error) => {
+              console.warn('[Proxy] Decompression error:', err.message);
+              if (!res.writableEnded) res.end();
+            };
+
+            if (encoding === 'gzip') {
+              proxyRes.pipe(zlib.createGunzip().on('error', handleError)).pipe(res);
+            } else if (encoding === 'br') {
+              proxyRes.pipe(zlib.createBrotliDecompress().on('error', handleError)).pipe(res);
+            } else if (encoding === 'deflate') {
+              proxyRes.pipe(zlib.createInflate().on('error', handleError)).pipe(res);
+            } else {
+              proxyRes.pipe(res);
+            }
           });
 
           proxyReq.on('error', (err) => {

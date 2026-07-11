@@ -47,6 +47,7 @@ export class ScraperService {
     // In-memory cache for live reading and prefetching
     // Ensures quick back/forth navigation and instant prefetch resolution
     private chapterCache = new Map<string, { content: string, timestamp: number }>();
+    private pendingFetches = new Map<string, Promise<string>>();
 
     get isScraping() { return this.isScrapingInternal; }
     get progress() { return this.currentProgress; }
@@ -108,16 +109,27 @@ export class ScraperService {
             return cached.content;
         }
 
-        const content = await this.getScraper(url).fetchChapterContent(url);
-        
-        // Save to cache and restrict size to ~20 chapters
-        this.chapterCache.set(url, { content, timestamp: Date.now() });
-        if (this.chapterCache.size > 20) {
-            const oldestKey = this.chapterCache.keys().next().value;
-            if (oldestKey) this.chapterCache.delete(oldestKey);
+        if (this.pendingFetches.has(url)) {
+            return this.pendingFetches.get(url)!;
         }
 
-        return content;
+        const fetchPromise = (async () => {
+            const content = await this.getScraper(url).fetchChapterContent(url);
+            
+            // Save to cache and restrict size to ~20 chapters
+            this.chapterCache.set(url, { content, timestamp: Date.now() });
+            if (this.chapterCache.size > 20) {
+                const oldestKey = this.chapterCache.keys().next().value;
+                if (oldestKey) this.chapterCache.delete(oldestKey);
+            }
+
+            return content;
+        })().finally(() => {
+            this.pendingFetches.delete(url);
+        });
+
+        this.pendingFetches.set(url, fetchPromise);
+        return fetchPromise;
     }
 
     enhanceContent(html: string): string {
@@ -298,7 +310,7 @@ export class ScraperService {
     }
 
     private async scrapeChapterLoop(novelId: string, chapters: { title: string; url: string; audioPath?: string }[], novelTitle: string, offset: number = 0) {
-        const BATCH_SIZE = 3;
+        const BATCH_SIZE = 2;
 
         for (let i = 0; i < chapters.length; i += BATCH_SIZE) {
             const batch = chapters.slice(i, i + BATCH_SIZE);
@@ -363,7 +375,7 @@ export class ScraperService {
             }));
 
             if (i + BATCH_SIZE < chapters.length) {
-                await new Promise(resolve => setTimeout(resolve, 1500));
+                await new Promise(resolve => setTimeout(resolve, 2500));
             }
         }
     }

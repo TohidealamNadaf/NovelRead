@@ -9,7 +9,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         const url = `https://novelfire.net/search?keyword=${encodeURIComponent(query)}`;
         console.log(`[NovelFire] Searching: ${url}`);
         
-        for (const proxyUrl of this.getProxies()) {
+        for (const proxyUrl of this.getProxies(url)) {
             try {
                 const html = await this.fetchHtml(url, proxyUrl);
                 if (!html) continue;
@@ -110,7 +110,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
     }
 
     private async fetchSection(url: string): Promise<NovelMetadata[]> {
-        for (const proxyUrl of this.getProxies()) {
+        for (const proxyUrl of this.getProxies(url)) {
             try {
                 const html = await this.fetchHtml(url, proxyUrl);
                 if (!html) continue;
@@ -269,7 +269,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
 
         let title = '', author = '', coverUrl = '', summary = '', status = 'Ongoing';
 
-        for (const proxyUrl of this.getProxies()) {
+        for (const proxyUrl of this.getProxies(infoUrl)) {
             try {
                 const html = await this.fetchHtml(infoUrl, proxyUrl);
                 if (!html) continue;
@@ -339,7 +339,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
             pageCount++;
             let pageFound = false;
 
-            for (const proxyUrl of this.getProxies()) {
+            for (const proxyUrl of this.getProxies(currentUrl)) {
                 try {
                     const html = await this.fetchHtml(currentUrl, proxyUrl);
                     if (!html) continue;
@@ -381,7 +381,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         let title = '', author = '', coverUrl = '', summary = '', status = 'Ongoing';
         let workingProxy: string | undefined;
 
-        for (const proxyUrl of this.getProxies()) {
+        for (const proxyUrl of this.getProxies(infoUrl)) {
             try {
                 const html = await this.fetchHtml(infoUrl, proxyUrl);
                 if (!html) continue;
@@ -451,7 +451,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         let pageCount = 0;
         let currentUrl = listUrl;
 
-        const proxyOrder = workingProxy ? [workingProxy, ...this.getProxies().filter(p => p !== workingProxy)] : this.getProxies();
+        const proxyOrder = workingProxy ? [workingProxy, ...this.getProxies(listUrl).filter(p => p !== workingProxy)] : this.getProxies(listUrl);
 
         while (currentUrl && !visitedUrls.has(currentUrl) && pageCount < 50) {
             visitedUrls.add(currentUrl);

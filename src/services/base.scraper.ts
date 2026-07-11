@@ -3,13 +3,26 @@ import { CapacitorHttp } from '@capacitor/core';
 export abstract class BaseScraper {
     private PROXIES = [
         'https://api.codetabs.com/v1/proxy?quest=',
-        'https://thingproxy.freeboard.io/fetch/',
         'https://corsproxy.io/?'
     ];
 
-    public getProxies(): string[] {
+    public getProxies(url?: string): string[] {
         // Return an empty string first to try direct connection, then fallbacks
         // The vite proxy in dev server handles CORS natively when no prefix is used.
+        if (url) {
+            try {
+                const urlObj = new URL(url);
+                if (urlObj.hostname.includes('freewebnovel.com')) {
+                    // codetabs often times out for FreeWebNovel, so try corsproxy first
+                    return [
+                        'https://corsproxy.io/?',
+                        'https://api.codetabs.com/v1/proxy?quest='
+                    ];
+                }
+            } catch (e) {
+                // Ignore parse errors
+            }
+        }
         return ['', ...this.PROXIES];
     }
 
@@ -21,15 +34,18 @@ export abstract class BaseScraper {
     public async fetchHtmlWithProxies(url: string): Promise<string> {
         if (!url) throw new Error("Invalid URL");
 
-        const proxies = this.getProxies();
+        const proxies = this.getProxies(url);
         
-        return Promise.any(
-            proxies.map(async (proxyPrefix) => {
-                const html = await this.fetchHtml(url, proxyPrefix, 5000);
-                if (!html) throw new Error(`Proxy ${proxyPrefix || 'direct'} returned null`);
-                return html;
-            })
-        );
+        for (const proxyPrefix of proxies) {
+            try {
+                const html = await this.fetchHtml(url, proxyPrefix, 8000);
+                if (html) return html;
+            } catch (error) {
+                console.warn(`[BaseScraper] Proxy attempt failed for ${url} via ${proxyPrefix || 'direct'}`, error);
+            }
+        }
+        
+        throw new Error(`All proxies failed for ${url}`);
     }
 
     public async fetchHtml(url: string, proxyPrefix: string = '', timeoutMs: number = 10000): Promise<string | null> {
@@ -64,9 +80,7 @@ export abstract class BaseScraper {
             } else {
                 const fetchUrl = proxyPrefix 
                     ? finalUrl 
-                    : (url.includes('freewebnovel.com') 
-                        ? `/api/proxy?url=${encodeURIComponent(url)}`
-                        : `/api/proxy?url=${encodeURIComponent(url)}`);
+                    : `/api/proxy?url=${encodeURIComponent(url)}`;
 
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), timeoutMs);

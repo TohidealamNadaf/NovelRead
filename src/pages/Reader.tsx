@@ -79,15 +79,18 @@ export const Reader = () => {
         return null;
     }, [navChapters, navIndex]);
 
+    const nextChapterUrl = nextChapter?.audioPath || nextChapter?.url || null;
+    const prevChapterUrl = prevChapter?.audioPath || prevChapter?.url || null;
+
     // Background prefetching for adjacent chapters to eliminate navigation latency
     useEffect(() => {
-        if (nextChapter && (nextChapter.audioPath || nextChapter.url)) {
-            scraperService.fetchChapterContent(nextChapter.audioPath || nextChapter.url).catch(() => {});
+        if (nextChapterUrl) {
+            scraperService.fetchChapterContent(nextChapterUrl).catch(() => {});
         }
-        if (prevChapter && (prevChapter.audioPath || prevChapter.url)) {
-            scraperService.fetchChapterContent(prevChapter.audioPath || prevChapter.url).catch(() => {});
+        if (prevChapterUrl) {
+            scraperService.fetchChapterContent(prevChapterUrl).catch(() => {});
         }
-    }, [nextChapter, prevChapter]);
+    }, [nextChapterUrl, prevChapterUrl]);
 
 
     const [liveError, setLiveError] = useState('');

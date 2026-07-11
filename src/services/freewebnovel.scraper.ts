@@ -50,7 +50,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
     async searchNovels(query: string): Promise<NovelMetadata[]> {
         const url = `https://freewebnovel.com/search?searchkey=${encodeURIComponent(query)}`;
         console.log(`[FreeWebNovel] Searching: ${url}`);
-        for (const proxyUrl of this.getProxies()) {
+        for (const proxyUrl of this.getProxies(url)) {
             try {
                 const html = await this.fetchHtml(url, proxyUrl);
                 if (!html) continue;
@@ -65,7 +65,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
     }
 
     private async fetchList(url: string) {
-        for (const proxyUrl of this.getProxies()) {
+        for (const proxyUrl of this.getProxies(url)) {
             const html = await this.fetchHtml(url, proxyUrl);
             if (html) {
                 const $ = cheerio.load(html);
@@ -210,7 +210,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         let title = '', author = 'Unknown', coverUrl = '', summary = '', status = 'Ongoing';
         let listUrl = url;
 
-        for (const proxyUrl of this.getProxies()) {
+        for (const proxyUrl of this.getProxies(url)) {
             try {
                 const html = await this.fetchHtml(url, proxyUrl);
                 if (!html) continue;
@@ -256,14 +256,16 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         const pageQueue = [url];
         const visitedUrls = new Set<string>();
         let pageCount = 0;
+        let consecutiveFailures = 0;
 
         while (pageQueue.length > 0 && pageCount < 200) {
             const currentUrl = pageQueue.shift()!;
             if (visitedUrls.has(currentUrl)) continue;
             visitedUrls.add(currentUrl);
             pageCount++;
+            let pageSuccess = false;
 
-            for (const proxyUrl of this.getProxies()) {
+            for (const proxyUrl of this.getProxies(currentUrl)) {
                 try {
                     const rawHtml = await this.fetchHtml(currentUrl, proxyUrl);
                     if (!rawHtml || rawHtml.length < 10) continue;
@@ -330,13 +332,25 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                         }
                     }
 
+                    pageSuccess = true;
                     break;
                 } catch (e) {
                     console.warn(`[FreeWebNovel] Chapter page failed`, e);
                 }
             }
+            
+            if (pageSuccess) {
+                consecutiveFailures = 0;
+            } else {
+                consecutiveFailures++;
+                if (consecutiveFailures >= 5) {
+                    console.warn(`[FreeWebNovel] Hit 5 consecutive failures, aborting pagination.`);
+                    break;
+                }
+            }
+
             if (pageQueue.length > 0 && pageCount > 0) {
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await new Promise(resolve => setTimeout(resolve, 600));
             }
         }
 
@@ -350,7 +364,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         let title = '', author = 'Unknown', coverUrl = '', summary = '', status = 'Ongoing';
         let workingProxy: string | undefined;
 
-        for (const proxyUrl of this.getProxies()) {
+        for (const proxyUrl of this.getProxies(url)) {
             try {
                 const html = await this.fetchHtml(url, proxyUrl);
                 if (!html) continue;
@@ -383,16 +397,18 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
 
         const allChapters: ScrapedChapter[] = [];
         const chapterUrlSet = new Set<string>();
-        const proxyOrder = workingProxy ? [workingProxy, ...this.getProxies().filter(p => p !== workingProxy)] : this.getProxies();
+        const proxyOrder = workingProxy ? [workingProxy, ...this.getProxies(url).filter(p => p !== workingProxy)] : this.getProxies(url);
         const pageQueue = [url];
         const visitedUrls = new Set<string>();
         let pageCount = 0;
+        let consecutiveFailures = 0;
 
         while (pageQueue.length > 0 && pageCount < 200) {
             const currentUrl = pageQueue.shift()!;
             if (visitedUrls.has(currentUrl)) continue;
             visitedUrls.add(currentUrl);
             pageCount++;
+            let pageSuccess = false;
 
             for (const proxyUrl of proxyOrder) {
                 try {
@@ -465,13 +481,26 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     if (proxyUrl !== proxyOrder[0]) {
                         workingProxy = proxyUrl;
                     }
+                    
+                    pageSuccess = true;
                     break;
                 } catch (e) {
                     console.warn(`[FreeWebNovel:Fast] Chapter page failed`, e);
                 }
             }
+            
+            if (pageSuccess) {
+                consecutiveFailures = 0;
+            } else {
+                consecutiveFailures++;
+                if (consecutiveFailures >= 5) {
+                    console.warn(`[FreeWebNovel] Hit 5 consecutive failures, aborting pagination.`);
+                    break;
+                }
+            }
+
             if (pageQueue.length > 0 && pageCount > 0) {
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await new Promise(resolve => setTimeout(resolve, 600));
             }
         }
 
