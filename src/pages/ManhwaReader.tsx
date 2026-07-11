@@ -319,7 +319,7 @@ export const ManhwaReader = () => {
             </main>
 
             {/* Reading Progress */}
-            <ReadingProgressBar containerRef={containerRef} />
+            <ReadingProgressBar containerRef={containerRef} showControls={showControls} />
 
             {/* Bottom Controls */}
             <div onClick={(e) => e.stopPropagation()}>

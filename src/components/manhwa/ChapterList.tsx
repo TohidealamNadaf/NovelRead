@@ -48,12 +48,12 @@ const ChapterRow = React.memo(({
                         ? "bg-primary text-white border-primary"
                         : "bg-slate-200 dark:bg-[#1d1c27] border-slate-200 dark:border-white/5 text-slate-400"
                 )}>
-                    <span>#{chapter.orderIndex + 1}</span>
+                    <span>{chapter.orderIndex + 1}</span>
                 </div>
             )}
             {viewDensity === 'compact' && (
                 <div className="shrink-0 w-9">
-                    <span className="text-xs font-bold text-slate-400 dark:text-slate-500">#{chapter.orderIndex + 1}</span>
+                    <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{chapter.orderIndex + 1}</span>
                 </div>
             )}
             <div className="flex flex-col min-w-0">

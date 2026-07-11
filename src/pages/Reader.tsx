@@ -968,7 +968,13 @@ export const Reader = () => {
             />
 
             {/* Fast Scroller Custom Handle */}
-            <ReaderScroller containerRef={scrollContainerRef} isVisible={!showSettings && !showChapterSidebar && !showSummary} />
+            <ReaderScroller 
+                containerRef={scrollContainerRef} 
+                isVisible={!showSettings && !showChapterSidebar && !showSummary} 
+                onDragStart={() => {
+                    if (isAutoScrolling) stopAutoScroll();
+                }}
+            />
 
             {/* Edge swipe gesture is now handled on the main reading area below */}
 

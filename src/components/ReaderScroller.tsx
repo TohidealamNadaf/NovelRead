@@ -3,15 +3,19 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 interface ReaderScrollerProps {
     containerRef: React.RefObject<HTMLDivElement | null>;
     isVisible?: boolean;
+    onDragStart?: () => void;
 }
 
-export const ReaderScroller: React.FC<ReaderScrollerProps> = ({ containerRef, isVisible = true }) => {
+export const ReaderScroller: React.FC<ReaderScrollerProps> = ({ containerRef, isVisible = true, onDragStart }) => {
     const [scrollRatio, setScrollRatio] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
     const [isActive, setIsActive] = useState(false);
 
     const trackRef = useRef<HTMLDivElement>(null);
     const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const trackRectRef = useRef<{ top: number, bottom: number } | null>(null);
+    const pendingYRef = useRef<number | null>(null);
+    const rafRef = useRef<number | null>(null);
 
     // Show scorller briefly and reset hide timeout
     const wakeScroller = useCallback(() => {
@@ -55,14 +59,13 @@ export const ReaderScroller: React.FC<ReaderScrollerProps> = ({ containerRef, is
 
     // Calculate new scroll position based on mouse/touch Y position
     const calculateNewScrollRatio = useCallback((clientY: number) => {
-        if (!trackRef.current) return 0;
+        if (!trackRectRef.current) return 0;
 
-        const trackRect = trackRef.current.getBoundingClientRect();
         const thumbHeight = 40; // Approx height of the visual thumb
 
         // Calculate the clickable area
-        const topBound = trackRect.top + (thumbHeight / 2);
-        const bottomBound = trackRect.bottom - (thumbHeight / 2);
+        const topBound = trackRectRef.current.top + (thumbHeight / 2);
+        const bottomBound = trackRectRef.current.bottom - (thumbHeight / 2);
         const trackHeight = bottomBound - topBound;
 
         // Calculate raw ratio
@@ -88,12 +91,20 @@ export const ReaderScroller: React.FC<ReaderScrollerProps> = ({ containerRef, is
     const handleDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
         // e.preventDefault(); // Removed because of passive event constraint; touch-action: none handles it.
         e.stopPropagation();
+        
+        if (onDragStart) onDragStart();
+        
+        if (trackRef.current) {
+            const rect = trackRef.current.getBoundingClientRect();
+            trackRectRef.current = { top: rect.top, bottom: rect.bottom };
+        }
+
         setIsDragging(true);
         wakeScroller();
 
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
         scrollToRatio(calculateNewScrollRatio(clientY));
-    }, [calculateNewScrollRatio, scrollToRatio, wakeScroller]);
+    }, [calculateNewScrollRatio, scrollToRatio, wakeScroller, onDragStart]);
 
     useEffect(() => {
         if (!isDragging) return;
@@ -102,12 +113,28 @@ export const ReaderScroller: React.FC<ReaderScrollerProps> = ({ containerRef, is
             e.preventDefault(); // Stop native scrolling
             wakeScroller();
             const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-            scrollToRatio(calculateNewScrollRatio(clientY));
+            pendingYRef.current = clientY;
+            
+            if (rafRef.current === null) {
+                rafRef.current = requestAnimationFrame(() => {
+                    if (pendingYRef.current !== null) {
+                        scrollToRatio(calculateNewScrollRatio(pendingYRef.current));
+                        pendingYRef.current = null;
+                    }
+                    rafRef.current = null;
+                });
+            }
         };
 
         const handleGlobalEnd = () => {
             setIsDragging(false);
             wakeScroller();
+            if (rafRef.current !== null) {
+                cancelAnimationFrame(rafRef.current);
+                rafRef.current = null;
+            }
+            pendingYRef.current = null;
+            trackRectRef.current = null;
         };
 
         window.addEventListener('mousemove', handleGlobalMove, { passive: false });
@@ -122,6 +149,10 @@ export const ReaderScroller: React.FC<ReaderScrollerProps> = ({ containerRef, is
             window.removeEventListener('touchmove', handleGlobalMove);
             window.removeEventListener('touchend', handleGlobalEnd);
             window.removeEventListener('touchcancel', handleGlobalEnd);
+            
+            if (rafRef.current !== null) {
+                cancelAnimationFrame(rafRef.current);
+            }
         };
     }, [isDragging, calculateNewScrollRatio, scrollToRatio, wakeScroller]);
 
@@ -137,7 +168,7 @@ export const ReaderScroller: React.FC<ReaderScrollerProps> = ({ containerRef, is
             className={`absolute right-1 top-[15%] bottom-[15%] w-8 z-50 transition-opacity duration-300 pointer-events-none group ${isActive || isDragging ? 'opacity-100' : 'opacity-0'}`}
         >
             <div
-                className={`absolute right-1 rounded-full transition-all duration-200 pointer-events-auto cursor-pointer ${isDragging ? 'bg-primary/70 h-10 w-2' : 'bg-slate-300/40 dark:bg-slate-600/40 h-8 w-1 group-hover:bg-slate-400/60 dark:group-hover:bg-slate-500/60 group-hover:w-1.5'}`}
+                className={`absolute right-1 rounded-full pointer-events-auto cursor-pointer ${isDragging ? 'bg-primary/70 h-10 w-2' : 'transition-all duration-200 bg-slate-300/40 dark:bg-slate-600/40 h-8 w-1 group-hover:bg-slate-400/60 dark:group-hover:bg-slate-500/60 group-hover:w-1.5'}`}
                 style={{
                     top: topPercentage,
                     transform: 'translateY(-50%)',
