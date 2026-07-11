@@ -4,7 +4,6 @@ import { dbService } from './db.service';
 import { notificationService } from './notification.service';
 import * as cheerio from 'cheerio';
 import type { NovelMetadata, ScraperProgress } from './scraper.service';
-import { mangaDexService } from './manhwa/mangaDex.service';
 import { asuraScraperService } from './manhwa/asura.service';
 
 export class ManhwaScraperService {
@@ -129,7 +128,7 @@ export class ManhwaScraperService {
                         'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.178 Mobile Safari/537.36',
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                         'Accept-Language': 'en-US,en;q=0.5',
-                        'Referer': url.includes('kagane.org') ? 'https://kagane.org/' : 'https://google.com',
+                        'Referer': 'https://google.com',
                     },
                     connectTimeout: 30000,
                     readTimeout: 30000
@@ -173,219 +172,6 @@ export class ManhwaScraperService {
         return '';
     }
 
-    // --- Comick.art API ---
-
-    private getComickApiBase(): string {
-        const isNative = Capacitor.isNativePlatform();
-        return isNative ? 'https://api.comick.io' : '/api/comick';
-    }
-
-    private async fetchComickApi(endpoint: string): Promise<any> {
-        const base = this.getComickApiBase();
-        const url = `${base}${endpoint}`;
-
-        try {
-            console.log(`[ManhwaScraper] Comick API: ${endpoint}`);
-
-            if (url.startsWith('/')) {
-                // Web: use Vite proxy
-                const response = await fetch(url, {
-                    headers: { 'Accept': 'application/json' }
-                });
-                if (response.ok) {
-                    return await response.json();
-                }
-
-                // Handle Cloudflare strict blocking & Proxy errors
-                if (response.status === 403 || response.status === 502) {
-                    throw new Error('Cloudflare protection is blocking web requests. Please allow the certificate or use the Android app.');
-                }
-
-                console.warn(`[ManhwaScraper] Comick API HTTP ${response.status}`);
-                return null;
-            } else {
-                // Native: use CapacitorHttp
-                const response = await CapacitorHttp.get({
-                    url,
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 Chrome/121.0 Mobile Safari/537.36',
-                        'Accept': 'application/json',
-                        'Referer': 'https://comick.art/',
-                        'Origin': 'https://comick.art',
-                    },
-                    connectTimeout: 30000,
-                    readTimeout: 30000
-                });
-                if (response.status === 200 && response.data) {
-                    return typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
-                }
-                console.warn(`[ManhwaScraper] Comick API HTTP ${response.status}`);
-                return null;
-            }
-        } catch (error: any) {
-            console.warn('[ManhwaScraper] Comick API error:', error);
-            // Propagate Cloudflare errors to UI
-            if (error.message && error.message.includes('Cloudflare')) {
-                throw error;
-            }
-            return null;
-        }
-    }
-
-    private extractSlugFromComickUrl(url: string): string {
-        // https://comick.art/comic/00-solo-leveling → 00-solo-leveling
-        const match = url.match(/comick\.art\/comic\/([^\/\?#]+)/);
-        return match ? match[1] : '';
-    }
-
-    private async fetchComickComic(url: string): Promise<NovelMetadata> {
-        const slug = this.extractSlugFromComickUrl(url);
-        if (!slug) throw new Error('Invalid comick.art URL. Expected format: https://comick.art/comic/{slug}');
-
-        const data = await this.fetchComickApi(`/comic/${slug}`);
-        if (!data || !data.comic) {
-            throw new Error('Failed to fetch comic data from comick.art. The comic may not exist or the API is down.');
-        }
-
-        const comic = data.comic;
-        const title = comic.title || 'Unknown Title';
-        const coverUrl = comic.md_covers?.[0]?.b2key
-            ? `https://meo.comick.pictures/${comic.md_covers[0].b2key}`
-            : '';
-        const author = comic.md_comic_md_authors?.map((a: any) => a.md_author?.name).filter(Boolean).join(', ') ||
-            data.authors?.map((a: any) => a.name).filter(Boolean).join(', ') ||
-            'Unknown';
-        const summary = comic.desc || comic.parsed || '';
-        const status = comic.status === 1 ? 'Ongoing' : comic.status === 2 ? 'Completed' : 'Unknown';
-
-        // Fetch chapters to extract publishers
-        const chaptersData = await this.fetchComickApi(`/comic/${slug}/chapters?lang=en&limit=300&page=0`);
-
-        const publishers = new Set<string>();
-        const chapters: { title: string; url: string }[] = [];
-        const chapterUrlSet = new Set<string>();
-
-        if (chaptersData?.chapters) {
-            for (const ch of chaptersData.chapters) {
-                // Extract publisher/group names
-                const groupNames = ch.md_groups?.map((g: any) => g.title).filter(Boolean) ||
-                    ch.group_name || [];
-                if (Array.isArray(groupNames)) {
-                    groupNames.forEach((name: string) => publishers.add(name));
-                } else if (typeof groupNames === 'string') {
-                    publishers.add(groupNames);
-                }
-
-                const chNum = ch.chap || '0';
-                const chTitle = ch.title ? `Ch. ${chNum} - ${ch.title}` : `Chapter ${chNum}`;
-                const chUrl = `https://comick.art/comic/${slug}/${ch.hid}-chapter-${chNum}-en`;
-
-                if (!chapterUrlSet.has(chUrl)) {
-                    chapterUrlSet.add(chUrl);
-                    chapters.push({
-                        title: chTitle,
-                        url: ch.hid // Store the HID for API access
-                    });
-                }
-            }
-        }
-
-        // If we need more pages of chapters
-        if (chaptersData?.chapters?.length === 300) {
-            let page = 1;
-            while (true) {
-                const moreData = await this.fetchComickApi(`/comic/${slug}/chapters?lang=en&limit=300&page=${page}`);
-                if (!moreData?.chapters || moreData.chapters.length === 0) break;
-
-                for (const ch of moreData.chapters) {
-                    const groupNames = ch.md_groups?.map((g: any) => g.title).filter(Boolean) || [];
-                    groupNames.forEach((name: string) => publishers.add(name));
-
-                    const chNum = ch.chap || '0';
-                    const chTitle = ch.title ? `Ch. ${chNum} - ${ch.title}` : `Chapter ${chNum}`;
-
-                    if (!chapterUrlSet.has(ch.hid)) {
-                        chapterUrlSet.add(ch.hid);
-                        chapters.push({ title: chTitle, url: ch.hid });
-                    }
-                }
-
-                if (moreData.chapters.length < 300) break;
-                page++;
-            }
-        }
-
-        console.log(`[ManhwaScraper] Comick: "${title}" - ${chapters.length} chapters, ${publishers.size} publishers`);
-
-        return {
-            title,
-            author,
-            coverUrl,
-            summary,
-            status,
-            category: 'Manhwa',
-            chapters,
-            publishers: Array.from(publishers).sort()
-        };
-    }
-
-    // Refetch chapters filtered by a specific publisher
-    async fetchComickChaptersByPublisher(url: string, publisherName: string): Promise<{ title: string; url: string }[]> {
-        const slug = this.extractSlugFromComickUrl(url);
-        if (!slug) return [];
-
-        const chapters: { title: string; url: string }[] = [];
-        const chapterUrlSet = new Set<string>();
-        let page = 0;
-
-        while (true) {
-            const data = await this.fetchComickApi(`/comic/${slug}/chapters?lang=en&limit=300&page=${page}`);
-            if (!data?.chapters || data.chapters.length === 0) break;
-
-            for (const ch of data.chapters) {
-                const groupNames = ch.md_groups?.map((g: any) => g.title).filter(Boolean) || [];
-
-                // Filter by publisher
-                if (groupNames.includes(publisherName)) {
-                    const chNum = ch.chap || '0';
-                    const chTitle = ch.title ? `Ch. ${chNum} - ${ch.title}` : `Chapter ${chNum}`;
-
-                    if (!chapterUrlSet.has(ch.hid)) {
-                        chapterUrlSet.add(ch.hid);
-                        chapters.push({ title: chTitle, url: ch.hid });
-                    }
-                }
-            }
-
-            if (data.chapters.length < 300) break;
-            page++;
-        }
-
-        console.log(`[ManhwaScraper] Filtered by "${publisherName}": ${chapters.length} chapters`);
-        return chapters;
-    }
-
-    private async fetchComickChapterImages(hid: string): Promise<string> {
-        const data = await this.fetchComickApi(`/chapter/${hid}`);
-        if (!data?.chapter?.md_images || data.chapter.md_images.length === 0) {
-            return '<p>No images found for this chapter.</p>';
-        }
-
-        const images = data.chapter.md_images
-            .sort((a: any, b: any) => (a.idx || 0) - (b.idx || 0))
-            .map((img: any) => {
-                const src = img.b2key ? `https://meo.comick.pictures/${img.b2key}` : '';
-                if (src) {
-                    return `<img src="${src}" class="w-full object-contain" loading="lazy" />`;
-                }
-                return '';
-            })
-            .filter(Boolean);
-
-        console.log(`[ManhwaScraper] Comick: Found ${images.length} images`);
-        return images.join('');
-    }
-
     // --- Core Scraping Logic ---
 
     // --- Discovery API ---
@@ -403,7 +189,7 @@ export class ManhwaScraperService {
     }
 
     // --- Search API ---
-    async searchManga(query: string, _source: 'mangadex' | 'asura' = 'asura'): Promise<NovelMetadata[]> {
+    async searchManga(query: string): Promise<NovelMetadata[]> {
         return await asuraScraperService.searchManga(query);
     }
 
@@ -414,115 +200,8 @@ export class ManhwaScraperService {
             if (data) return data;
         }
 
-        // MANGADEX SUPPORT
-        if (url.includes('mangadex.org')) {
-            const id = url.split('/title/')[1]?.split('/')[0] || url.split('/manga/')[1]?.split('/')[0];
-            if (id) {
-                const data = await mangaDexService.fetchMangaDetails(id);
-                if (data) return data;
-            }
-        }
-
-        // COMICK.ART API-BASED
-        if (url.includes('comick.art')) {
-            return this.fetchComickComic(url);
-        }
-
-        // KAGANE.ORG SPECIAL HANDLING
-        if (url.includes('kagane.org')) {
-            return this.fetchKaganeNovel(url);
-        }
-
         // GENERIC FALLBACK
         return this.fetchGenericNovel(url);
-    }
-
-    private async fetchKaganeNovel(url: string): Promise<NovelMetadata> {
-        const html = await this.fetchWithAllProxies(url);
-
-        if (!html) {
-            const isWeb = !Capacitor.isNativePlatform();
-            throw new Error(
-                isWeb
-                    ? 'Kagane.org uses Cloudflare protection which blocks web browsers. Please try importing on your Android device where native HTTP bypasses this restriction.'
-                    : 'Failed to fetch Kagane.org content. The site may be temporarily down or blocking requests.'
-            );
-        }
-
-        const $ = cheerio.load(html);
-
-        // Try multiple selectors for title
-        const title = $('h1.entry-title').text().trim()
-            || $('.post-title h1').text().trim()
-            || $('h1').first().text().trim()
-            || 'Unknown Title';
-
-        // Try multiple selectors for cover
-        const coverUrl = $('.thumb img').attr('data-src')
-            || $('.thumb img').attr('src')
-            || $('.summary_image img').attr('data-src')
-            || $('.summary_image img').attr('src')
-            || $('img.wp-post-image').attr('src')
-            || '';
-
-        const author = $('.author-content a').text().trim()
-            || $('.author-content').text().trim()
-            || 'Unknown';
-
-        const status = $('.post-status .summary-content').text().trim()
-            || $('.status .summary-content').text().trim()
-            || 'Ongoing';
-
-        const summary = $('.summary__content p').text().trim()
-            || $('.description-summary .summary__content').text().trim()
-            || '';
-
-        // Extract chapters - try multiple selectors
-        const chapters: { title: string; url: string }[] = [];
-        const chapterUrlSetKagane = new Set<string>();
-
-        // Selector 1: Kagane standard
-        const chapterSelectors = [
-            '#chapterlist li a',
-            '.wp-manga-chapter a',
-            '.eph-num a',
-            '.listing-chapters_wrap a',
-            '.version-chap a',
-            'ul.main li a'
-        ];
-
-        for (const selector of chapterSelectors) {
-            $(selector).each((_, el) => {
-                const a = $(el);
-                const chTitle = a.find('.chapternum').text().trim()
-                    || a.find('.chapter-manhwa-title').text().trim()
-                    || a.text().trim();
-                const chUrl = a.attr('href');
-
-                if (chTitle && chUrl && !chapterUrlSetKagane.has(chUrl)) {
-                    chapterUrlSetKagane.add(chUrl);
-                    chapters.push({ title: chTitle, url: chUrl });
-                }
-            });
-            if (chapters.length > 0) break;
-        }
-
-        // Kagane typically lists newest first, reverse for chronological order
-        if (chapters.length > 0) {
-            chapters.reverse();
-        }
-
-        console.log(`[ManhwaScraper] Found: "${title}" with ${chapters.length} chapters`);
-
-        return {
-            title,
-            author,
-            coverUrl,
-            summary,
-            status,
-            category: 'Manhwa',
-            chapters
-        };
     }
 
     private async fetchGenericNovel(url: string): Promise<NovelMetadata> {
@@ -575,8 +254,6 @@ export class ManhwaScraperService {
             // For Asura Scans: /comics/slug or /series/slug
             if ((url.includes('asuracomic.net') || url.includes('asurascans.com')) && pathParts.length >= 2) {
                 slug = pathParts[1];
-            } else if (url.includes('mangadex.org') && pathParts.length >= 2) {
-                slug = pathParts[1];
             } else {
                 slug = pathParts[pathParts.length - 1] || '';
             }
@@ -612,7 +289,8 @@ export class ManhwaScraperService {
                 coverUrl: novel.coverUrl,
                 sourceUrl: url,
                 category: 'Manhwa', // Explicitly set Manhwa
-                status: novel.status
+                status: novel.status,
+                summary: novel.summary || ''
             });
 
             // Save chapters with empty content (will be fetched on read / explicit download)
@@ -718,21 +396,6 @@ export class ManhwaScraperService {
             return images.map(src => `<img src="${src}" class="w-full object-contain" loading="lazy" />`).join('');
         }
 
-        // MANGADEX
-        if (url.includes('mangadex.org')) {
-            const id = url.split('/chapter/')[1]?.split('/')[0];
-            if (id) {
-                const images = await mangaDexService.fetchChapterImages(id);
-                if (images.length === 0) return '<p>No images found in this chapter.</p>';
-                // MangaDex API returns images in correct order
-                return images.map(src => `<img src="${src}" class="w-full object-contain" loading="lazy" />`).join('');
-            }
-        }
-
-        // Comick.art: URL is actually a HID (short hash), not a real URL
-        if (url && !url.startsWith('http') && url.length < 30) {
-            return this.fetchComickChapterImages(url);
-        }
 
         const html = await this.fetchWithAllProxies(url);
         if (!html) {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2, ChevronDown, Users } from 'lucide-react';
+import { MoreHorizontal, Clipboard, Book, Bookmark, XCircle, Loader2, Minimize2 } from 'lucide-react';
 import { scraperService, type NovelMetadata, type ScraperProgress } from '../services/scraper.service';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -17,9 +17,6 @@ export const Import = () => {
     const [scraping, setScraping] = useState(scraperService.isScraping);
     const [progress, setProgress] = useState<ScraperProgress>(scraperService.progress);
     const [activeTab, setActiveTab] = useState<'novel' | 'manhwa'>('novel');
-    const [selectedPublisher, setSelectedPublisher] = useState<string>('');
-    const [publisherLoading, setPublisherLoading] = useState(false);
-    const [showPublisherDropdown, setShowPublisherDropdown] = useState(false);
     const [isImportComplete, setIsImportComplete] = useState(false);
 
     useEffect(() => {
@@ -98,7 +95,6 @@ export const Import = () => {
     const resetImportState = () => {
         setUrl('');
         setNovel(null);
-        setSelectedPublisher('');
         setIsImportComplete(false);
         scraperService.clearMetadata();
         // Reset services to prevent progress bars from showing old data
@@ -113,22 +109,17 @@ export const Import = () => {
         if (!targetUrl) return;
         setLoading(true);
         setNovel(null);
-        setSelectedPublisher('');
         try {
             // Determine service:
             // 1. If forced Manhwa (from Discover nav), use Manhwa service
             // 2. If URL matches known Manhwa domains, use Manhwa service
             // 3. Otherwise fallback to activeTab or default Scraper
-            const isManhwaUrl = targetUrl.includes('asuracomic') || targetUrl.includes('mangadex.org') || targetUrl.includes('comick.io') || targetUrl.includes('asurascans.com');
+            const isManhwaUrl = targetUrl.includes('asuracomic') || targetUrl.includes('asurascans.com');
             const useManhwaService = forceManhwa || isManhwaUrl || activeTab === 'manhwa';
 
             const service = useManhwaService ? manhwaScraperService : scraperService;
             const data = await service.fetchNovel(targetUrl);
             setNovel(data);
-            // If comick.art with publishers, auto-show publisher selection
-            if (data.publishers && data.publishers.length > 0) {
-                setShowPublisherDropdown(true);
-            }
         } catch (error: any) {
             console.error(error);
             const msg = error.message || 'Failed to fetch novel metadata. Check URL or try another source.';
@@ -138,25 +129,7 @@ export const Import = () => {
         }
     };
 
-    const handlePublisherSelect = async (publisher: string) => {
-        setSelectedPublisher(publisher);
-        setShowPublisherDropdown(false);
-        if (!novel || !url) return;
 
-        setPublisherLoading(true);
-        try {
-            const filteredChapters = await manhwaScraperService.fetchComickChaptersByPublisher(url, publisher);
-            setNovel({
-                ...novel,
-                chapters: filteredChapters,
-                selectedPublisher: publisher
-            });
-        } catch (error) {
-            console.error('Failed to filter chapters by publisher:', error);
-        } finally {
-            setPublisherLoading(false);
-        }
-    };
 
     const handleScrape = async () => {
         if (!url) return;
@@ -279,10 +252,7 @@ export const Import = () => {
                                 <div className="space-y-2">
                                     <div className="flex items-center gap-2 text-xs font-medium opacity-70">
                                         <Book size={14} />
-                                        {publisherLoading ? 'Loading chapters...' : `${novel.chapters.length} Chapters Found`}
-                                        {novel.selectedPublisher && (
-                                            <span className="text-primary">({novel.selectedPublisher})</span>
-                                        )}
+                                        {`${novel.chapters.length} Chapters Found`}
                                     </div>
                                     <a href={url} target="_blank" rel="noreferrer" className="flex items-center justify-center w-full h-8 bg-slate-100 dark:bg-[#3f3b54] text-xs font-bold rounded-lg transition-active active:scale-95">
                                         VIEW SOURCE SITE
@@ -291,48 +261,6 @@ export const Import = () => {
                             </div>
                         </div>
 
-                        {/* Publisher Selection for comick.art */}
-                        {novel.publishers && novel.publishers.length > 0 && (
-                            <div className="mt-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <Users size={14} className="text-primary" />
-                                    <p className="text-xs font-bold uppercase tracking-widest opacity-50">Select Publisher</p>
-                                </div>
-                                <div className="relative">
-                                    <button
-                                        onClick={() => setShowPublisherDropdown(!showPublisherDropdown)}
-                                        className="w-full flex items-center justify-between p-3 bg-white dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54] text-sm font-medium transition-colors hover:border-primary/50"
-                                    >
-                                        <span className={selectedPublisher ? '' : 'opacity-50'}>
-                                            {selectedPublisher || 'Choose a publisher / scanlation group...'}
-                                        </span>
-                                        <ChevronDown size={16} className={clsx('transition-transform', showPublisherDropdown && 'rotate-180')} />
-                                    </button>
-
-                                    {showPublisherDropdown && (
-                                        <div className="absolute z-20 mt-1 w-full bg-white dark:bg-[#1d1c27] rounded-xl border border-slate-200 dark:border-[#3f3b54] shadow-lg max-h-60 overflow-y-auto">
-                                            {novel.publishers.map((pub) => (
-                                                <button
-                                                    key={pub}
-                                                    onClick={() => handlePublisherSelect(pub)}
-                                                    className={clsx(
-                                                        'w-full text-left px-4 py-3 text-sm font-medium transition-colors hover:bg-primary/10 first:rounded-t-xl last:rounded-b-xl',
-                                                        selectedPublisher === pub && 'bg-primary/10 text-primary'
-                                                    )}
-                                                >
-                                                    {pub}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                                {!selectedPublisher && (
-                                    <p className="text-xs text-amber-500 mt-2 px-1">
-                                        ⚠ Please select a publisher before importing
-                                    </p>
-                                )}
-                            </div>
-                        )}
                     </div>
                 )}
 
@@ -396,7 +324,7 @@ export const Import = () => {
                 <div className="flex flex-col gap-3">
                     <button
                         onClick={handleScrape}
-                        disabled={!url || loading || scraping || publisherLoading || (novel?.publishers && novel.publishers.length > 0 && !selectedPublisher)}
+                        disabled={!url || loading || scraping}
                         className="w-full h-14 bg-primary text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 transition-transform active:scale-95 disabled:opacity-50 disabled:active:scale-100"
                     >
                         {loading ? <Loader2 className="animate-spin" /> : (scraping ? <Loader2 className="animate-spin" /> : <Book />)}

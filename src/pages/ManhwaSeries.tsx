@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dbService } from '../services/db.service';
 import type { Novel, Chapter } from '../services/db.service';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { Header } from '../components/Header';
+import { Toast } from '../components/Toast';
 import { SeriesHero } from '../components/manhwa/SeriesHero';
 import { ChapterList } from '../components/manhwa/ChapterList';
 import { Loader2, Book } from 'lucide-react';
@@ -21,9 +22,19 @@ export const ManhwaSeries = () => {
     const [inLibrary, setInLibrary] = useState(true);
     const [remoteMetadata, setRemoteMetadata] = useState<any>(null); // Keep original metadata for import
     
+    const novelRef = useRef(novel);
+    useEffect(() => { novelRef.current = novel; }, [novel]);
+
+    // Toast State
+    const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'error' | 'warning' } | null>(null);
+    const showToast = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
+        setToast({ message, type });
+    }, []);
+
     // Dynamic Header State
     const [showHeader, setShowHeader] = useState(true);
     const [lastScrollY, setLastScrollY] = useState(0);
+    const [isScrolled, setIsScrolled] = useState(false);
 
     useEffect(() => {
         const handleScroll = () => {
@@ -48,6 +59,7 @@ export const ManhwaSeries = () => {
                 setShowHeader(true);
             }
 
+            setIsScrolled(currentScrollY > 40);
             setLastScrollY(currentScrollY);
         };
 
@@ -56,6 +68,7 @@ export const ManhwaSeries = () => {
     }, [lastScrollY]);
 
     useEffect(() => {
+        let isMounted = true;
         const loadData = async () => {
             if (!novelId) return;
             setIsLoading(true);
@@ -76,12 +89,14 @@ export const ManhwaSeries = () => {
                     if (existing) {
                         const novelData = await dbService.getNovel(existing.id);
                         const chapterData = await dbService.getChapters(existing.id);
+                        if (!isMounted) return;
                         setNovel(novelData);
                         setChapters(chapterData);
                         setInLibrary(true);
                     } else {
                         // Fetch remotely for preview
                         const metadata = await manhwaScraperService.fetchNovel(decodedId);
+                        if (!isMounted) return;
                         if (metadata) {
                             const adaptedNovel: Novel = {
                                 id: decodedId, // Temporary ID
@@ -115,6 +130,7 @@ export const ManhwaSeries = () => {
                 } else {
                     const novelData = await dbService.getNovel(novelId);
                     const chapterData = await dbService.getChapters(novelId);
+                    if (!isMounted) return;
                     setNovel(novelData);
                     setChapters(chapterData);
                     setInLibrary(true);
@@ -122,22 +138,29 @@ export const ManhwaSeries = () => {
             } catch (error) {
                 console.error("Failed to load series data", error);
             } finally {
-                setIsLoading(false);
+                if (isMounted) setIsLoading(false);
             }
         };
 
         loadData();
+        return () => { isMounted = false; };
     }, [novelId]);
 
     // Background refresh for metadata and chapters
+    const isRefreshingRef = useRef(false);
+
     useEffect(() => {
+        let isMounted = true;
         const refreshMetadata = async () => {
-            if (!novelId || !novel || !novel.sourceUrl || isLoading || !inLibrary) return;
+            const currentNovel = novelRef.current;
+            if (!novelId || !currentNovel || !currentNovel.sourceUrl || isLoading || !inLibrary) return;
             if (!navigator.onLine) return;
+            if (isRefreshingRef.current) return;
+            isRefreshingRef.current = true;
 
             try {
-                console.log(`[ManhwaSeries] Checking for updates: ${novel.title}`);
-                const freshData = await manhwaScraperService.fetchNovel(novel.sourceUrl);
+                console.log(`[ManhwaSeries] Checking for updates: ${currentNovel.title}`);
+                const freshData = await manhwaScraperService.fetchNovel(currentNovel.sourceUrl);
                 if (!freshData) return;
 
                 // --- Always refresh metadata (title, cover, summary, etc.) ---
@@ -148,12 +171,13 @@ export const ManhwaSeries = () => {
                         u.includes('MANGA') && u.length < 15;
                 };
 
-                const shouldUpdateMeta = isNoisy(novel.title) ||
-                    !novel.coverUrl || novel.coverUrl.includes('placeholder') ||
-                    (freshData.title && freshData.title !== novel.title && !isNoisy(freshData.title));
+                const shouldUpdateMeta = isNoisy(currentNovel.title) ||
+                    !currentNovel.coverUrl || currentNovel.coverUrl.includes('placeholder') ||
+                    !currentNovel.summary || currentNovel.summary.trim().length === 0 ||
+                    (freshData.title && freshData.title !== currentNovel.title && !isNoisy(freshData.title));
 
                 if (shouldUpdateMeta && !isNoisy(freshData.title)) {
-                    console.log(`[ManhwaSeries] Refreshing metadata: "${novel.title}" -> "${freshData.title}"`);
+                    console.log(`[ManhwaSeries] Refreshing metadata: "${currentNovel.title}" -> "${freshData.title}"`);
                     await dbService.updateNovelMetadata(novelId, {
                         title: freshData.title,
                         author: freshData.author,
@@ -161,6 +185,7 @@ export const ManhwaSeries = () => {
                         status: freshData.status,
                         summary: freshData.summary
                     });
+                    if (!isMounted) return;
                     setNovel(prev => prev ? {
                         ...prev,
                         title: freshData.title,
@@ -181,29 +206,34 @@ export const ManhwaSeries = () => {
                     if (missingRatio > 1.3 || (freshCount - localCount > 20)) {
                         console.log(`[ManhwaSeries] Full re-sync: ${localCount} local vs ${freshCount} remote chapters`);
 
+                        // Preserve existing content/read-status by matching on source URL (audioPath)
+                        const existingByUrl = new Map(chapters.map(c => [c.audioPath, c]));
+
                         // Delete all existing chapters and re-insert from fresh data
                         await dbService.deleteChaptersByNovelId(novelId);
 
                         const newChapterObjects: Chapter[] = [];
                         for (let i = 0; i < freshData.chapters.length; i++) {
                             const ch = freshData.chapters[i];
+                            const existing = existingByUrl.get(ch.url);
                             const chapterObj: Chapter = {
                                 id: `${novelId}-ch-${i + 1}`,
                                 novelId,
                                 title: ch.title,
-                                content: '',
+                                content: existing?.content || '',
                                 orderIndex: i,
                                 audioPath: ch.url,
-                                date: ch.date || '',
-                                isRead: 0
+                                date: ch.date || existing?.date || '',
+                                isRead: existing?.isRead || 0
                             };
                             newChapterObjects.push(chapterObj);
                         }
                         
                         // Bulk insert to prevent UI freezing
                         await dbService.addChapters(newChapterObjects);
+                        if (!isMounted) return;
                         setChapters(newChapterObjects);
-                        console.log(`[ManhwaSeries] Full re-sync complete: ${newChapterObjects.length} chapters.`);
+                        console.log(`[ManhwaSeries] Full re-sync complete: ${newChapterObjects.length} chapters (preserved ${newChapterObjects.filter(c => c.content).length} downloaded).`);
 
                     } else if (freshCount > localCount) {
                         // Just append new chapters
@@ -231,6 +261,7 @@ export const ManhwaSeries = () => {
                             
                             // Bulk insert new appended chapters
                             await dbService.addChapters(newChapterObjects);
+                            if (!isMounted) return;
                             setChapters(prev => [...prev, ...newChapterObjects]);
                             console.log(`[ManhwaSeries] Appended ${newChapters.length} new chapters.`);
                         }
@@ -238,15 +269,18 @@ export const ManhwaSeries = () => {
                 }
             } catch (e) {
                 console.error("[ManhwaSeries] Failed to refresh", e);
+            } finally {
+                isRefreshingRef.current = false;
             }
         };
 
         refreshMetadata();
-    }, [isLoading, novel?.id, novel?.title, novelId]);
+        return () => { isMounted = false; };
+    }, [isLoading, novelId, inLibrary]);
 
     const handleChapterSelect = (chapter: Chapter) => {
         if (!novelId || !inLibrary) {
-            alert("Please save the series to your library first to read chapters.");
+            showToast("Please save the series to your library first to read chapters.", "warning");
             return;
         }
         navigate(`/manhwa/read/${encodeURIComponent(novelId!)}/${encodeURIComponent(chapter.id)}`); // Using the new reader route
@@ -254,14 +288,14 @@ export const ManhwaSeries = () => {
 
     const handleToggleLibrary = () => {
         if (inLibrary) {
-            alert("Already in library.");
+            showToast("Already in library.", "info");
             return;
         }
         if (remoteMetadata && novel) {
             manhwaScraperService.startImport(novel.sourceUrl!, remoteMetadata);
             // Quick optimistic update to prevent multiple clicks
             setInLibrary(true);
-            alert("Import started! It will appear in your library shortly.");
+            showToast("Import started! It will appear in your library shortly.", "success");
             navigate('/'); // The library is actually at '/'
         }
     };
@@ -269,7 +303,7 @@ export const ManhwaSeries = () => {
     const handleReadNow = () => {
         if (!novel || chapters.length === 0) return;
         if (!inLibrary) {
-            alert("Please save the series to your library first to read chapters.");
+            showToast("Please save the series to your library first to read chapters.", "warning");
             return;
         }
 
@@ -320,10 +354,12 @@ export const ManhwaSeries = () => {
         }
     };
 
+    const [massDownloadProgress, setMassDownloadProgress] = useState<{ current: number; total: number } | null>(null);
+
     const handleMassDownload = async () => {
         if (!novel || chapters.length === 0) return;
 
-        const undownloaded = chapters.filter(c => !c.content && !c.isRead); // Optional: Skip read chapters? Keeping simple for now
+        const undownloaded = chapters.filter(c => !c.content && !c.isRead);
         const targetChapters = undownloaded.length > 0 ? undownloaded : chapters;
 
         if (targetChapters.length === 0) {
@@ -332,14 +368,26 @@ export const ManhwaSeries = () => {
         }
 
         console.log(`[ManhwaSeries] Starting mass download of ${targetChapters.length} chapters...`);
+        setMassDownloadProgress({ current: 0, total: targetChapters.length });
 
         // Process in small batches to avoid overwhelming the system/network
         const batchSize = 3;
+        let completed = 0;
+        
         for (let i = 0; i < targetChapters.length; i += batchSize) {
             const batch = targetChapters.slice(i, i + batchSize);
             await Promise.all(batch.map(ch => handleDownload(ch)));
+            
+            completed += batch.length;
+            setMassDownloadProgress({ current: Math.min(completed, targetChapters.length), total: targetChapters.length });
+
+            if (i + batchSize < targetChapters.length) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
         }
 
+        setMassDownloadProgress(null);
+        showToast(`Downloaded ${targetChapters.length} chapters`, "success");
         console.log("[ManhwaSeries] Mass download complete.");
     };
 
@@ -367,7 +415,7 @@ export const ManhwaSeries = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="min-h-screen bg-background-light dark:bg-background-dark pb-10"
+            className="min-h-screen flex flex-col bg-background-light dark:bg-background-dark pb-10"
         >
             {/* Dynamic Animated Header */}
             <motion.div
@@ -381,7 +429,11 @@ export const ManhwaSeries = () => {
                     subtitle={novel?.category || 'Manhwa'}
                     transparent
                     showBack
-                    className="text-white bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-auto"
+                    className={`text-white pointer-events-auto transition-colors duration-200 ${
+                        isScrolled
+                            ? 'bg-background-dark/90 backdrop-blur-md border-b border-white/5'
+                            : 'bg-gradient-to-b from-black/80 via-black/40 to-transparent'
+                    }`}
                 />
             </motion.div>
 
@@ -394,7 +446,7 @@ export const ManhwaSeries = () => {
                 hasStartedReading={hasStartedReading}
             />
 
-            <div className="mt-8">
+            <div className="mt-8 flex-1 flex flex-col">
                 <ChapterList
                     chapters={chapters}
                     onChapterSelect={handleChapterSelect}
@@ -403,6 +455,7 @@ export const ManhwaSeries = () => {
                     currentChapterId={novel.lastReadChapterId}
                     downloadingChapterIds={downloadingChapterIds}
                     failedChapterIds={failedChapterIds}
+                    massDownloadProgress={massDownloadProgress}
                 />
             </div>
 
@@ -426,6 +479,14 @@ export const ManhwaSeries = () => {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {toast && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={() => setToast(null)}
+                />
+            )}
         </motion.div>
     );
 };

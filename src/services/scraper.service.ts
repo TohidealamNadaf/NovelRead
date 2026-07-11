@@ -14,8 +14,6 @@ export interface NovelMetadata {
     status?: string;
     category?: string;
     chapters: ScrapedChapter[];
-    publishers?: string[];
-    selectedPublisher?: string;
     sourceUrl?: string; // For search results to link back to source
     sourceId?: string; // Original ID from source
 }

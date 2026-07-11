@@ -1,8 +1,8 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Download, CheckCircle2, ArrowUpDown, Grip, List as ListIcon, Loader2, WifiOff } from 'lucide-react';
+import React, { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { Download, CheckCircle2, ArrowUpDown, Grip, List as ListIcon, Loader2, WifiOff, AlignJustify } from 'lucide-react';
 import type { Chapter } from '../../services/db.service';
 import clsx from 'clsx';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 
 interface ChapterListProps {
     chapters: Chapter[];
@@ -12,6 +12,7 @@ interface ChapterListProps {
     currentChapterId?: string;
     downloadingChapterIds?: Set<string>;
     failedChapterIds?: Set<string>;
+    massDownloadProgress?: { current: number; total: number } | null;
 }
 
 const ChapterRow = React.memo(({
@@ -19,6 +20,7 @@ const ChapterRow = React.memo(({
     isCurrent,
     isDownloading,
     isFailed,
+    viewDensity,
     onClick,
     onDownload
 }: {
@@ -26,40 +28,60 @@ const ChapterRow = React.memo(({
     isCurrent: boolean;
     isDownloading: boolean;
     isFailed: boolean;
+    viewDensity: 'compact' | 'comfortable';
     onClick: () => void;
     onDownload: (e: React.MouseEvent) => void;
 }) => (
     <div
         onClick={onClick}
         className={clsx(
-            "py-4 flex items-center justify-between group cursor-pointer active:opacity-70 transition-opacity px-6",
+            "flex items-center justify-between group cursor-pointer active:opacity-70 transition-opacity px-6",
+            viewDensity === 'compact' ? "py-2.5" : "py-4",
             isCurrent && "bg-primary/5 -mx-6 px-12 border-l-4 border-primary"
         )}
     >
         <div className="flex items-center gap-4">
-            <div className={clsx(
-                "h-12 w-12 rounded-lg border flex items-center justify-center overflow-hidden shrink-0 font-bold text-xs",
-                isCurrent
-                    ? "bg-primary text-white border-primary"
-                    : "bg-slate-200 dark:bg-[#1d1c27] border-slate-200 dark:border-white/5 text-slate-400"
-            )}>
-                {chapter.isRead ? <CheckCircle2 size={20} className={isCurrent ? "text-white" : "text-green-500"} /> : <span>#{chapter.orderIndex + 1}</span>}
-            </div>
-            <div className="flex flex-col">
-                <span className={clsx(
-                    "text-sm font-bold",
-                    chapter.isRead && !isCurrent ? "text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-white"
+            {viewDensity === 'comfortable' && (
+                <div className={clsx(
+                    "h-12 w-12 rounded-lg border flex items-center justify-center overflow-hidden shrink-0 font-bold text-xs relative",
+                    isCurrent
+                        ? "bg-primary text-white border-primary"
+                        : "bg-slate-200 dark:bg-[#1d1c27] border-slate-200 dark:border-white/5 text-slate-400"
                 )}>
-                    {chapter.title}
-                </span>
-                {chapter.date && (
+                    {chapter.isRead ? <CheckCircle2 size={20} className={isCurrent ? "text-white" : "text-green-500"} /> : <span>#{chapter.orderIndex + 1}</span>}
+                </div>
+            )}
+            <div className="flex flex-col">
+                <div className="flex items-center gap-2 flex-wrap">
+                    {viewDensity === 'compact' && (
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500">#{chapter.orderIndex + 1}</span>
+                            {chapter.isRead && <CheckCircle2 size={12} className="text-green-500" />}
+                        </div>
+                    )}
+                    <span className={clsx(
+                        "text-sm font-bold",
+                        chapter.isRead && !isCurrent ? "text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-white"
+                    )}>
+                        {chapter.title}
+                    </span>
+                    {viewDensity === 'compact' && chapter.date && (
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium ml-1">
+                            · {chapter.date}
+                        </span>
+                    )}
+                </div>
+
+                {viewDensity === 'comfortable' && chapter.date && (
                     <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
                         {chapter.date}
                     </span>
                 )}
-                {!!chapter.isRead && (
+
+                {viewDensity === 'comfortable' && !!chapter.isRead && (
                     <span className="text-[10px] text-green-600 dark:text-green-500 font-medium whitespace-nowrap">Read</span>
                 )}
+
                 {isFailed && (
                     <span className="text-[10px] text-red-500 font-medium whitespace-nowrap">Download Failed</span>
                 )}
@@ -130,11 +152,33 @@ export const ChapterList: React.FC<ChapterListProps> = ({
     onMassDownload,
     currentChapterId,
     downloadingChapterIds = new Set(),
-    failedChapterIds = new Set()
+    failedChapterIds = new Set(),
+    massDownloadProgress = null
 }) => {
     const [sortDesc, setSortDesc] = useState(true);
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+    const [viewDensity, setViewDensity] = useState<'compact' | 'comfortable'>('compact');
     const parentRef = useRef<HTMLDivElement>(null);
+    const [scrollMargin, setScrollMargin] = useState(0);
+
+    useLayoutEffect(() => {
+        const updateScrollMargin = () => {
+            if (parentRef.current) {
+                setScrollMargin(parentRef.current.offsetTop);
+            }
+        };
+        updateScrollMargin();
+
+        // Re-measure whenever anything above the list changes size (e.g. hero image finishing load)
+        const resizeObserver = new ResizeObserver(updateScrollMargin);
+        resizeObserver.observe(document.body);
+
+        window.addEventListener('resize', updateScrollMargin);
+        return () => {
+            resizeObserver.disconnect();
+            window.removeEventListener('resize', updateScrollMargin);
+        };
+    }, []);
 
     const sortedChapters = useMemo(() => {
         return [...chapters].sort((a, b) => {
@@ -142,14 +186,16 @@ export const ChapterList: React.FC<ChapterListProps> = ({
         });
     }, [chapters, sortDesc]);
 
+    const allDownloaded = useMemo(() => chapters.length > 0 && chapters.every(c => c.content), [chapters]);
+
     // Virtualizer setup
-    const rowVirtualizer = useVirtualizer({
+    const rowVirtualizer = useWindowVirtualizer({
         count: viewMode === 'list'
             ? sortedChapters.length
             : Math.ceil(sortedChapters.length / 3), // 3 columns for grid
-        getScrollElement: () => parentRef.current,
-        estimateSize: () => viewMode === 'list' ? 80 : 120, // Estimated row heights
+        estimateSize: () => viewMode === 'list' ? (viewDensity === 'compact' ? 56 : 80) : 120,
         overscan: 5,
+        scrollMargin,
     });
 
     const handleSortToggle = () => setSortDesc(!sortDesc);
@@ -160,10 +206,14 @@ export const ChapterList: React.FC<ChapterListProps> = ({
             const index = sortedChapters.findIndex(c => c.id === currentChapterId);
             if (index !== -1) {
                 const targetIndex = viewMode === 'list' ? index : Math.floor(index / 3);
-                // Need a slight delay for virtualizer to be ready
                 setTimeout(() => {
                     try {
-                        rowVirtualizer.scrollToIndex(targetIndex, { align: 'center', behavior: 'smooth' });
+                        // First pass: instant jump (avoids the smooth+dynamic-size unreliability)
+                        rowVirtualizer.scrollToIndex(targetIndex, { align: 'center' });
+                        // Second pass: correct for any measurement drift once rows near the target have rendered/measured
+                        requestAnimationFrame(() => {
+                            rowVirtualizer.scrollToIndex(targetIndex, { align: 'center' });
+                        });
                     } catch (e) {
                         // Flaky on some initial renders if container not ready
                     }
@@ -198,6 +248,34 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                     >
                         <ArrowUpDown size={18} className={sortDesc ? "rotate-0" : "rotate-180 transition-transform"} />
                     </button>
+                    {viewMode === 'list' && (
+                        <div className="flex bg-slate-100 dark:bg-[#1d1c27] border border-slate-200 dark:border-white/5 p-1 rounded-lg">
+                            <button
+                                onClick={() => setViewDensity('compact')}
+                                className={clsx(
+                                    "h-7 w-7 flex items-center justify-center rounded-md transition-all",
+                                    viewDensity === 'compact'
+                                        ? "bg-white dark:bg-white/10 text-primary dark:text-white shadow-sm"
+                                        : "text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                                )}
+                                title="Compact View"
+                            >
+                                <AlignJustify size={16} />
+                            </button>
+                            <button
+                                onClick={() => setViewDensity('comfortable')}
+                                className={clsx(
+                                    "h-7 w-7 flex items-center justify-center rounded-md transition-all",
+                                    viewDensity === 'comfortable'
+                                        ? "bg-white dark:bg-white/10 text-primary dark:text-white shadow-sm"
+                                        : "text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                                )}
+                                title="Comfortable View"
+                            >
+                                <ListIcon size={16} />
+                            </button>
+                        </div>
+                    )}
                     <div className="flex bg-slate-100 dark:bg-[#1d1c27] border border-slate-200 dark:border-white/5 p-1 rounded-lg">
                         <button
                             onClick={() => setViewMode('list')}
@@ -238,7 +316,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
             )}
 
             {/* Mass Download Banner */}
-            {navigator.onLine && (
+            {navigator.onLine && !allDownloaded && (
                 <div className="mx-6 flex items-center justify-between bg-primary/5 border border-primary/20 p-3 rounded-xl shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
@@ -251,28 +329,21 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                     {/* Action button */}
                     <button
                         onClick={onMassDownload}
-                        disabled={downloadingChapterIds.size > 0}
+                        disabled={downloadingChapterIds.size > 0 || !!massDownloadProgress}
                         className={clsx(
                             "text-xs font-bold bg-primary px-3 py-1.5 rounded-lg text-white shadow-sm active:scale-95 transition-transform",
-                            downloadingChapterIds.size > 0 && "opacity-50 cursor-not-allowed"
+                            (downloadingChapterIds.size > 0 || !!massDownloadProgress) && "opacity-50 cursor-not-allowed"
                         )}
                     >
-                        {downloadingChapterIds.size > 0 ? 'Downloading...' : 'Mass Download'}
+                        {massDownloadProgress ? `Downloading ${massDownloadProgress.current}/${massDownloadProgress.total}...` : (downloadingChapterIds.size > 0 ? 'Downloading...' : 'Mass Download')}
                     </button>
                 </div>
             )}
 
-            {/* List Container - IMPORTANT: Needs max-height or full height for virtualization */}
-            {/* The parent page usually imposes a height, but we need to ensure this container scrolls */}
+            {/* List Container uses WindowVirtualizer now, meaning it natively expands. */}
             <div
                 ref={parentRef}
-                className={clsx(
-                    "overflow-y-auto px-6 pb-24", // Standard padding
-                    // We need a constrained height for virtualization to work. 
-                    // Using a dynamic calculation or flex-grow is best. 
-                    // For now, assuming parent flex layout or fixed viewport.
-                    "h-[calc(100vh-300px)]"
-                )}
+                className="px-6 pb-24 flex-1"
             >
                 <div
                     style={{
@@ -289,13 +360,14 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                             return (
                                 <div
                                     key={virtualRow.key}
+                                    ref={rowVirtualizer.measureElement}
+                                    data-index={virtualRow.index}
                                     style={{
                                         position: 'absolute',
                                         top: 0,
                                         left: 0,
                                         width: '100%',
-                                        height: `${virtualRow.size}px`,
-                                        transform: `translateY(${virtualRow.start}px)`,
+                                        transform: `translateY(${virtualRow.start - rowVirtualizer.options.scrollMargin}px)`,
                                     }}
                                 >
                                     <ChapterRow
@@ -303,6 +375,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                                         isCurrent={chapter.id === currentChapterId}
                                         isDownloading={downloadingChapterIds.has(chapter.id)}
                                         isFailed={failedChapterIds.has(chapter.id)}
+                                        viewDensity={viewDensity}
                                         onClick={() => onChapterSelect(chapter)}
                                         onDownload={(e) => {
                                             e.stopPropagation();
@@ -317,13 +390,14 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                             return (
                                 <div
                                     key={virtualRow.key}
+                                    ref={rowVirtualizer.measureElement}
+                                    data-index={virtualRow.index}
                                     style={{
                                         position: 'absolute',
                                         top: 0,
                                         left: 0,
                                         width: '100%',
-                                        height: `${virtualRow.size}px`,
-                                        transform: `translateY(${virtualRow.start}px)`,
+                                        transform: `translateY(${virtualRow.start - rowVirtualizer.options.scrollMargin}px)`,
                                     }}
                                     className="grid grid-cols-3 gap-3 py-1.5"
                                 >

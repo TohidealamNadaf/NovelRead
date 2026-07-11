@@ -828,7 +828,11 @@ export class AsuraScraperService {
                 extractAstroUrls(parsed);
                 
                 if (uniqueImages.size > 0) {
-                    return this.filterImages(Array.from(uniqueImages));
+                    const strategy1Result = this.filterImages(Array.from(uniqueImages));
+                    if (strategy1Result.length > 0) {
+                        return strategy1Result;
+                    }
+                    console.log(`[Asura] Strategy 1 found ${uniqueImages.size} raw images but 0 survived filtering, falling through to Strategy 2`);
                 }
             }
         } catch (e) {
@@ -899,7 +903,7 @@ export class AsuraScraperService {
             } else {
                 // Web: Cloudflare blocks the Vite dev proxy, so use external CORS proxies first
                 const webProxies = [
-                    { name: 'corsproxy.io', url: `https://corsproxy.io/?${encodeURIComponent(url)}` },
+                    { name: 'corsproxy.io', url: `https://corsproxy.io/?url=${encodeURIComponent(url)}` },
                     { name: 'codetabs', url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}` },
                     { name: 'local', url: `/api/proxy?url=${encodeURIComponent(url)}` },
                 ];
@@ -913,17 +917,21 @@ export class AsuraScraperService {
                             }
                         });
                         if (!response.ok) {
-                            console.warn(`[Asura] ${proxy.name} returned HTTP ${response.status}`);
+                            console.log(`[Asura][diag] ${proxy.name}: HTTP ${response.status} (failed)`);
                             continue;
                         }
                         const html = await response.text();
-                        if (this.isValidHtml(html)) {
-                            console.log(`[Asura] ✓ Got valid HTML (${html.length} chars) via ${proxy.name}`);
+                        const valid = this.isValidHtml(html);
+                        if (valid) {
+                            console.log(`[Asura][diag] ${proxy.name}: HTTP ${response.status}, ${html.length} chars, isValidHtml=true ✓`);
                             return html;
                         }
-                        console.warn(`[Asura] ${proxy.name} returned Cloudflare challenge, trying next...`);
+                        // Log which blocked indicator matched
+                        const blockedIndicators = ['cf-browser-verification', 'Checking your browser', 'Just a moment', 'Verifying you are human', 'cf-challenge'];
+                        const matched = blockedIndicators.filter(ind => html.includes(ind));
+                        console.log(`[Asura][diag] ${proxy.name}: HTTP ${response.status}, ${html.length} chars, isValidHtml=false — matched: [${matched.join(', ')}]`);
                     } catch (e) {
-                        console.warn(`[Asura] ${proxy.name} error:`, e);
+                        console.log(`[Asura][diag] ${proxy.name}: fetch error:`, e);
                     }
                 }
                 console.error('[Asura] All web proxies failed');

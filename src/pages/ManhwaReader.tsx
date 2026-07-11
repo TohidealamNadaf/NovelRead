@@ -28,6 +28,9 @@ export const ManhwaReader = () => {
     const lastScrollY = useRef(0);
     const containerRef = useRef<HTMLDivElement>(null);
 
+    // De-dupe guard: prevent double lazy-load fetches (React Strict Mode / fast nav)
+    const fetchingChapterRef = useRef<string | null>(null);
+
     // Fetch Data — uses location.pathname in deps to guarantee re-fire on every route change
     useEffect(() => {
         // Capture the current params from the URL at the time the effect fires
@@ -100,9 +103,10 @@ export const ManhwaReader = () => {
                     if (novel) setNovelTitle(novel.title);
                     if (ch) {
                         console.log(`[ManhwaReader] Loaded chapter: "${ch.title}" (id: ${ch.id}), audioPath: ${ch.audioPath}`);
-                        // Lazy load: If chapter is empty but has a source URL, fetch images now
+                        // Lazy load: If chapter is empty but has a source URL/HID, fetch images now
                         if (!ch.content || ch.content.length < 50) {
-                            if (ch.audioPath && ch.audioPath.startsWith('http')) {
+                            if (ch.audioPath && fetchingChapterRef.current !== ch.id) {
+                                fetchingChapterRef.current = ch.id;
                                 setIsLoading(true);
                                 try {
                                     const images = await manhwaScraperService.fetchChapterImages(ch.audioPath);
@@ -112,6 +116,8 @@ export const ManhwaReader = () => {
                                     }
                                 } catch (err) {
                                     console.error("Lazy load failed", err);
+                                } finally {
+                                    fetchingChapterRef.current = null;
                                 }
                             }
                         }
@@ -135,23 +141,32 @@ export const ManhwaReader = () => {
         loadData();
     }, [novelId, chapterId, location.pathname]);
 
-    // Handle Scroll for Controls Visibility
+    // Handle Scroll for Controls Visibility (rAF-throttled)
     useEffect(() => {
+        let rafId: number | null = null;
+
         const handleScroll = () => {
-            const currentScrollY = window.scrollY;
+            if (rafId !== null) return; // Already a pending frame — skip
+            rafId = requestAnimationFrame(() => {
+                const currentScrollY = window.scrollY;
 
-            // Show controls if scrolling UP or at the very top/bottom
-            if (currentScrollY < lastScrollY.current || currentScrollY < 100) {
-                setShowControls(true);
-            } else if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
-                setShowControls(false);
-            }
+                // Show controls if scrolling UP or at the very top/bottom
+                if (currentScrollY < lastScrollY.current || currentScrollY < 100) {
+                    setShowControls(true);
+                } else if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
+                    setShowControls(false);
+                }
 
-            lastScrollY.current = currentScrollY;
+                lastScrollY.current = currentScrollY;
+                rafId = null;
+            });
         };
 
-        window.addEventListener('scroll', handleScroll);
-        return () => window.removeEventListener('scroll', handleScroll);
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => {
+            window.removeEventListener('scroll', handleScroll);
+            if (rafId !== null) cancelAnimationFrame(rafId);
+        };
     }, []);
 
     // Sync System Bar with Header Visibility
