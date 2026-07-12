@@ -177,6 +177,10 @@ export function useChapterData() {
                                 await dbService.addNovel({
                                     ...dbNovel,
                                     title: data.title || dbNovel.title,
+                                    author: (data.author && data.author !== 'Unknown') ? data.author : dbNovel.author,
+                                    coverUrl: data.coverUrl || dbNovel.coverUrl,
+                                    summary: data.summary || dbNovel.summary,
+                                    status: (data.status && data.status !== 'Unknown' && data.status !== 'Ongoing') ? data.status : (dbNovel.status || data.status),
                                     totalChapters: data.chapters.length,
                                     lastFetchedAt: Math.floor(Date.now() / 1000)
                                 }, true);

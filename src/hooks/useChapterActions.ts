@@ -7,7 +7,7 @@ interface UseChapterActionsProps {
     novel: Novel | null;
     novelId: string | undefined;
     chapters: Chapter[];
-    liveChapters: { title: string; url: string; _index: number }[];
+    liveChapters: { title: string; url: string; _index: number; date?: string }[];
     locationState: any;
     setChapters: React.Dispatch<React.SetStateAction<Chapter[]>>;
     setDownloadedLiveChapters: React.Dispatch<React.SetStateAction<Set<string>>>;
@@ -247,7 +247,22 @@ export function useChapterActions({
 
     const handleAddToLibrary = async () => {
         try {
-            await ensureLiveNovelInDB();
+            const novelDbId = await ensureLiveNovelInDB();
+            
+            if (liveChapters && liveChapters.length > 0) {
+                const mappedChapters: Chapter[] = liveChapters.map(ch => ({
+                    id: `${novelDbId}-ch-${ch._index}`,
+                    novelId: novelDbId,
+                    title: ch.title,
+                    audioPath: ch.url,
+                    orderIndex: ch._index,
+                    date: ch.date || undefined,
+                    isRead: 0
+                }));
+                // We use addChapters (which does bulk insert)
+                await dbService.addChapters(mappedChapters);
+            }
+
             setAddedToLibrary(true);
             onShowToast("Added to library", 'success');
         } catch (error) {
