@@ -20,7 +20,7 @@ export function useChapterActions({
     novel,
     // novelId,
     chapters,
-    // liveChapters,
+    liveChapters,
     locationState,
     setChapters,
     setDownloadedLiveChapters,
@@ -46,6 +46,10 @@ export function useChapterActions({
         if (!novel) return '';
         const novelDbId = getLiveNovelId();
         await dbService.initialize();
+        
+        const source = novel.sourceUrl?.includes('freewebnovel') ? 'FreeWebNovel' : 'NovelFire';
+        const totalChapters = liveChapters.length || chapters.length || novel.totalChapters || 0;
+
         await dbService.addNovel({
             id: novelDbId,
             title: novel.title,
@@ -54,10 +58,11 @@ export function useChapterActions({
             sourceUrl: novel.sourceUrl || '',
             summary: novel.summary || '',
             status: novel.status || 'Ongoing',
-            source: 'NovelFire',
+            source: source,
             category: novel.category || 'Novel',
+            totalChapters: totalChapters,
         } as any);
-        console.log(`[useChapterActions] ensureLiveNovelInDB: Saved ${novelDbId} as ${novel.category || 'Novel'}`);
+        console.log(`[useChapterActions] ensureLiveNovelInDB: Saved ${novelDbId} as ${novel.category || 'Novel'} with ${totalChapters} chapters`);
         return novelDbId;
     };
 
