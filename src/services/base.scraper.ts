@@ -13,8 +13,10 @@ export abstract class BaseScraper {
             try {
                 const urlObj = new URL(url);
                 if (urlObj.hostname.includes('freewebnovel.com')) {
-                    // codetabs often times out for FreeWebNovel, so try corsproxy first
+                    // Try local/direct first (vite dev proxy sends browser-like headers),
+                    // then fall back to external CORS proxies
                     return [
+                        '',
                         'https://corsproxy.io/?',
                         'https://api.codetabs.com/v1/proxy?quest='
                     ];
@@ -194,5 +196,65 @@ export abstract class BaseScraper {
             .replace(/<p>\s*<\/p>/gi, '');
 
         return wrapper.innerHTML;
+    }
+
+    public async fetchHtmlPost(url: string, formData: Record<string, string>, timeoutMs: number = 10000): Promise<string | null> {
+        if (!url) return null;
+
+        const body = new URLSearchParams(formData).toString();
+        const isCapacitor = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
+
+        try {
+            if (isCapacitor) {
+                const response = await CapacitorHttp.post({
+                    url,
+                    data: body,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    },
+                    responseType: 'text',
+                    connectTimeout: Math.min(8000, timeoutMs),
+                    readTimeout: timeoutMs
+                });
+
+                if (response.status >= 200 && response.status < 300) {
+                    return typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+                }
+                return null;
+            } else {
+                // Web: route through the local vite dev proxy only — external CORS
+                // proxies don't reliably forward POST bodies for form submissions.
+                const fetchUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+                try {
+                    const response = await fetch(fetchUrl, {
+                        method: 'POST',
+                        cache: 'no-cache',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'Accept': 'text/html',
+                        },
+                        body,
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId);
+                    if (response.ok) {
+                        return await response.text();
+                    }
+                    return null;
+                } catch (fetchErr) {
+                    clearTimeout(timeoutId);
+                    throw fetchErr;
+                }
+            }
+        } catch (error) {
+            console.warn(`[BaseScraper] fetchHtmlPost failed for ${url}`, error);
+            return null;
+        }
     }
 }

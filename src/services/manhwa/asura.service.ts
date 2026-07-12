@@ -620,24 +620,28 @@ export class AsuraScraperService {
         // Explicitly exclude GIFs
         if (url.toLowerCase().includes('.gif')) return false;
 
-        const filename = url.split('/').pop() || '';
+        // Strip query parameters before parsing filename
+        const urlWithoutQuery = url.split('?')[0];
+        const filename = urlWithoutQuery.split('/').pop() || '';
         const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
         const cleanName = nameWithoutExt.replace(/-optimized|_optimized/i, '');
         const lowerName = cleanName.toLowerCase();
 
         // **Strict Blacklist for Ads/Promos**
-        const blacklist = ['logo', 'banner', 'discord', 'promo', 'ad-', '_ad', 'patreon', 'ko-fi', 'credit', 'recruit', 'intro', 'outro'];
+        const blacklist = ['logo', 'banner', 'discord', 'promo', 'ad-', '_ad', 'patreon', 'ko-fi', 'credit', 'recruit', 'intro', 'outro', 'favicon'];
         if (blacklist.some(term => lowerName.includes(term))) return false;
 
         // Pattern 1: Purely numeric
         if (/^\d+$/.test(cleanName)) return true;
 
         // Pattern 2: Prefix + number (Restrictive)
-        // Only allow 'page', 'img', 'image', 'p', 'i' or strict alphanumeric codes
         if (/^(page|img|image|p|i)?[-_]?\d+$/i.test(cleanName)) return true;
 
         // Pattern 3: ULID (Asura's new format) -> 26 chars, starts with 0-7
-        if (/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(cleanName)) return true;
+        if (/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/i.test(cleanName)) return true;
+
+        // Pattern 4: Short alphanumeric hashes (e.g. 'a1cdd1' used in Tomb Raider King)
+        if (/^[a-f0-9]{4,16}$/i.test(cleanName)) return true;
 
         return false;
     }
@@ -711,11 +715,25 @@ export class AsuraScraperService {
                 extractAstroUrls(parsed);
                 
                 if (uniqueImages.size > 0) {
-                    const strategy1Result = this.filterImages(Array.from(uniqueImages));
+                    // Astro Reader images are trusted chapter content — only apply a light blacklist,
+                    // NOT the strict filename-pattern filter (which rejects non-numeric/non-ULID filenames)
+                    const lightBlacklist = ['logo', 'banner', 'discord', 'promo', 'ad-', '_ad', 'patreon', 'ko-fi', 'credit', 'recruit', 'favicon'];
+                    const seen = new Set<string>();
+                    const strategy1Result: string[] = [];
+                    for (const img of uniqueImages) {
+                        const lower = img.toLowerCase();
+                        if (lower.includes('.gif')) continue; // skip GIFs (animated ads)
+                        if (lightBlacklist.some(term => lower.includes(term))) continue;
+                        if (!seen.has(img)) {
+                            seen.add(img);
+                            strategy1Result.push(img);
+                        }
+                    }
                     if (strategy1Result.length > 0) {
+                        console.log(`[Asura] Strategy 1 (Astro Reader): ${strategy1Result.length} chapter images found`);
                         return strategy1Result;
                     }
-                    console.log(`[Asura] Strategy 1 found ${uniqueImages.size} raw images but 0 survived filtering, falling through to Strategy 2`);
+                    console.log(`[Asura] Strategy 1 found ${uniqueImages.size} raw images but 0 survived light filter, falling through to Strategy 2`);
                 }
             }
         } catch (e) {

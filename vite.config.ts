@@ -63,6 +63,13 @@ export default defineConfig({
             },
           };
 
+          if (req.headers['content-type']) {
+            (options.headers as Record<string, any>)['Content-Type'] = req.headers['content-type'];
+          }
+          if (req.headers['content-length']) {
+            (options.headers as Record<string, any>)['Content-Length'] = req.headers['content-length'];
+          }
+
           const proxyReq = transport.request(options, (proxyRes) => {
             // Handle redirects
             if (proxyRes.statusCode && proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
@@ -119,7 +126,12 @@ export default defineConfig({
             res.end('Proxy timeout');
           });
 
-          proxyReq.end();
+          // Forward the incoming request body (needed for POST/form submissions like search)
+          if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+            req.pipe(proxyReq);
+          } else {
+            proxyReq.end();
+          }
         });
       }
     }

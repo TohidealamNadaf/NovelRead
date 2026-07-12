@@ -1,0 +1,1 @@
+﻿import { asuraScraperService } from './src/services/manhwa/asura.service.ts'; asuraScraperService.fetchChapterImages('https://asurascans.com/comics/tomb-raider-kin-g-a80d257e/chapter/0').then(imgs => console.log('Found images:', imgs.length, imgs.slice(0, 3))).catch(console.error);
