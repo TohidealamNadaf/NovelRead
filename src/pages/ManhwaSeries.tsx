@@ -33,8 +33,8 @@ export const ManhwaSeries = () => {
 
     // Dynamic Header State
     const [showHeader, setShowHeader] = useState(true);
-    const [lastScrollY, setLastScrollY] = useState(0);
     const [isScrolled, setIsScrolled] = useState(false);
+    const lastScrollY = useRef(0);
 
     useEffect(() => {
         const handleScroll = () => {
@@ -51,21 +51,21 @@ export const ManhwaSeries = () => {
             if (currentScrollY < 10) {
                 // Always show at the very top
                 setShowHeader(true);
-            } else if (currentScrollY > lastScrollY && currentScrollY > 100) {
+            } else if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
                 // Scrolling Down + passed threshold
                 setShowHeader(false);
-            } else if (currentScrollY < lastScrollY) {
+            } else if (currentScrollY < lastScrollY.current) {
                 // Scrolling Up
                 setShowHeader(true);
             }
 
             setIsScrolled(currentScrollY > 40);
-            setLastScrollY(currentScrollY);
+            lastScrollY.current = currentScrollY;
         };
 
         window.addEventListener('scroll', handleScroll, { passive: true });
         return () => window.removeEventListener('scroll', handleScroll);
-    }, [lastScrollY]);
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
