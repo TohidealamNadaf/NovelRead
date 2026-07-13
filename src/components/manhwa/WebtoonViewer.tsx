@@ -22,7 +22,12 @@ interface WebtoonViewerProps {
 const isContentPage = (url: string): boolean => {
     if (!url || url.toLowerCase().includes('.gif')) return false;
 
-    const filename = url.split('/').pop() || '';
+    // Strip query parameters before extracting filename — some CDN URLs
+    // include cache-busting suffixes like ?v=123 that would corrupt the
+    // filename match (e.g. "a1cdd1.webp?v=1" → filename becomes
+    // "a1cdd1.webp?v=1" instead of "a1cdd1.webp").
+    const urlWithoutQuery = url.split('?')[0];
+    const filename = urlWithoutQuery.split('/').pop() || '';
     const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
     const cleanName = nameWithoutExt.replace(/-optimized|_optimized/i, '');
     const lowerName = cleanName.toLowerCase();
@@ -37,8 +42,15 @@ const isContentPage = (url: string): boolean => {
     // 2. Prefix + Numeric (Restrictive)
     if (/^(page|img|image|p|i)?[-_]?\d+$/i.test(cleanName)) return true;
 
-    // 3. Strict ULID (Asura)
+    // 3. ULID (Asura's newer format) -> 26 chars, starts with 0-7
     if (/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(cleanName)) return true;
+
+    // 4. Short alphanumeric hex hashes (e.g. "a1cdd1", "f4b2e9a0") —
+    // used by Tomb Raider King and other series on Asura's CDN.
+    // This pattern was already in asura.service.ts but was missing here,
+    // causing images to pass the service-level filter and then be silently
+    // discarded by the viewer's own filterContentImages call.
+    if (/^[a-f0-9]{4,16}$/i.test(cleanName)) return true;
 
     return false;
 };
