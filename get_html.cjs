@@ -1,0 +1,1 @@
+﻿const https = require('https'); https.get('https://freewebnovel.com/sort/latest-novel/', (res) => { let data = ''; res.on('data', (chunk) => data += chunk); res.on('end', () => { const fs = require('fs'); fs.writeFileSync('latest_novel.html', data); console.log('Saved'); }); });

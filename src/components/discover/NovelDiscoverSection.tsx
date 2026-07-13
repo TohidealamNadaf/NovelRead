@@ -26,7 +26,30 @@ export const NovelDiscoverSection = memo(({
     const navigate = useNavigate();
 
     const goToNovel = (novel: any) => {
-        navigate(`/novel/live-${generateSlug(novel.title || 'novel')}`, { state: { liveMode: true, novel } });
+        // sourceUrl may come from the scraper as sourceUrl directly.
+        // Ensure it is always explicitly set on the novel passed in state
+        // so useChapterData can find location.state?.novel?.sourceUrl
+        // and trigger the live chapter fetch. Without this, the chapter
+        // list page renders "Unknown Title" and skips all fetching.
+        const sourceUrl = novel.sourceUrl || novel.url || '';
+        const novelWithSource = {
+            ...novel,
+            sourceUrl,
+        };
+
+        if (sourceUrl.startsWith('http')) {
+            // Navigate using the sourceUrl as the novelId so the route
+            // is stable and useChapterData can derive a consistent DB key
+            navigate(`/novel/${encodeURIComponent(sourceUrl)}`, {
+                state: { liveMode: true, novel: novelWithSource }
+            });
+        } else {
+            // Fallback for novels without a sourceUrl (shouldn't happen
+            // for FreeWebNovel but safe to handle)
+            navigate(`/novel/live-${generateSlug(novel.title || 'novel')}`, {
+                state: { liveMode: true, novel: novelWithSource }
+            });
+        }
     };
 
     return (

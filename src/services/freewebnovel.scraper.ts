@@ -155,7 +155,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
 
         // Some pages might use `.m-newest1 ul li` or similar
         if (chapters.length === 0) {
-            $('ul.list-chapter li a, .chapters li a, .chapter-list li a').each((_, el: any) => {
+            $('ul.list-chapter li a, .chapters li a, .chapter-list li a, li a.con').each((_, el: any) => {
                 const link = el.attribs?.href;
                 if (!link) return;
 
@@ -269,10 +269,12 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     if (!rawHtml || rawHtml.length < 10) continue;
                     
                     let htmlToParse = rawHtml;
+                    let knownTotalPage: number | null = null;
                     if (rawHtml.trim().startsWith('{')) {
                         try {
                             const data = JSON.parse(rawHtml);
                             if (data.html) htmlToParse = data.html;
+                            if (typeof data.totalPage === 'number') knownTotalPage = data.totalPage;
                         } catch (e) {}
                     }
                     if (htmlToParse.length < 10) continue;
@@ -296,9 +298,12 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                         totalPage = $('#indexselect option').length;
                     }
                     
-                    if (totalPage > 1 && !currentUrl.includes('ajax=chapters')) {
+                    const effectiveTotalPage = knownTotalPage || totalPage;
+                    
+                    if (effectiveTotalPage > 1) {
                         const cleanUrl = currentUrl.split('?')[0];
-                        for (let p = 2; p <= totalPage; p++) {
+                        const nextP = currentUrl.includes('ajax=chapters') ? 2 : 2; // simplest safe default since this reverted version doesn't track a startPage offset
+                        for (let p = nextP; p <= effectiveTotalPage; p++) {
                             const ajaxUrl = `${cleanUrl}?ajax=chapters&page=${p}&pageSize=40`;
                             if (!visitedUrls.has(ajaxUrl) && !pageQueue.includes(ajaxUrl)) {
                                 pageQueue.push(ajaxUrl);
@@ -414,10 +419,12 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     if (!rawHtml || rawHtml.length < 10) continue;
                     
                     let htmlToParse = rawHtml;
+                    let knownTotalPage: number | null = null;
                     if (rawHtml.trim().startsWith('{')) {
                         try {
                             const data = JSON.parse(rawHtml);
                             if (data.html) htmlToParse = data.html;
+                            if (typeof data.totalPage === 'number') knownTotalPage = data.totalPage;
                         } catch (e) {}
                     }
                     if (htmlToParse.length < 10) continue;
@@ -443,9 +450,12 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                         totalPage = $('#indexselect option').length;
                     }
                     
-                    if (totalPage > 1 && !currentUrl.includes('ajax=chapters')) {
+                    const effectiveTotalPage = knownTotalPage || totalPage;
+                    
+                    if (effectiveTotalPage > 1) {
                         const cleanUrl = currentUrl.split('?')[0];
-                        for (let p = 2; p <= totalPage; p++) {
+                        const nextP = currentUrl.includes('ajax=chapters') ? 2 : 2; // simplest safe default since this reverted version doesn't track a startPage offset
+                        for (let p = nextP; p <= effectiveTotalPage; p++) {
                             const ajaxUrl = `${cleanUrl}?ajax=chapters&page=${p}&pageSize=40`;
                             if (!visitedUrls.has(ajaxUrl) && !pageQueue.includes(ajaxUrl)) {
                                 pageQueue.push(ajaxUrl);

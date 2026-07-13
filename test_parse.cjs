@@ -1,0 +1,1 @@
+﻿const fs = require('fs'); const html = fs.readFileSync('latest_novel.html', 'utf8'); const cheerio = require('cheerio'); const $ = cheerio.load(html); const urls = []; $('div.li').each((_, el) => { const href = $(el).find('.tit a').first().attr('href'); urls.push(href); }); console.log(urls.slice(0, 5));

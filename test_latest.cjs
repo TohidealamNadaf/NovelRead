@@ -1,0 +1,1 @@
+﻿const cheerio = require('cheerio'); fetch('https://api.allorigins.win/get?url=https://freewebnovel.com/sort/latest-novel').then(r=>r.json()).then(data => { const $ = cheerio.load(data.contents); const urls = []; $('div.li').each((_, el) => { const href = $(el).find('.tit a').first().attr('href'); urls.push(href); }); console.log(urls.slice(0, 5)); });
