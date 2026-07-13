@@ -424,16 +424,26 @@ export const ManhwaSeries = () => {
                 transition={{ duration: 0.3, ease: 'easeInOut' }}
                 className="fixed top-0 left-0 right-0 z-50 pointer-events-none"
             >
+                {/* Background layer: Gradient (Top of page) */}
+                <div 
+                    className={`absolute inset-0 transition-opacity duration-300 pointer-events-none bg-gradient-to-b from-black/80 via-black/40 to-transparent ${
+                        isScrolled ? 'opacity-0' : 'opacity-100'
+                    }`}
+                />
+                
+                {/* Background layer: Solid + Blur (Scrolled) */}
+                <div 
+                    className={`absolute inset-0 transition-opacity duration-300 pointer-events-none bg-background-dark/95 backdrop-blur-md border-b border-white/5 shadow-md shadow-black/20 ${
+                        isScrolled ? 'opacity-100' : 'opacity-0'
+                    }`}
+                />
+
                 <Header
                     title={novel?.title || ''}
                     subtitle={novel?.category || 'Manhwa'}
                     transparent
                     showBack
-                    className={`text-white pointer-events-auto transition-colors duration-200 ${
-                        isScrolled
-                            ? 'bg-background-dark/90 backdrop-blur-md border-b border-white/5'
-                            : 'bg-gradient-to-b from-black/80 via-black/40 to-transparent'
-                    }`}
+                    className="text-white pointer-events-auto relative z-10 bg-transparent"
                 />
             </motion.div>
 
