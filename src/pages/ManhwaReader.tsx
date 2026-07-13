@@ -7,8 +7,28 @@ import { ReaderControls } from '../components/manhwa/ReaderControls';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { ChapterSidebar } from '../components/ChapterSidebar'; // Reusing existing
 import { ReadingProgressBar, type ProgressBarPosition } from '../components/manhwa/ReadingProgressBar';
-import { ProgressBarPositionMenu } from '../components/manhwa/ProgressBarPositionMenu';
+import { ReaderSettingsMenu } from '../components/manhwa/ReaderSettingsMenu';
 import { Header } from '../components/Header';
+
+export interface ReaderImageSettings {
+    fitWidth: boolean;
+    fitHeight: boolean;
+    stretchSmallImages: boolean;
+    limitMaxWidth: boolean;
+    limitMaxHeight: boolean;
+    grayscale: boolean;
+    dimScreen: number; // 0-100
+}
+
+export const DEFAULT_IMAGE_SETTINGS: ReaderImageSettings = {
+    fitWidth: false,
+    fitHeight: false,
+    stretchSmallImages: false,
+    limitMaxWidth: false,
+    limitMaxHeight: false,
+    grayscale: false,
+    dimScreen: 0,
+};
 import { AnimatePresence, motion } from 'framer-motion';
 import { StatusBar } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
@@ -27,11 +47,23 @@ export const ManhwaReader = () => {
     const [progressBarPosition, setProgressBarPosition] = useState<ProgressBarPosition>(() => 
         (localStorage.getItem('manhwaProgressBarPosition') as ProgressBarPosition) || 'bottom'
     );
-    const [isPositionMenuOpen, setIsPositionMenuOpen] = useState(false);
+    const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
+    const [imageSettings, setImageSettings] = useState<ReaderImageSettings>(() => {
+        try {
+            const saved = localStorage.getItem('manhwaImageSettings');
+            return saved ? { ...DEFAULT_IMAGE_SETTINGS, ...JSON.parse(saved) } : DEFAULT_IMAGE_SETTINGS;
+        } catch {
+            return DEFAULT_IMAGE_SETTINGS;
+        }
+    });
 
     useEffect(() => {
         localStorage.setItem('manhwaProgressBarPosition', progressBarPosition);
     }, [progressBarPosition]);
+
+    useEffect(() => {
+        localStorage.setItem('manhwaImageSettings', JSON.stringify(imageSettings));
+    }, [imageSettings]);
 
     // For removing controls on scroll
     const lastScrollY = useRef(0);
@@ -234,10 +266,10 @@ export const ManhwaReader = () => {
         setShowControls(prev => !prev);
     };
 
-    // Close position menu if controls are hidden
+    // Close settings menu if controls are hidden
     useEffect(() => {
         if (!showControls) {
-            setIsPositionMenuOpen(false);
+            setIsSettingsMenuOpen(false);
         }
     }, [showControls]);
 
@@ -327,12 +359,21 @@ export const ManhwaReader = () => {
             </AnimatePresence>
 
             {/* Content */}
-            <main className="w-full max-w-3xl mx-auto">
+            <main className="w-full max-w-3xl mx-auto relative z-0">
                 <WebtoonViewer
                     content={chapter.content}
                     isLoading={isLoading}
+                    imageSettings={imageSettings}
                 />
             </main>
+
+            {/* Dim Screen Overlay */}
+            {imageSettings.dimScreen > 0 && (
+                <div 
+                    className="fixed inset-0 bg-black pointer-events-none z-30" 
+                    style={{ opacity: imageSettings.dimScreen / 100 }} 
+                />
+            )}
 
             {/* Reading Progress */}
             <ReadingProgressBar 
@@ -342,26 +383,26 @@ export const ManhwaReader = () => {
             />
 
             {/* Bottom Controls */}
-            <div onClick={(e) => e.stopPropagation()}>
+            <div onClick={(e) => e.stopPropagation()} className="z-40 relative">
                 <ReaderControls
                     show={showControls}
                     onNext={handleNextChapter}
                     onPrev={handlePrevChapter}
                     onHistory={() => setShowSidebar(true)}
-                    onTogglePositionMenu={() => setIsPositionMenuOpen(o => !o)}
+                    onToggleSettingsMenu={() => setIsSettingsMenuOpen(o => !o)}
                     hasNextChapter={hasNextChapter}
                     hasPrevChapter={hasPrevChapter}
                 />
             </div>
 
-            {/* Position Menu */}
-            <ProgressBarPositionMenu 
-                isOpen={isPositionMenuOpen} 
+            {/* Settings Menu */}
+            <ReaderSettingsMenu 
+                isOpen={isSettingsMenuOpen} 
+                onClose={() => setIsSettingsMenuOpen(false)}
                 position={progressBarPosition} 
-                onSelect={(pos) => {
-                    setProgressBarPosition(pos); 
-                    setIsPositionMenuOpen(false);
-                }} 
+                onPositionSelect={setProgressBarPosition}
+                imageSettings={imageSettings}
+                onImageSettingsChange={setImageSettings}
             />
 
             {/* Sidebar — uses chapterId from URL (not stale chapter.id) for accurate highlighting */}

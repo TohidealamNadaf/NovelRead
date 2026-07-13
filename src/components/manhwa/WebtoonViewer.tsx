@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import type { ReaderImageSettings } from '../../pages/ManhwaReader';
 
 interface WebtoonViewerProps {
     content?: string; // HTML content or just parsing logic
     images?: string[]; // If we pre-parse (preferred)
     isLoading?: boolean;
+    imageSettings?: ReaderImageSettings;
 }
 
 /**
@@ -71,7 +73,7 @@ const getProxiedUrl = (url: string): string => {
     return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=1200&q=75&output=webp&il`;
 };
 
-export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: propImages, isLoading }) => {
+export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: propImages, isLoading, imageSettings }) => {
     const [images, setImages] = useState<string[]>([]);
 
     useEffect(() => {
@@ -107,16 +109,40 @@ export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: p
     }
 
     return (
-        <div className="flex flex-col w-full bg-black">
-            {images.map((src, index) => (
+        <div className="flex flex-col w-full bg-black" style={{ filter: imageSettings?.grayscale ? 'grayscale(100%)' : undefined }}>
+            {images.map((src, index) => {
+                const imgStyle: React.CSSProperties = { margin: '0 auto', padding: 0, display: 'block', minHeight: '300px' };
+
+                if (imageSettings?.limitMaxWidth) {
+                    imgStyle.maxWidth = '800px';
+                }
+                
+                if (imageSettings?.limitMaxHeight) {
+                    imgStyle.maxHeight = '1200px';
+                    imgStyle.objectFit = 'contain';
+                } else if (imageSettings?.fitHeight) {
+                    imgStyle.maxHeight = '100vh';
+                    imgStyle.objectFit = 'contain';
+                }
+
+                if (imageSettings?.fitWidth) {
+                    if (imageSettings.stretchSmallImages) {
+                        imgStyle.width = '100%';
+                    } else {
+                        imgStyle.width = 'auto';
+                        imgStyle.maxWidth = imgStyle.maxWidth || '100%';
+                    }
+                }
+
+                return (
                 <img
                     key={`${src}-${index}`}
                     src={getProxiedUrl(src)}
                     alt={`Page ${index + 1}`}
                     loading={index < 3 ? "eager" : "lazy"}
                     decoding="async"
-                    className="w-full h-auto block"
-                    style={{ margin: 0, padding: 0, display: 'block', minHeight: '300px' }}
+                    className="block"
+                    style={imgStyle}
                     onError={(e) => {
                         const img = e.currentTarget;
                         if (img.src.includes('wsrv.nl')) {
@@ -143,7 +169,7 @@ export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: p
                         }
                     }}
                 />
-            ))}
+            )})}
         </div>
     );
 };
