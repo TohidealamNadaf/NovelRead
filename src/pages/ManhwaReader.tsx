@@ -6,7 +6,8 @@ import { WebtoonViewer } from '../components/manhwa/WebtoonViewer';
 import { ReaderControls } from '../components/manhwa/ReaderControls';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { ChapterSidebar } from '../components/ChapterSidebar'; // Reusing existing
-import { ReadingProgressBar } from '../components/manhwa/ReadingProgressBar';
+import { ReadingProgressBar, type ProgressBarPosition } from '../components/manhwa/ReadingProgressBar';
+import { ProgressBarPositionMenu } from '../components/manhwa/ProgressBarPositionMenu';
 import { Header } from '../components/Header';
 import { AnimatePresence, motion } from 'framer-motion';
 import { StatusBar } from '@capacitor/status-bar';
@@ -23,6 +24,14 @@ export const ManhwaReader = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [showControls, setShowControls] = useState(true);
     const [showSidebar, setShowSidebar] = useState(false);
+    const [progressBarPosition, setProgressBarPosition] = useState<ProgressBarPosition>(() => 
+        (localStorage.getItem('manhwaProgressBarPosition') as ProgressBarPosition) || 'bottom'
+    );
+    const [isPositionMenuOpen, setIsPositionMenuOpen] = useState(false);
+
+    useEffect(() => {
+        localStorage.setItem('manhwaProgressBarPosition', progressBarPosition);
+    }, [progressBarPosition]);
 
     // For removing controls on scroll
     const lastScrollY = useRef(0);
@@ -225,6 +234,13 @@ export const ManhwaReader = () => {
         setShowControls(prev => !prev);
     };
 
+    // Close position menu if controls are hidden
+    useEffect(() => {
+        if (!showControls) {
+            setIsPositionMenuOpen(false);
+        }
+    }, [showControls]);
+
     // Edge Swipe to Open Sidebar
     const edgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
     const SWIPE_ZONE_WIDTH = 0.5;
@@ -319,7 +335,11 @@ export const ManhwaReader = () => {
             </main>
 
             {/* Reading Progress */}
-            <ReadingProgressBar containerRef={containerRef} showControls={showControls} />
+            <ReadingProgressBar 
+                containerRef={containerRef} 
+                showControls={showControls} 
+                position={progressBarPosition}
+            />
 
             {/* Bottom Controls */}
             <div onClick={(e) => e.stopPropagation()}>
@@ -328,10 +348,21 @@ export const ManhwaReader = () => {
                     onNext={handleNextChapter}
                     onPrev={handlePrevChapter}
                     onHistory={() => setShowSidebar(true)}
+                    onTogglePositionMenu={() => setIsPositionMenuOpen(o => !o)}
                     hasNextChapter={hasNextChapter}
                     hasPrevChapter={hasPrevChapter}
                 />
             </div>
+
+            {/* Position Menu */}
+            <ProgressBarPositionMenu 
+                isOpen={isPositionMenuOpen} 
+                position={progressBarPosition} 
+                onSelect={(pos) => {
+                    setProgressBarPosition(pos); 
+                    setIsPositionMenuOpen(false);
+                }} 
+            />
 
             {/* Sidebar — uses chapterId from URL (not stale chapter.id) for accurate highlighting */}
             <ChapterSidebar

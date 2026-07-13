@@ -698,18 +698,20 @@ export class AsuraScraperService {
                     if (!obj) return;
                     if (Array.isArray(obj)) {
                         obj.forEach(extractAstroUrls);
-                    } else if (typeof obj === 'object') {
-                        const getAstroVal = (val: any) => Array.isArray(val) ? val[1] : val;
-                        const urlVal = getAstroVal(obj.url) || getAstroVal(obj.src);
-                        
-                        if (urlVal && typeof urlVal === 'string' && urlVal.startsWith('http')) {
-                            if (!urlVal.includes('logo') && !urlVal.includes('icon') && !urlVal.includes('avatar')) {
-                                uniqueImages.add(urlVal);
-                            }
-                        } else {
-                            Object.values(obj).forEach(extractAstroUrls);
+                        return;
+                    }
+                    if (typeof obj !== 'object') return;
+
+                    const getAstroVal = (val: any) => Array.isArray(val) ? val[1] : val;
+                    const urlVal = getAstroVal(obj.url) || getAstroVal(obj.src);
+
+                    if (urlVal && typeof urlVal === 'string' && urlVal.startsWith('http')) {
+                        if (!urlVal.includes('logo') && !urlVal.includes('icon') && !urlVal.includes('avatar')) {
+                            uniqueImages.add(urlVal);
                         }
                     }
+
+                    Object.values(obj).forEach(extractAstroUrls);
                 };
 
                 extractAstroUrls(parsed);
@@ -764,7 +766,16 @@ export class AsuraScraperService {
     private isValidHtml(html: string): boolean {
         if (!html || html.length < 500) return false;
         const blockedIndicators = ['cf-browser-verification', 'Checking your browser', 'Just a moment', 'Verifying you are human', 'cf-challenge'];
-        return !blockedIndicators.some(indicator => html.includes(indicator));
+        if (blockedIndicators.some(indicator => html.includes(indicator))) return false;
+
+        // Detect truncated proxy responses by checking for closing tags near the end
+        const tail = html.slice(-2000).toLowerCase();
+        if (!tail.includes('</html>') && !tail.includes('</body>')) {
+            console.warn('[Asura] Response appears truncated (no closing tag near end)');
+            return false;
+        }
+
+        return true;
     }
 
     private async fetchHtml(url: string): Promise<string> {
@@ -802,11 +813,12 @@ export class AsuraScraperService {
 
                 return html;
             } else {
-                // Web: Cloudflare blocks the Vite dev proxy, so use external CORS proxies first
+                // Web: Try local proxy first to avoid third-party truncation/rate limits,
+                // then fallback to external CORS proxies
                 const webProxies = [
+                    { name: 'local', url: `/api/proxy?url=${encodeURIComponent(url)}` },
                     { name: 'corsproxy.io', url: `https://corsproxy.io/?url=${encodeURIComponent(url)}` },
                     { name: 'codetabs', url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}` },
-                    { name: 'local', url: `/api/proxy?url=${encodeURIComponent(url)}` },
                 ];
 
                 for (const proxy of webProxies) {

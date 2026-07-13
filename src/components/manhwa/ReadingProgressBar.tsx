@@ -2,12 +2,19 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { ChevronsUp, ChevronsDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
+export type ProgressBarPosition = 'top' | 'bottom' | 'left' | 'right' | 'off';
+
 interface ReadingProgressBarProps {
     containerRef: React.RefObject<HTMLDivElement | null>;
     showControls?: boolean;
+    position?: ProgressBarPosition;
 }
 
-export const ReadingProgressBar: React.FC<ReadingProgressBarProps> = ({ containerRef, showControls = true }) => {
+export const ReadingProgressBar: React.FC<ReadingProgressBarProps> = ({ 
+    containerRef, 
+    showControls = true,
+    position = 'bottom'
+}) => {
     const [progress, setProgress] = useState(0);
     const [dragProgress, setDragProgress] = useState<number | null>(null);
     const barRef = useRef<HTMLDivElement>(null);
@@ -77,11 +84,18 @@ export const ReadingProgressBar: React.FC<ReadingProgressBarProps> = ({ containe
         };
     }, [getScrollContext]);
 
+    const isVertical = position === 'left' || position === 'right';
+
     const handlePointerEvent = (e: React.PointerEvent) => {
         if (!barRef.current) return;
         
         const rect = barRef.current.getBoundingClientRect();
-        let fraction = (e.clientX - rect.left) / rect.width;
+        let fraction = 0;
+        if (isVertical) {
+            fraction = (e.clientY - rect.top) / rect.height;
+        } else {
+            fraction = (e.clientX - rect.left) / rect.width;
+        }
         fraction = Math.max(0, Math.min(1, fraction));
         
         setDragProgress(fraction * 100);
@@ -108,16 +122,44 @@ export const ReadingProgressBar: React.FC<ReadingProgressBarProps> = ({ containe
 
     const currentProgress = dragProgress !== null ? dragProgress : progress;
 
+    // Quick jump button alignment based on position
+    const quickJumpClass = position === 'right' 
+        ? "fixed bottom-28 left-4 flex flex-col gap-2 z-50 pointer-events-auto"
+        : "fixed bottom-28 right-4 flex flex-col gap-2 z-50 pointer-events-auto";
+
+    // Scrubber area layout based on position
+    let scrubberClass = "fixed z-50 touch-none pointer-events-auto flex ";
+    if (position === 'bottom') scrubberClass += "bottom-0 left-0 right-0 h-6 flex-col justify-end";
+    else if (position === 'top') scrubberClass += "top-0 left-0 right-0 h-6 flex-col justify-start";
+    else if (position === 'left') scrubberClass += "top-0 bottom-0 left-0 w-6 flex-row justify-start";
+    else if (position === 'right') scrubberClass += "top-0 bottom-0 right-0 w-6 flex-row justify-end";
+
+    // Tooltip layout
+    const getTooltipStyle = () => {
+        if (isVertical) {
+            return {
+                top: `${currentProgress}%`,
+                [position === 'right' ? 'right' : 'left']: '32px',
+                transform: 'translateY(-50%)'
+            };
+        }
+        return {
+            left: `${currentProgress}%`,
+            [position === 'top' ? 'top' : 'bottom']: '32px',
+            transform: 'translateX(-50%)'
+        };
+    };
+
     return (
         <>
             {/* Quick jump buttons */}
             <AnimatePresence>
                 {showControls && (
                     <motion.div
-                        initial={{ opacity: 0, x: 20 }}
+                        initial={{ opacity: 0, x: position === 'right' ? -20 : 20 }}
                         animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        className="fixed bottom-28 right-4 flex flex-col gap-2 z-50 pointer-events-auto"
+                        exit={{ opacity: 0, x: position === 'right' ? -20 : 20 }}
+                        className={quickJumpClass}
                     >
                         <button
                             onClick={(e) => { e.stopPropagation(); scrollToFraction(0, true); }}
@@ -136,38 +178,44 @@ export const ReadingProgressBar: React.FC<ReadingProgressBarProps> = ({ containe
             </AnimatePresence>
 
             {/* Drag scrubber area */}
-            <div 
-                ref={barRef}
-                className="fixed bottom-0 left-0 right-0 h-6 z-50 touch-none pointer-events-auto flex flex-col justify-end"
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
-                onClick={(e) => e.stopPropagation()} 
-            >
-                {/* Tooltip while dragging */}
-                <AnimatePresence>
-                    {dragProgress !== null && (
-                        <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="absolute -top-8 -ml-5 px-2 py-1 bg-[#1a1a2e] text-white text-xs font-bold rounded shadow-lg border border-white/10 pointer-events-none"
-                            style={{ left: `${currentProgress}%` }}
-                        >
-                            {Math.round(currentProgress)}%
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+            {position !== 'off' && (
+                <div 
+                    ref={barRef}
+                    className={scrubberClass}
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    onPointerCancel={onPointerUp}
+                    onClick={(e) => e.stopPropagation()} 
+                >
+                    {/* Tooltip while dragging */}
+                    <AnimatePresence>
+                        {dragProgress !== null && (
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.9 }}
+                                className="absolute px-2 py-1 bg-[#1a1a2e] text-white text-xs font-bold rounded shadow-lg border border-white/10 pointer-events-none"
+                                style={getTooltipStyle()}
+                            >
+                                {Math.round(currentProgress)}%
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
 
-                {/* The visual progress bar */}
-                <div className="h-1 w-full bg-white/5 relative">
-                    <div
-                        className="absolute top-0 left-0 bottom-0 bg-primary transition-all duration-150 ease-out"
-                        style={{ width: `${Math.min(100, Math.max(0, currentProgress))}%`, transitionDuration: dragProgress !== null ? '0ms' : '150ms' }}
-                    ></div>
+                    {/* The visual progress bar */}
+                    <div className={`${isVertical ? 'w-1 h-full' : 'h-1 w-full'} bg-white/5 relative`}>
+                        <div
+                            className="absolute top-0 left-0 bg-primary transition-all duration-150 ease-out"
+                            style={{ 
+                                [isVertical ? 'height' : 'width']: `${Math.min(100, Math.max(0, currentProgress))}%`, 
+                                [isVertical ? 'width' : 'height']: '100%',
+                                transitionDuration: dragProgress !== null ? '0ms' : '150ms' 
+                            }}
+                        ></div>
+                    </div>
                 </div>
-            </div>
+            )}
         </>
     );
 };

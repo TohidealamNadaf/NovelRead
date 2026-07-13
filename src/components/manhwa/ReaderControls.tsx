@@ -1,11 +1,12 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight, List } from 'lucide-react';
+import { ChevronLeft, ChevronRight, List, LayoutPanelTop } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface ReaderControlsProps {
     onNext: () => void;
     onPrev?: () => void;
     onHistory?: () => void;
+    onTogglePositionMenu?: () => void;
     show: boolean;
     hasNextChapter?: boolean;
     hasPrevChapter?: boolean;
@@ -15,6 +16,7 @@ export const ReaderControls: React.FC<ReaderControlsProps> = ({
     onNext,
     onPrev,
     onHistory,
+    onTogglePositionMenu,
     show,
     hasNextChapter = true,
     hasPrevChapter = false,
@@ -52,6 +54,15 @@ export const ReaderControls: React.FC<ReaderControlsProps> = ({
                     ) : (
                         'All Caught Up'
                     )}
+                </button>
+
+                {/* Adjust Progress Bar */}
+                <button
+                    onClick={onTogglePositionMenu}
+                    className="flex flex-col items-center justify-center w-14 h-12 rounded-xl transition-all active:scale-90 text-white/70 hover:text-white hover:bg-white/10"
+                >
+                    <LayoutPanelTop size={20} />
+                    <span className="text-[9px] mt-0.5 font-semibold">Bar</span>
                 </button>
 
                 {/* Index / Chapter List */}
