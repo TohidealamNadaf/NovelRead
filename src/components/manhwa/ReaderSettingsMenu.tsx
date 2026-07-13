@@ -13,10 +13,10 @@ interface ReaderSettingsMenuProps {
     onImageSettingsChange: (settings: ReaderImageSettings) => void;
 }
 
-export const ReaderSettingsMenu: React.FC<ReaderSettingsMenuProps> = ({ 
-    isOpen, 
-    onClose, 
-    position, 
+export const ReaderSettingsMenu: React.FC<ReaderSettingsMenuProps> = ({
+    isOpen,
+    onClose,
+    position,
     onPositionSelect,
     imageSettings,
     onImageSettingsChange
@@ -50,7 +50,7 @@ export const ReaderSettingsMenu: React.FC<ReaderSettingsMenuProps> = ({
             {isOpen && (
                 <>
                     {/* Backdrop */}
-                    <motion.div 
+                    <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
@@ -72,17 +72,17 @@ export const ReaderSettingsMenu: React.FC<ReaderSettingsMenuProps> = ({
                         onTouchEnd={(e) => e.stopPropagation()}
                     >
                         <div className="bg-[#1a1a2e]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-4 flex flex-col gap-4">
-                            
+
                             {/* Header / Tabs */}
                             <div className="flex items-center justify-between">
                                 <div className="flex bg-white/5 p-1 rounded-lg">
-                                    <button 
+                                    <button
                                         className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-colors ${activeTab === 'layout' ? 'bg-white/10 text-white' : 'text-white/50'}`}
                                         onClick={() => setActiveTab('layout')}
                                     >
                                         Layout
                                     </button>
-                                    <button 
+                                    <button
                                         className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-colors ${activeTab === 'image' ? 'bg-white/10 text-white' : 'text-white/50'}`}
                                         onClick={() => setActiveTab('image')}
                                     >
@@ -136,8 +136,8 @@ export const ReaderSettingsMenu: React.FC<ReaderSettingsMenuProps> = ({
                                             <span className="text-[10px] font-bold text-white/40 tracking-widest uppercase">Dim Screen</span>
                                             <span className="text-xs text-primary font-mono">{imageSettings.dimScreen}%</span>
                                         </div>
-                                        <input 
-                                            type="range" 
+                                        <input
+                                            type="range"
                                             min="0" max="100" step="5"
                                             value={imageSettings.dimScreen}
                                             onChange={(e) => updateSetting('dimScreen', parseInt(e.target.value))}

@@ -10,19 +10,7 @@ export abstract class BaseScraper {
         // Return an empty string first to try direct connection, then fallbacks
         // The vite proxy in dev server handles CORS natively when no prefix is used.
         if (url) {
-            try {
-                const urlObj = new URL(url);
-                if (urlObj.hostname.includes('freewebnovel.com')) {
-                    // freewebnovel.com's anti-bot protection 403s requests through the local /api/proxy middleware.
-                    // We must route through external CORS proxies only.
-                    return [
-                        'https://corsproxy.io/?',
-                        'https://api.codetabs.com/v1/proxy?quest='
-                    ];
-                }
-            } catch (e) {
-                // Ignore parse errors
-            }
+            // We use the default proxy list for all hosts now to ensure native (Capacitor) direct connections are attempted first.
         }
         return ['', ...this.PROXIES];
     }

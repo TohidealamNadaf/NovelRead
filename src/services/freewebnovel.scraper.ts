@@ -63,12 +63,14 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
     }
 
     private async fetchList(url: string) {
-        for (const proxyUrl of this.getProxies(url)) {
-            const html = await this.fetchHtml(url, proxyUrl);
+        try {
+            const html = await this.fetchHtmlWithProxies(url);
             if (html) {
                 const $ = cheerio.load(html);
                 return this.parseFreeWebNovelsList($, 'div.li');
             }
+        } catch (e) {
+            console.error(`[FreeWebNovel] fetchList failed for ${url}`, e);
         }
         return [];
     }
