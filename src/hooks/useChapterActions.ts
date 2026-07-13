@@ -48,7 +48,7 @@ export function useChapterActions({
         await dbService.initialize();
         
         const source = novel.sourceUrl?.includes('freewebnovel') ? 'FreeWebNovel' : 'NovelFire';
-        const totalChapters = liveChapters.length || chapters.length || novel.totalChapters || 0;
+        const totalChapters = novel.totalChapters || liveChapters.length || chapters.length || 0;
 
         await dbService.addNovel({
             id: novelDbId,

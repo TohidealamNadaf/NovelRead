@@ -16,6 +16,8 @@ export interface NovelMetadata {
     chapters: ScrapedChapter[];
     sourceUrl?: string; // For search results to link back to source
     sourceId?: string; // Original ID from source
+    totalChapters?: number;
+    complete?: boolean;
 }
 
 export type ScrapedChapter = { title: string; url: string; date?: string };
@@ -93,9 +95,10 @@ export class ScraperService {
 
     async fetchNovelFast(
         url: string,
-        onProgress?: (chapters: { title: string; url: string; date?: string }[], page: number, metadata?: Partial<NovelMetadata>) => void
+        onProgress?: (chapters: { title: string; url: string; date?: string }[], page: number, metadata?: Partial<NovelMetadata>) => void,
+        knownChapterCount: number = 0
     ): Promise<NovelMetadata> {
-        return this.getScraper(url).fetchNovelFast(url, onProgress);
+        return this.getScraper(url).fetchNovelFast(url, onProgress, knownChapterCount);
     }
 
     async fetchNovel(url: string, userProvidedChapters?: boolean): Promise<NovelMetadata> {
@@ -233,7 +236,8 @@ export class ScraperService {
                 author: novel.author,
                 coverUrl: novel.coverUrl,
                 sourceUrl: url,
-                category: category
+                category: category,
+                totalChapters: novel.totalChapters || novel.chapters.length
             });
 
             await this.scrapeChapterLoop(novelId, novel.chapters, novel.title, 0);

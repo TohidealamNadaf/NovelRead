@@ -206,6 +206,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
 
     async fetchNovel(url: string, _userProvidedChapters?: boolean): Promise<NovelMetadata> {
         let title = '', author = 'Unknown', coverUrl = '', summary = '', status = 'Ongoing';
+        let totalChapters: number | undefined;
         let listUrl = url;
 
         for (const proxyUrl of this.getProxies(url)) {
@@ -230,6 +231,13 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     const extractedStatus = $('span[title="Status"]').next('.right').text().trim() || $('meta[property="og:novel:status"]').attr('content')?.trim();
                     if (extractedStatus) status = extractedStatus;
 
+                    const lastOption = $('#indexselect option').last();
+                    if (lastOption.length) {
+                        const optText = lastOption.text().trim();
+                        const rangeMatch = optText.match(/C\.?\s*\d+\s*-\s*C\.?\s*(\d+)/i);
+                        if (rangeMatch) totalChapters = parseInt(rangeMatch[1], 10);
+                    }
+
                     break;
                 }
             } catch (e) {
@@ -244,7 +252,8 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             coverUrl,
             summary,
             status,
-            chapters
+            chapters,
+            totalChapters
         };
     }
 
@@ -362,7 +371,8 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
 
     async fetchNovelFast(
         url: string,
-        onProgress?: (chapters: { title: string; url: string; date?: string }[], page: number, metadata?: Partial<NovelMetadata>) => void
+        onProgress?: (chapters: { title: string; url: string; date?: string }[], page: number, metadata?: Partial<NovelMetadata>) => void,
+        knownChapterCount: number = 0
     ): Promise<NovelMetadata> {
         let title = '', author = 'Unknown', coverUrl = '', summary = '', status = 'Ongoing';
         let workingProxy: string | undefined;
@@ -389,7 +399,15 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     const extractedStatus = $('span[title="Status"]').next('.right').text().trim() || $('meta[property="og:novel:status"]').attr('content')?.trim();
                     if (extractedStatus) status = extractedStatus;
                     
-                    onProgress?.([], 0, { title, author, summary, status, coverUrl });
+                    let totalChapters: number | undefined;
+                    const lastOption = $('#indexselect option').last();
+                    if (lastOption.length) {
+                        const optText = lastOption.text().trim();
+                        const rangeMatch = optText.match(/C\.?\s*\d+\s*-\s*C\.?\s*(\d+)/i);
+                        if (rangeMatch) totalChapters = parseInt(rangeMatch[1], 10);
+                    }
+                    
+                    onProgress?.([], 0, { title, author, summary, status, coverUrl, totalChapters });
                     workingProxy = proxyUrl;
                     break;
                 }
@@ -405,6 +423,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         const visitedUrls = new Set<string>();
         let pageCount = 0;
         let consecutiveFailures = 0;
+        let complete = true;
 
         while (pageQueue.length > 0 && pageCount < 200) {
             const currentUrl = pageQueue.shift()!;
@@ -439,6 +458,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                         }
                     }
 
+                    // Total chapters aren't sent repeatedly to onProgress once we've extracted them, but we could if we wanted.
                     onProgress?.(allChapters, pageCount, { title, author, summary, status, coverUrl });
 
                     const scripts = $('script').map((_, el) => $(el).html()).get().join(' ');
@@ -454,8 +474,8 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     
                     if (effectiveTotalPage > 1) {
                         const cleanUrl = currentUrl.split('?')[0];
-                        const nextP = currentUrl.includes('ajax=chapters') ? 2 : 2; // simplest safe default since this reverted version doesn't track a startPage offset
-                        for (let p = nextP; p <= effectiveTotalPage; p++) {
+                        const nextP = currentUrl.includes('ajax=chapters') ? 2 : Math.floor(knownChapterCount / 40) + 1; // start fetching from the page containing our last known chapter
+                        for (let p = Math.max(nextP, 2); p <= effectiveTotalPage; p++) {
                             const ajaxUrl = `${cleanUrl}?ajax=chapters&page=${p}&pageSize=40`;
                             if (!visitedUrls.has(ajaxUrl) && !pageQueue.includes(ajaxUrl)) {
                                 pageQueue.push(ajaxUrl);
@@ -503,6 +523,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                 consecutiveFailures++;
                 if (consecutiveFailures >= 5) {
                     console.warn(`[FreeWebNovel] Hit 5 consecutive failures, aborting pagination.`);
+                    complete = false;
                     break;
                 }
             }
@@ -522,7 +543,8 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             coverUrl,
             summary,
             status,
-            chapters: allChapters
+            chapters: allChapters,
+            complete
         };
     }
 

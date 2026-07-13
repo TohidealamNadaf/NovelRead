@@ -135,13 +135,20 @@ export function useChapterData() {
 
                         // Incremental Update: Show chapters as they arrive!
                         if (chaptersFound.length > 0) {
-                            const indexedChapters = chaptersFound.map((ch, idx) => ({
-                                ...ch,
-                                _index: idx,
-                                // Safe fallback for keys
-                                date: ch.date
-                            }));
-                            setLiveChapters(indexedChapters);
+                            if (page <= 1 || page % 3 === 0) {
+                                const indexedChapters = chaptersFound.map((ch, idx) => ({
+                                    ...ch,
+                                    _index: dbChaptersCount + idx,
+                                    date: ch.date
+                                }));
+                                // The scraper returns the growing list of NEW chapters, so we prepend the old ones
+                                setLiveChapters([...(chapters || []).map(ch => ({
+                                    title: ch.title,
+                                    url: ch.audioPath || '',
+                                    _index: ch.orderIndex,
+                                    date: ch.date
+                                })), ...indexedChapters]);
+                            }
 
                             // Unlock UI immediately after first batch
                             if (page === 1 || chaptersFound.length > 0) {
@@ -154,21 +161,31 @@ export function useChapterData() {
                             const updatedNovel = {
                                 ...currentNovel,
                                 ...metadata,
-                                title: metadata.title || currentNovel.title,
+                                title: (metadata.title && metadata.title !== 'Unknown Title' && metadata.title !== 'Unknown') ? metadata.title : currentNovel.title,
                                 author: (metadata.author && metadata.author !== 'Unknown') ? metadata.author : currentNovel.author,
                                 status: (metadata.status && metadata.status !== 'Unknown' && metadata.status !== 'Ongoing') ? metadata.status : (currentNovel.status || metadata.status),
+                                totalChapters: metadata.totalChapters ?? currentNovel.totalChapters
                             } as Novel;
                             // Only update state if meaningful change to avoid flickering
-                            if (updatedNovel.coverUrl !== currentNovel.coverUrl || updatedNovel.summary !== currentNovel.summary || updatedNovel.author !== currentNovel.author || updatedNovel.status !== currentNovel.status) {
+                            if (updatedNovel.coverUrl !== currentNovel.coverUrl || 
+                                updatedNovel.summary !== currentNovel.summary || 
+                                updatedNovel.author !== currentNovel.author || 
+                                updatedNovel.status !== currentNovel.status ||
+                                updatedNovel.totalChapters !== currentNovel.totalChapters) {
                                 setNovel(updatedNovel);
                                 currentNovel = updatedNovel; // Update local ref
                             }
                         }
-                    });
+                    }, dbChaptersCount); // pass knownChapterCount
 
                     if (data) {
-                        const indexedChapters = data.chapters.map((ch, idx) => ({ ...ch, _index: idx }));
-                        setLiveChapters(indexedChapters);
+                        const indexedChapters = data.chapters.map((ch, idx) => ({ ...ch, _index: dbChaptersCount + idx }));
+                        setLiveChapters([...(chapters || []).map(ch => ({
+                                    title: ch.title,
+                                    url: ch.audioPath || '',
+                                    _index: ch.orderIndex,
+                                    date: ch.date
+                        })), ...indexedChapters]);
 
                         // Update State & DB
                         if (dbNovel) {
@@ -176,12 +193,12 @@ export function useChapterData() {
                                 // 1. Update Novel Metadata FIRST (skipSave: addChapters will do the final save)
                                 await dbService.addNovel({
                                     ...dbNovel,
-                                    title: data.title || dbNovel.title,
+                                    title: (data.title && data.title !== 'Unknown Title' && data.title !== 'Unknown') ? data.title : dbNovel.title,
                                     author: (data.author && data.author !== 'Unknown') ? data.author : dbNovel.author,
                                     coverUrl: data.coverUrl || dbNovel.coverUrl,
                                     summary: data.summary || dbNovel.summary,
                                     status: (data.status && data.status !== 'Unknown' && data.status !== 'Ongoing') ? data.status : (dbNovel.status || data.status),
-                                    totalChapters: data.chapters.length,
+                                    totalChapters: data.totalChapters ?? Math.max(dbNovel.totalChapters || 0, dbChaptersCount + data.chapters.length),
                                     lastFetchedAt: Math.floor(Date.now() / 1000)
                                 }, true);
 
@@ -210,8 +227,8 @@ export function useChapterData() {
                             if (currentNovel) {
                                 setNovel(prev => prev ? {
                                     ...prev,
-                                    title: data.title || prev.title,
-                                    totalChapters: data.chapters.length,
+                                    title: (data.title && data.title !== 'Unknown Title' && data.title !== 'Unknown') ? data.title : prev.title,
+                                    totalChapters: data.totalChapters ?? Math.max(prev.totalChapters || 0, dbChaptersCount + data.chapters.length),
                                     lastFetchedAt: Math.floor(Date.now() / 1000)
                                 } : null);
                             }

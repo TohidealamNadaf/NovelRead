@@ -13,10 +13,9 @@ export abstract class BaseScraper {
             try {
                 const urlObj = new URL(url);
                 if (urlObj.hostname.includes('freewebnovel.com')) {
-                    // Try local/direct first (vite dev proxy sends browser-like headers),
-                    // then fall back to external CORS proxies
+                    // freewebnovel.com's anti-bot protection 403s requests through the local /api/proxy middleware.
+                    // We must route through external CORS proxies only.
                     return [
-                        '',
                         'https://corsproxy.io/?',
                         'https://api.codetabs.com/v1/proxy?quest='
                     ];

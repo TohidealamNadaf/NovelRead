@@ -374,14 +374,14 @@ class DatabaseService {
                 INSERT INTO novels (id, title, author, coverUrl, sourceUrl, category, status, summary, lastReadChapterId, totalChapters, lastFetchedAt)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
-                    title = COALESCE(excluded.title, title),
-                    author = COALESCE(excluded.author, author),
-                    coverUrl = COALESCE(excluded.coverUrl, coverUrl),
-                    sourceUrl = COALESCE(excluded.sourceUrl, sourceUrl),
-                    summary = COALESCE(excluded.summary, summary),
-                    status = COALESCE(excluded.status, status),
-                    category = COALESCE(excluded.category, category),
-                    totalChapters = COALESCE(excluded.totalChapters, totalChapters),
+                    title = COALESCE(NULLIF(excluded.title, ''), title),
+                    author = COALESCE(NULLIF(excluded.author, ''), author),
+                    coverUrl = COALESCE(NULLIF(excluded.coverUrl, ''), coverUrl),
+                    sourceUrl = COALESCE(NULLIF(excluded.sourceUrl, ''), sourceUrl),
+                    summary = COALESCE(NULLIF(excluded.summary, ''), summary),
+                    status = COALESCE(NULLIF(excluded.status, ''), status),
+                    category = COALESCE(NULLIF(excluded.category, ''), category),
+                    totalChapters = COALESCE(NULLIF(excluded.totalChapters, 0), totalChapters),
                     lastFetchedAt = COALESCE(excluded.lastFetchedAt, lastFetchedAt);
             `, [
                 novel.id,
@@ -493,7 +493,13 @@ class DatabaseService {
                     ]
                 }));
 
-                await db.executeSet(set);
+                const CHUNK_SIZE = 300;
+                for (let i = 0; i < set.length; i += CHUNK_SIZE) {
+                    const chunk = set.slice(i, i + CHUNK_SIZE);
+                    await db.executeSet(chunk);
+                    await new Promise(r => setTimeout(r, 0));
+                }
+
                 await this.save();
                 console.log(`[dbService] Bulk insert complete.`);
             } catch (error) {
