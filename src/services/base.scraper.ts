@@ -3,8 +3,11 @@ import { CapacitorHttp } from '@capacitor/core';
 export abstract class BaseScraper {
     private PROXIES = [
         'https://api.codetabs.com/v1/proxy?quest=',
-        'https://corsproxy.io/?'
+        'https://corsproxy.io/?',
+        'https://api.allorigins.win/raw?url='
     ];
+
+    // Retry configuration for Cloudflare-blocked requests is handled externally or not used anymore
 
     public getProxies(url?: string): string[] {
         // Return an empty string first to try direct connection, then fallbacks
@@ -24,7 +27,7 @@ export abstract class BaseScraper {
         if (!url) throw new Error("Invalid URL");
 
         const proxies = this.getProxies(url);
-        
+
         for (const proxyPrefix of proxies) {
             try {
                 const html = await this.fetchHtml(url, proxyPrefix, 8000);
@@ -33,21 +36,21 @@ export abstract class BaseScraper {
                 console.warn(`[BaseScraper] Proxy attempt failed for ${url} via ${proxyPrefix || 'direct'}`, error);
             }
         }
-        
+
         throw new Error(`All proxies failed for ${url}`);
     }
 
     public async fetchHtml(url: string, proxyPrefix: string = '', timeoutMs: number = 10000): Promise<string | null> {
         if (!url) return null;
-        
+
         try {
             const separator = url.includes('?') ? '&' : '?';
             // Only cache-bust the direct connection. Proxies should use their own cache layer.
             const bustedUrl = proxyPrefix === '' ? `${url}${separator}_t=${Date.now()}` : url;
             const finalUrl = proxyPrefix ? `${proxyPrefix}${encodeURIComponent(bustedUrl)}` : bustedUrl;
-            
+
             const isCapacitor = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
-            
+
             if (isCapacitor) {
                 const response = await CapacitorHttp.get({
                     url: finalUrl,
@@ -62,17 +65,20 @@ export abstract class BaseScraper {
                     connectTimeout: Math.min(8000, timeoutMs),
                     readTimeout: timeoutMs
                 });
-                
+
                 if (response.status >= 200 && response.status < 300) {
                     return typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
                 }
             } else {
-                const fetchUrl = proxyPrefix 
-                    ? finalUrl 
+                const fetchUrl = proxyPrefix
+                    ? finalUrl
                     : `/api/proxy?url=${encodeURIComponent(url)}`;
 
+                const isLocalProxy = fetchUrl.startsWith('/api/proxy');
+                const effectiveTimeout = isLocalProxy ? 35000 : timeoutMs;
+
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+                const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
 
                 try {
                     const response = await fetch(fetchUrl, {
@@ -85,15 +91,19 @@ export abstract class BaseScraper {
                         },
                         signal: controller.signal
                     });
-                    
+
                     clearTimeout(timeoutId);
 
                     if (response.ok) {
-                        return await response.text();
+                        const html = await response.text();
+                        if (this.isChallengePage(html)) return null;
+                        return html;
                     }
                 } catch (fetchErr) {
                     clearTimeout(timeoutId);
-                    throw fetchErr;
+                    if ((fetchErr as any).name !== 'AbortError' || !isLocalProxy) {
+                        throw fetchErr;
+                    }
                 }
             }
             return null;
@@ -101,6 +111,23 @@ export abstract class BaseScraper {
             console.warn(`[BaseScraper] fetchHtml failed for ${url} via ${proxyPrefix || 'direct'}`, error);
             return null;
         }
+    }
+
+    protected isChallengePage(html: string): boolean {
+        if (!html || html.length < 500) return true;
+
+        const challengeIndicators = [
+            'cf-browser-verification',
+            'Just a moment',
+            'Verifying you are human',
+            'cf-challenge',
+            'Attention Required',
+            'Access denied',
+            '403 Forbidden',
+            'blocked by Cloudflare'
+        ];
+
+        return challengeIndicators.some(indicator => html.includes(indicator));
     }
 
     public resolveUrl(baseUrl: string, href: string): string {
@@ -147,7 +174,7 @@ export abstract class BaseScraper {
 
     public enhanceContent(rawHtml: string): string {
         if (!rawHtml) return '';
-        
+
         let cleaned = rawHtml
             .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
             .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
@@ -164,7 +191,7 @@ export abstract class BaseScraper {
             '.support-author', '.donate', '#comments', '.comments',
             '[id*="ad-"]', '[class*="ad-"]', '.google-auto-placed'
         ];
-        
+
         removeSelectors.forEach(sel => {
             const elements = wrapper.querySelectorAll(sel);
             elements.forEach(el => el.remove());

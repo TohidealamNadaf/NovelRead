@@ -45,20 +45,20 @@ export default defineConfig({
             path: targetUrl.pathname + targetUrl.search,
             method: req.method || 'GET',
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
               'Accept-Language': 'en-US,en;q=0.5',
               'Accept-Encoding': 'gzip, deflate, br',
               'Sec-Fetch-Dest': 'document',
               'Sec-Fetch-Mode': 'navigate',
-              'Sec-Fetch-Site': 'none',
+              'Sec-Fetch-Site': 'same-origin',
               'Sec-Fetch-User': '?1',
               'Upgrade-Insecure-Requests': '1',
               'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
               'sec-ch-ua-mobile': '?0',
               'sec-ch-ua-platform': '"Windows"',
-              'Referer': 'https://mangafire.to/',
-              'Origin': 'https://mangafire.to',
+              'Referer': targetUrl.origin + '/',
+              'Origin': targetUrl.origin,
               'Connection': 'keep-alive',
               'Cache-Control': 'no-cache',
             },
@@ -78,42 +78,85 @@ export default defineConfig({
           }
 
           const proxyReq = transport.request(options, (proxyRes) => {
+            const status = proxyRes.statusCode || 200;
+            const isBlockedStatus = status === 403 || status === 503;
+            const contentType = proxyRes.headers['content-type'] || '';
+            const encoding = proxyRes.headers['content-encoding'];
+
             // Handle redirects
-            if (proxyRes.statusCode && proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
-              res.writeHead(proxyRes.statusCode, { 'Location': proxyRes.headers.location });
+            if (status >= 300 && status < 400 && proxyRes.headers.location) {
+              res.writeHead(status, { 'Location': proxyRes.headers.location });
               res.end();
               return;
             }
 
-            if (proxyRes.statusCode && proxyRes.statusCode >= 400) {
-              console.warn(`[Proxy] ${proxyRes.statusCode} from ${targetRaw}`);
+            const triggerPuppeteer = () => {
+              console.warn(`[Proxy] Cloudflare challenge detected for ${targetRaw} - Puppeteer fallback...`);
+              (async () => {
+                let browser;
+                try {
+                  const puppeteer = await import('puppeteer');
+                  browser = await puppeteer.default.launch({ headless: true, args: ['--no-sandbox'] });
+                  const page = await browser.newPage();
+                  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+                  await page.goto(targetRaw, { waitUntil: 'networkidle2', timeout: 30000 });
+                  const html = await page.content();
+                  res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/html; charset=utf-8' });
+                  res.end(html);
+                } catch (err: any) {
+                  console.error('[Proxy] Puppeteer fallback failed:', err.message);
+                  res.writeHead(502, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/plain' });
+                  res.end(`Puppeteer fallback failed: ${err.message}`);
+                } finally {
+                  if (browser) await browser.close();
+                }
+              })();
+            };
+
+            if (isBlockedStatus) {
+                return triggerPuppeteer();
             }
 
-            // Pass through response headers (minus CORS restrictions)
+            if (status >= 400) {
+              console.warn(`[Proxy] ${status} from ${targetRaw}`);
+            }
+
             const responseHeaders: Record<string, string | string[]> = {
               'Access-Control-Allow-Origin': '*',
-              'Content-Type': proxyRes.headers['content-type'] || 'text/html; charset=utf-8',
+              'Content-Type': contentType || 'text/html; charset=utf-8',
             };
-            const encoding = proxyRes.headers['content-encoding'];
             if (encoding && !['gzip', 'br', 'deflate'].includes(encoding)) {
               responseHeaders['Content-Encoding'] = encoding;
             }
-
-            res.writeHead(proxyRes.statusCode || 200, responseHeaders);
             
             const handleError = (err: Error) => {
               console.warn('[Proxy] Decompression error:', err.message);
               if (!res.writableEnded) res.end();
             };
 
-            if (encoding === 'gzip') {
-              proxyRes.pipe(zlib.createGunzip().on('error', handleError)).pipe(res);
-            } else if (encoding === 'br') {
-              proxyRes.pipe(zlib.createBrotliDecompress().on('error', handleError)).pipe(res);
-            } else if (encoding === 'deflate') {
-              proxyRes.pipe(zlib.createInflate().on('error', handleError)).pipe(res);
+            let decodedStream: import('stream').Readable = proxyRes;
+            if (encoding === 'gzip') decodedStream = proxyRes.pipe(zlib.createGunzip().on('error', handleError));
+            else if (encoding === 'br') decodedStream = proxyRes.pipe(zlib.createBrotliDecompress().on('error', handleError));
+            else if (encoding === 'deflate') decodedStream = proxyRes.pipe(zlib.createInflate().on('error', handleError));
+            
+            if (status === 200 && contentType.includes('text/html')) {
+                let chunks: Buffer[] = [];
+                decodedStream.on('data', chunk => chunks.push(chunk));
+                decodedStream.on('end', () => {
+                    const htmlBuffer = Buffer.concat(chunks).toString('utf-8');
+                    const probe = htmlBuffer.slice(0, 2048);
+                    const isChallenge = /cf-browser-verification|Just a moment|Verifying you are human|cf-challenge|Attention Required|blocked by Cloudflare/i.test(probe);
+                    
+                    if (isChallenge) {
+                        triggerPuppeteer();
+                    } else {
+                        res.writeHead(status, responseHeaders);
+                        res.end(htmlBuffer);
+                    }
+                });
             } else {
-              proxyRes.pipe(res);
+                res.writeHead(status, responseHeaders);
+                decodedStream.pipe(res);
             }
           });
 

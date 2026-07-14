@@ -75,7 +75,7 @@ export const Discover = () => {
         }
     });
     const [isSearchingNovels, setIsSearchingNovels] = useState(false);
-    
+
     // Manhwa Search State
     const [manhwaSearchResults, setManhwaSearchResults] = useState<NovelMetadata[]>(() => {
         try {
@@ -86,7 +86,7 @@ export const Discover = () => {
         }
     });
     const [isSearchingManhwa, setIsSearchingManhwa] = useState(false);
-    
+
     // MangaFire Search State
     const [mangafireData, setMangafireData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
     const [isLoadingMangafire, setIsLoadingMangafire] = useState(false);
@@ -105,7 +105,7 @@ export const Discover = () => {
 
     // Scroll collapse state
     const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
-    
+
     const [syncMode, setSyncMode] = useState<'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire'>('novelfire');
 
     const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
@@ -218,7 +218,7 @@ export const Discover = () => {
                     if (stored) setHomeData(prev => ({ ...prev, novelfire: JSON.parse(stored) }));
                 }
             }
-            
+
             // If still empty after cache checks, trigger an automatic sync
             setTimeout(() => {
                 setHomeData(current => {
@@ -236,7 +236,7 @@ export const Discover = () => {
 
     const loadManhwaData = async () => {
         const cacheKey = 'manhwaDiscoveryData';
-        
+
         // Try DB cache first
         const cached = await dbService.getCache(cacheKey);
         if (cached) {
@@ -263,7 +263,7 @@ export const Discover = () => {
 
     const loadMangafireData = async () => {
         const cacheKey = 'mangafireDiscoveryData';
-        
+
         // Try DB cache first
         const cached = await dbService.getCache(cacheKey);
         if (cached) {
@@ -302,7 +302,7 @@ export const Discover = () => {
             loadManhwaData();
             return;
         }
-        
+
         if (actualTargetMode === 'mangafire') {
             loadMangafireData();
             return;
@@ -316,12 +316,21 @@ export const Discover = () => {
                 setSyncProgress({ task, current, total });
             }, actualTargetMode as 'novelfire' | 'freewebnovel');
 
-            if (data && (data.recommended.length > 0 || data.ranking.length > 0 || data.latest.length > 0)) {
+            const totalItems = data.recommended.length + data.ranking.length + data.latest.length + data.completed.length + data.recentlyAdded.length;
+
+            if (totalItems > 0) {
                 setHomeData(prev => ({ ...prev, [actualTargetMode]: data }));
                 await dbService.setCache(`homeData_${actualTargetMode}`, data);
                 setShowSuccess(true);
             } else {
-                alert("Sync returned empty data. Please try again.");
+                // Check if we have cached data to fall back to
+                const cached = await dbService.getCache(`homeData_${actualTargetMode}`);
+                if (cached && (cached.ranking?.length > 0 || cached.latest?.length > 0)) {
+                    setHomeData(prev => ({ ...prev, [actualTargetMode]: cached }));
+                    alert("Sync is currently unavailable due to website protection. Showing cached data instead.");
+                } else {
+                    alert("Sync is currently unavailable due to website protection (Cloudflare). Please try again later or switch to a different source.");
+                }
             }
         } catch (e) {
             console.error("Failed to sync discover data", e);
@@ -422,7 +431,7 @@ export const Discover = () => {
     return (
         <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark font-sans selection:bg-primary/30 overflow-hidden">
             {/* Scrollable Content */}
-            <PullToRefresh 
+            <PullToRefresh
                 ref={scrollContainerRef}
                 onRefresh={() => syncHomeData()}
                 isDisabled={isGlobalScraping}
