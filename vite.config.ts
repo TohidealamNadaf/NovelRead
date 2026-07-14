@@ -45,7 +45,7 @@ export default defineConfig({
             path: targetUrl.pathname + targetUrl.search,
             method: req.method || 'GET',
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
               'Accept-Language': 'en-US,en;q=0.5',
               'Accept-Encoding': 'gzip, deflate, br',
@@ -55,9 +55,10 @@ export default defineConfig({
               'Sec-Fetch-User': '?1',
               'Upgrade-Insecure-Requests': '1',
               'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-              'sec-ch-ua-mobile': '?1',
-              'sec-ch-ua-platform': '"Android"',
-              'Referer': targetUrl.origin + '/',
+              'sec-ch-ua-mobile': '?0',
+              'sec-ch-ua-platform': '"Windows"',
+              'Referer': 'https://mangafire.to/',
+              'Origin': 'https://mangafire.to',
               'Connection': 'keep-alive',
               'Cache-Control': 'no-cache',
             },
@@ -68,6 +69,12 @@ export default defineConfig({
           }
           if (req.headers['content-length']) {
             (options.headers as Record<string, any>)['Content-Length'] = req.headers['content-length'];
+          }
+          if (req.headers['accept']) {
+            (options.headers as Record<string, any>)['Accept'] = req.headers['accept'];
+          }
+          if (req.headers['x-requested-with']) {
+            (options.headers as Record<string, any>)['X-Requested-With'] = req.headers['x-requested-with'];
           }
 
           const proxyReq = transport.request(options, (proxyRes) => {

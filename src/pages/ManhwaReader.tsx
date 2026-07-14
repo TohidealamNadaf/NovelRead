@@ -9,6 +9,7 @@ import { ChapterSidebar } from '../components/ChapterSidebar'; // Reusing existi
 import { ReadingProgressBar, type ProgressBarPosition } from '../components/manhwa/ReadingProgressBar';
 import { ReaderSettingsMenu } from '../components/manhwa/ReaderSettingsMenu';
 import { Header } from '../components/Header';
+import { isPlaceholderContent } from '../utils/contentUtils';
 
 export interface ReaderImageSettings {
     fitWidth: boolean;
@@ -145,13 +146,13 @@ export const ManhwaReader = () => {
                     if (ch) {
                         console.log(`[ManhwaReader] Loaded chapter: "${ch.title}" (id: ${ch.id}), audioPath: ${ch.audioPath}`);
                         // Lazy load: If chapter is empty but has a source URL/HID, fetch images now
-                        if (!ch.content || ch.content.length < 50) {
+                        if (isPlaceholderContent(ch.content)) {
                             if (ch.audioPath && fetchingChapterRef.current !== ch.id) {
                                 fetchingChapterRef.current = ch.id;
                                 setIsLoading(true);
                                 try {
                                     const images = await manhwaScraperService.fetchChapterImages(ch.audioPath);
-                                    if (images && images.length > 50) {
+                                    if (!isPlaceholderContent(images)) {
                                         ch.content = images;
                                         await dbService.updateChapterContent(currentNovelId!, ch.id, images);
                                     }

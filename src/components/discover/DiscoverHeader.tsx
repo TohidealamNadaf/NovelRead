@@ -15,8 +15,8 @@ interface DiscoverHeaderProps {
     searchQuery: string;
     setSearchQuery: (query: string) => void;
     handleSearch: (e: React.KeyboardEvent) => void;
-    mode: 'novelfire' | 'freewebnovel' | 'manhwa';
-    setMode: (mode: 'novelfire' | 'freewebnovel' | 'manhwa') => void;
+    mode: 'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire';
+    setMode: (mode: 'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire') => void;
     navigate: (path: string) => void;
     isCollapsed: boolean;
     onSearchIconClick: () => void;
@@ -210,7 +210,7 @@ export const DiscoverHeader = memo(({
                 className="overflow-hidden px-4"
             >
                 <div className="flex p-1 bg-slate-200/50 dark:bg-[#2b2839]/50 rounded-xl shadow-inner relative">
-                    {['novelfire', 'freewebnovel', 'manhwa'].map((tab) => (
+                    {['novelfire', 'freewebnovel', 'manhwa', 'mangafire'].map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setMode(tab as any)}
@@ -225,7 +225,7 @@ export const DiscoverHeader = memo(({
                                     style={{ zIndex: -1 }}
                                 />
                             )}
-                            {tab === 'novelfire' ? 'NovelFire' : tab === 'freewebnovel' ? 'FWN' : 'Manhwa'}
+                            {tab === 'novelfire' ? 'NovelFire' : tab === 'freewebnovel' ? 'FWN' : tab === 'manhwa' ? 'Asura' : 'MangaFire'}
                         </button>
                     ))}
                 </div>

@@ -5,10 +5,12 @@ import type { Novel, Chapter } from '../services/db.service';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
 import { Header } from '../components/Header';
 import { Toast } from '../components/Toast';
+
 import { SeriesHero } from '../components/manhwa/SeriesHero';
 import { ChapterList } from '../components/manhwa/ChapterList';
 import { Loader2, Book } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { isPlaceholderContent } from '../utils/contentUtils';
 
 export const ManhwaSeries = () => {
     const { novelId } = useParams<{ novelId: string }>();
@@ -279,23 +281,21 @@ export const ManhwaSeries = () => {
     }, [isLoading, novelId, inLibrary]);
 
     const handleChapterSelect = (chapter: Chapter) => {
-        if (!novelId || !inLibrary) {
+        if (!inLibrary || !novel?.id || novel.id.startsWith('http')) {
             showToast("Please save the series to your library first to read chapters.", "warning");
             return;
         }
         navigate(`/manhwa/read/${encodeURIComponent(novelId!)}/${encodeURIComponent(chapter.id)}`); // Using the new reader route
     };
 
-    const handleToggleLibrary = () => {
+    const handleToggleLibrary = async () => {
         if (inLibrary) {
             showToast("Already in library.", "info");
             return;
         }
         if (remoteMetadata && novel) {
-            manhwaScraperService.startImport(novel.sourceUrl!, remoteMetadata);
-            // Quick optimistic update to prevent multiple clicks
-            setInLibrary(true);
-            showToast("Import started! It will appear in your library shortly.", "success");
+            await manhwaScraperService.startImport(novel.sourceUrl!, remoteMetadata);
+            showToast("Import complete!", "success");
             navigate('/'); // The library is actually at '/'
         }
     };
@@ -331,7 +331,7 @@ export const ManhwaSeries = () => {
             // audioPath stores the source URL for manhwa chapters
             const content = await manhwaScraperService.fetchChapterImages(chapter.audioPath || '');
 
-            if (content && content.length > 50) { // Basic sanity check
+            if (!isPlaceholderContent(content)) { // Basic sanity check
                 await dbService.updateChapterContent(novelId, chapter.id, content);
 
                 // Update local state to reflect download status immediately
@@ -340,7 +340,7 @@ export const ManhwaSeries = () => {
                 ));
                 console.log(`[ManhwaSeries] ✓ Downloaded ${chapter.title}`);
             } else {
-                throw new Error("Empty content received");
+                throw new Error("Empty or placeholder content received");
             }
         } catch (error) {
             console.error(`[ManhwaSeries] Failed to download chapter ${chapter.title}`, error);

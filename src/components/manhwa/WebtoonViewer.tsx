@@ -24,6 +24,13 @@ interface WebtoonViewerProps {
 const isContentPage = (url: string): boolean => {
     if (!url || url.toLowerCase().includes('.gif')) return false;
 
+    // MangaFire CDN pattern: filename is always literally "p.jpg"/"p.webp" etc,
+    // with the real identifying hash living in the path (e.g. /mf/{64charhash}/h/p.jpg).
+    // Must check this BEFORE filename-based heuristics since "p" alone fails all of them.
+    if (/\/mf\/[a-f0-9]{20,}\/h\/p\.(jpg|jpeg|png|webp|avif)(\?.*)?$/i.test(url)) {
+        return true;
+    }
+
     // Strip query parameters before extracting filename — some CDN URLs
     // include cache-busting suffixes like ?v=123 that would corrupt the
     // filename match (e.g. "a1cdd1.webp?v=1" → filename becomes
@@ -47,12 +54,9 @@ const isContentPage = (url: string): boolean => {
     // 3. ULID (Asura's newer format) -> 26 chars, starts with 0-7
     if (/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(cleanName)) return true;
 
-    // 4. Short alphanumeric hex hashes (e.g. "a1cdd1", "f4b2e9a0") —
-    // used by Tomb Raider King and other series on Asura's CDN.
-    // This pattern was already in asura.service.ts but was missing here,
-    // causing images to pass the service-level filter and then be silently
-    // discarded by the viewer's own filterContentImages call.
-    if (/^[a-f0-9]{4,16}$/i.test(cleanName)) return true;
+    // 4. Short/Long alphanumeric hex hashes (e.g. "a1cdd1", "034de8674d89643194a2b9ed5c0c80d4") —
+    // used by Tomb Raider King, Asura, and MangaFire.
+    if (/^[a-f0-9]{4,32}$/i.test(cleanName)) return true;
 
     return false;
 };

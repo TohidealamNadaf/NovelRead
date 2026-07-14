@@ -1,0 +1,306 @@
+import type { NovelMetadata } from '../scraper.service';
+import { manhwaScraperService } from '../manhwaScraper.service';
+import { Capacitor } from '@capacitor/core';
+
+const BASE_URL = 'https://mangafire.to';
+
+export class MangaFireScraperService {
+    
+    private async fetchWithProxy(url: string): Promise<string> {
+        const isNative = Capacitor.isNativePlatform();
+        
+        if (!isNative) {
+            // Web environment - use Vite proxy
+            const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+            try {
+                console.log(`[MangaFire] Fetching via Vite proxy: ${url}`);
+                const response = await fetch(proxyUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json, text/plain, */*',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    }
+                });
+                
+                if (!response.ok) {
+                    console.error(`[MangaFire] HTTP ${response.status} for ${url}`);
+                    // Try fallback proxy
+                    return await this.tryFallbackProxies(url);
+                }
+                
+                const text = await response.text();
+                console.log(`[MangaFire] Successfully fetched ${text.length} chars`);
+                return text;
+            } catch (e) {
+                console.error('[MangaFire] Vite proxy error:', e);
+                return await this.tryFallbackProxies(url);
+            }
+        } else {
+            // Native platform - use CapacitorHttp
+            return await manhwaScraperService.fetchHtml(url);
+        }
+    }
+
+    private async tryFallbackProxies(url: string): Promise<string> {
+        const fallbackProxies = [
+            'https://api.codetabs.com/v1/proxy?quest=',
+            'https://corsproxy.io/?url='
+        ];
+
+        for (const proxy of fallbackProxies) {
+            try {
+                console.log(`[MangaFire] Trying fallback proxy: ${proxy}`);
+                const proxyUrl = `${proxy}${encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl, {
+                    headers: {
+                        'Accept': 'application/json, text/plain, */*',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    }
+                });
+                if (response.ok) {
+                    const text = await response.text();
+                    if (text && text.length > 100) {
+                        return text;
+                    }
+                }
+            } catch (e) {
+                console.warn(`[MangaFire] Fallback proxy failed: ${proxy}`, e);
+            }
+        }
+        return '';
+    }
+    
+    private async fetchJson(url: string): Promise<any> {
+        const response = await this.fetchWithProxy(url);
+        if (!response) {
+            console.error('[MangaFire] No response received');
+            return null;
+        }
+        
+        try {
+            // Try to parse as JSON
+            const json = JSON.parse(response);
+            console.log('[MangaFire] Successfully parsed JSON response');
+            return json;
+        } catch (e) {
+            // Check if it's an HTML error page
+            if (response.includes('<!DOCTYPE') || response.includes('<html')) {
+                console.error('[MangaFire] Received HTML instead of JSON - likely blocked or wrong endpoint');
+                return null;
+            }
+            console.error('[MangaFire] Failed to parse JSON:', e);
+            console.log('[MangaFire] Response preview:', response.substring(0, 200));
+            return null;
+        }
+    }
+
+    private extractIdFromUrl(url: string): string {
+        try {
+            const urlObj = new URL(url);
+            const pathParts = urlObj.pathname.split('/').filter(Boolean);
+            
+            // Handle different URL patterns
+            if (pathParts.length >= 2) {
+                const lastPart = pathParts[pathParts.length - 1];
+                
+                // Check for .id format
+                if (lastPart.includes('.')) {
+                    return lastPart.split('.').pop() || '';
+                }
+                
+                // Check for id-slug format
+                if (lastPart.includes('-')) {
+                    const firstPart = lastPart.split('-')[0];
+                    // Validate it looks like an ID (alphanumeric, typically 4-8 chars)
+                    if (/^[a-z0-9]{4,8}$/i.test(firstPart)) {
+                        return firstPart;
+                    }
+                }
+                
+                // Return the whole part if no pattern matches
+                return lastPart;
+            }
+            
+            return '';
+        } catch {
+            console.error('[MangaFire] Failed to extract ID from URL:', url);
+            return '';
+        }
+    }
+
+    private parseTitleObject(item: any): NovelMetadata {
+        // Handle poster being an object with small/medium/large properties
+        let coverUrl = '';
+        if (typeof item.poster === 'string') {
+            coverUrl = item.poster;
+        } else if (item.poster && typeof item.poster === 'object') {
+            coverUrl = item.poster.medium || item.poster.small || item.poster.large || '';
+        } else {
+            coverUrl = item.cover || item.image || '';
+        }
+
+        return {
+            title: item.title || item.name || 'Unknown',
+            author: 'Unknown',
+            coverUrl: coverUrl,
+            category: 'Manhwa',
+            status: item.status || 'Ongoing',
+            summary: item.synopsis || item.description || '',
+            sourceUrl: `${BASE_URL}/title/${item.hid || item.id}-${item.slug || ''}`,
+            chapters: []
+        };
+    }
+
+    private extractListFromData(data: any): NovelMetadata[] {
+        if (!data) return [];
+        
+        let items: any[] = [];
+        if (Array.isArray(data)) {
+            items = data;
+        } else if (data.items && Array.isArray(data.items)) {
+            // ADD THIS CHECK - MangaFire returns {items: [...], meta: {...}}
+            items = data.items;
+        } else if (data.data && Array.isArray(data.data)) {
+            items = data.data;
+        } else if (data.result && Array.isArray(data.result)) {
+            items = data.result;
+        } else if (data.data && data.data.items && Array.isArray(data.data.items)) {
+            items = data.data.items;
+        }
+
+        return items.map(item => this.parseTitleObject(item)).filter(item => item.title && item.title !== 'Unknown');
+    }
+
+    async getDiscoverManga(): Promise<{ trending: NovelMetadata[], popular: NovelMetadata[], latest: NovelMetadata[] }> {
+        try {
+            const [trendingData, popularData, latestData] = await Promise.all([
+                this.fetchJson(`${BASE_URL}/api/top-titles?type=trending&days=1&limit=30`),
+                this.fetchJson(`${BASE_URL}/api/titles?order[relevance]=desc&page=1&limit=30`), // using relevance for popular
+                this.fetchJson(`${BASE_URL}/api/titles?order[chapter_updated_at]=desc&page=1&limit=30`)
+            ]);
+
+            return {
+                trending: this.extractListFromData(trendingData),
+                popular: this.extractListFromData(popularData),
+                latest: this.extractListFromData(latestData)
+            };
+        } catch (e) {
+            console.error('[MangaFire] Discovery error:', e);
+            return { trending: [], popular: [], latest: [] };
+        }
+    }
+
+    async searchManga(query: string): Promise<NovelMetadata[]> {
+        if (!query) return [];
+        try {
+            const searchUrl = `${BASE_URL}/api/titles?keyword=${encodeURIComponent(query)}&limit=30`;
+            const data = await this.fetchJson(searchUrl);
+            return this.extractListFromData(data);
+        } catch (e) {
+            console.error('[MangaFire] Search error:', e);
+            return [];
+        }
+    }
+
+    async fetchMangaDetails(url: string): Promise<NovelMetadata | null> {
+        const id = this.extractIdFromUrl(url);
+        if (!id) return null;
+
+        try {
+            // Fetch metadata
+            const metadataJson = await this.fetchJson(`${BASE_URL}/api/titles/${id}`);
+            if (!metadataJson) return null;
+            
+            const item = metadataJson.data || metadataJson;
+            const novel = this.parseTitleObject(item);
+            
+            // Overwrite sourceUrl just in case
+            novel.sourceUrl = url.startsWith('http') ? url : `${BASE_URL}/title/${id}`;
+
+            // Fetch chapters with pagination
+            let allChapterItems: any[] = [];
+            let page = 1;
+            let hasMore = true;
+
+            while (hasMore && page <= 50) { // Safety limit of 50 pages (approx 1500 chapters)
+                const chaptersJson = await this.fetchJson(`${BASE_URL}/api/titles/${id}/chapters?language=en&sort=number&order=desc&page=${page}&limit=30`);
+                
+                if (chaptersJson) {
+                    let chapterItems: any[] = [];
+                    if (Array.isArray(chaptersJson)) chapterItems = chaptersJson;
+                    else if (chaptersJson.items && Array.isArray(chaptersJson.items)) chapterItems = chaptersJson.items;
+                    else if (chaptersJson.data && Array.isArray(chaptersJson.data)) chapterItems = chaptersJson.data;
+                    else if (chaptersJson.result && Array.isArray(chaptersJson.result)) chapterItems = chaptersJson.result;
+                    else if (chaptersJson.data && chaptersJson.data.items && Array.isArray(chaptersJson.data.items)) chapterItems = chaptersJson.data.items;
+
+                    if (chapterItems.length > 0) {
+                        allChapterItems = allChapterItems.concat(chapterItems);
+                        page++;
+                    } else {
+                        hasMore = false;
+                    }
+                } else {
+                    hasMore = false;
+                }
+            }
+
+            if (allChapterItems.length > 0) {
+                // Sort ascending by real chapter number so orderIndex 0 = chapter 1,
+                // matching normal chapter numbering (highest orderIndex = latest chapter)
+                allChapterItems.sort((a, b) => {
+                    const numA = parseFloat(a.number || a.chapter) || 0;
+                    const numB = parseFloat(b.number || b.chapter) || 0;
+                    return numA - numB;
+                });
+
+                novel.chapters = allChapterItems.map((ch: any) => ({
+                    title: ch.name || `Chapter ${ch.number || ch.chapter}`,
+                    url: `${BASE_URL}/api/chapters/${ch.id}`, // Storing the API endpoint as URL to fetch later easily
+                    date: ch.created_at || ''
+                }));
+            }
+
+            return novel;
+        } catch (e) {
+            console.error('[MangaFire] Details error:', e);
+            return null;
+        }
+    }
+
+    async fetchChapterImages(url: string): Promise<string[]> {
+        // url is either the original web URL or the api URL we stored above
+        let apiUrl = url;
+        if (!url.includes('/api/chapters/')) {
+            // If it's a web URL like /title/85y3-dogul-wangg/chapter/7606764, extract chapter ID
+            const parts = url.split('/');
+            const chapterId = parts[parts.length - 1];
+            apiUrl = `${BASE_URL}/api/chapters/${chapterId}`;
+        }
+
+        try {
+            const data = await this.fetchJson(apiUrl);
+            if (!data) return [];
+            
+            const chapterObj = data.data || data;
+            if (chapterObj && chapterObj.pages && Array.isArray(chapterObj.pages)) {
+                return chapterObj.pages.map((p: any) => p.url || p);
+            }
+            return [];
+        } catch (e) {
+            console.error('[MangaFire] Images error:', e);
+            return [];
+        }
+    }
+
+    async fetchSeriesList(page: number): Promise<NovelMetadata[]> {
+        try {
+            const data = await this.fetchJson(`${BASE_URL}/api/titles?order[relevance]=desc&page=${page}&limit=30`);
+            return this.extractListFromData(data);
+        } catch (e) {
+            console.error('[MangaFire] Series list error:', e);
+            return [];
+        }
+    }
+}
+
+export const mangafireScraperService = new MangaFireScraperService();

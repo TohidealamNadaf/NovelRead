@@ -71,7 +71,7 @@ export const ManhwaDiscoverSection = memo(({
                                             </div>
                                             <div>
                                                 <p className="font-bold text-xs line-clamp-2 text-slate-900 dark:text-white leading-tight">{result.title}</p>
-                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">{result.author || 'Asura Scans'}</p>
+                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">{result.author || (result.sourceUrl?.includes('mangafire') ? 'MangaFire' : 'Asura Scans')}</p>
                                             </div>
                                         </div>
                                     ))}
@@ -122,7 +122,7 @@ export const ManhwaDiscoverSection = memo(({
             {!searchPerformed && !isLoadingManhwa && (!manhwaData || (manhwaData.trending?.length === 0 && manhwaData.popular?.length === 0)) && (
                 <div className="px-6 py-10 text-center">
                     <RefreshCcw className="mx-auto mb-4 text-primary opacity-50" size={32} />
-                    <p className="text-slate-500 dark:text-[#a19db9] mb-4">No discovery data available for Asura Scans right now.</p>
+                    <p className="text-slate-500 dark:text-[#a19db9] mb-4">No discovery data available right now.</p>
                     <button
                         onClick={loadManhwaData}
                         className="bg-primary text-white px-6 py-2 rounded-xl font-bold"
@@ -251,7 +251,7 @@ export const ManhwaDiscoverSection = memo(({
                                     <h4 className="font-bold text-[15px] truncate text-slate-900 dark:text-white mb-1.5 leading-tight">{manga.title}</h4>
                                     <div className="flex flex-col gap-0.5">
                                         <p className="text-[11px] text-slate-500 dark:text-[#a19db9] font-medium line-clamp-1">
-                                            {manga.sourceUrl.includes('comic') ? 'Asura Scans' : 'Manhwa'}
+                                            {manga.sourceUrl?.includes('mangafire') ? 'MangaFire' : (manga.sourceUrl?.includes('asura') ? 'Asura Scans' : 'Manhwa')}
                                         </p>
                                         <p className="text-[11px] text-primary font-bold">
                                             Latest Release

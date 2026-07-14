@@ -61,8 +61,8 @@ export const Discover = () => {
     const [showSyncModal, setShowSyncModal] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const [mode, setMode] = useState<'novelfire' | 'freewebnovel' | 'manhwa'>(() => {
-        return (sessionStorage.getItem('discoverTabMode') as 'novelfire' | 'freewebnovel' | 'manhwa') || 'novelfire';
+    const [mode, setMode] = useState<'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire'>(() => {
+        return (sessionStorage.getItem('discoverTabMode') as 'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire') || 'novelfire';
     });
     const [manhwaData, setManhwaData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
     const [isLoadingManhwa, setIsLoadingManhwa] = useState(false);
@@ -87,7 +87,18 @@ export const Discover = () => {
     });
     const [isSearchingManhwa, setIsSearchingManhwa] = useState(false);
     
-    
+    // MangaFire Search State
+    const [mangafireData, setMangafireData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
+    const [isLoadingMangafire, setIsLoadingMangafire] = useState(false);
+    const [mangafireSearchResults, setMangafireSearchResults] = useState<NovelMetadata[]>(() => {
+        try {
+            const cached = sessionStorage.getItem('discoverMangafireSearchResults');
+            return cached ? JSON.parse(cached) : [];
+        } catch {
+            return [];
+        }
+    });
+    const [isSearchingMangafire, setIsSearchingMangafire] = useState(false);
     const [searchPerformed, setSearchPerformed] = useState(() => sessionStorage.getItem('discoverSearchPerformed') === 'true');
     const [isOffline, setIsOffline] = useState(!navigator.onLine);
     const profileImage = useProfileImage();
@@ -139,6 +150,7 @@ export const Discover = () => {
                 console.log('[Discover] App resumed, refreshing data...');
                 loadHomeData();
                 if (mode === 'manhwa') loadManhwaData();
+                if (mode === 'mangafire') loadMangafireData();
             }
         });
 
@@ -171,17 +183,23 @@ export const Discover = () => {
         sessionStorage.setItem('discoverNovelSearchResults', JSON.stringify(novelSearchResults));
     }, [novelSearchResults]);
 
+    useEffect(() => {
+        sessionStorage.setItem('discoverMangafireSearchResults', JSON.stringify(mangafireSearchResults));
+    }, [mangafireSearchResults]);
+
     // Load data when switching tabs
     useEffect(() => {
         sessionStorage.setItem('discoverTabMode', mode);
         if (mode === 'manhwa') {
             loadManhwaData();
+        } else if (mode === 'mangafire') {
+            loadMangafireData();
         } else if (mode === 'novelfire' || mode === 'freewebnovel') {
             if (!homeData[mode]) loadHomeData(mode);
         }
     }, [mode, homeData]);
 
-    const loadHomeData = async (currentMode: 'novelfire' | 'freewebnovel' | 'manhwa' = mode) => {
+    const loadHomeData = async (currentMode: 'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire' = mode) => {
         if (currentMode === 'manhwa') return;
         try {
             const cacheKey = `homeData_${currentMode}`;
@@ -241,6 +259,33 @@ export const Discover = () => {
         }
     };
 
+    const loadMangafireData = async () => {
+        const cacheKey = 'mangafireDiscoveryData';
+        
+        // Try DB cache first
+        const cached = await dbService.getCache(cacheKey);
+        if (cached) {
+            setMangafireData(cached);
+        } else {
+            setMangafireData(null);
+        }
+
+        if (navigator.onLine) {
+            setIsLoadingMangafire(true);
+            try {
+                const data = await manhwaScraperService.getDiscoveryData('mangafire');
+                if (data && (data.trending.length > 0 || data.popular.length > 0 || data.latest.length > 0)) {
+                    setMangafireData(data);
+                    await dbService.setCache(cacheKey, data);
+                }
+            } catch (e) {
+                console.error("Failed to load mangafire discovery data", e);
+            } finally {
+                setIsLoadingMangafire(false);
+            }
+        }
+    };
+
     const syncHomeData = useCallback(async (targetModeOrEvent?: 'novelfire' | 'freewebnovel' | 'manhwa' | any) => {
         const actualTargetMode = typeof targetModeOrEvent === 'string' ? targetModeOrEvent : mode;
 
@@ -251,6 +296,11 @@ export const Discover = () => {
 
         if (actualTargetMode === 'manhwa') {
             loadManhwaData();
+            return;
+        }
+        
+        if (actualTargetMode === 'mangafire') {
+            loadMangafireData();
             return;
         }
 
@@ -279,7 +329,7 @@ export const Discover = () => {
     }, [mode]);
 
     const performQuickScrape = async (url: string) => {
-        const isManhwa = mode === 'manhwa' || url.includes('asura');
+        const isManhwa = mode === 'manhwa' || mode === 'mangafire' || url.includes('asura') || url.includes('mangafire.to');
         if (isManhwa) {
             navigate(`/manhwa/${encodeURIComponent(url)}`);
             return;
@@ -309,12 +359,24 @@ export const Discover = () => {
                     setIsSearchingManhwa(true);
                     setManhwaSearchResults([]);
                     try {
-                        const results = await manhwaScraperService.searchManga(searchQuery);
+                        const results = await manhwaScraperService.searchManga(searchQuery, 'asura');
                         setManhwaSearchResults(results);
                     } catch (e) {
                         console.error('Manhwa search failed:', e);
                     } finally {
                         setIsSearchingManhwa(false);
+                    }
+                } else if (mode === 'mangafire') {
+                    // Search mangafire
+                    setIsSearchingMangafire(true);
+                    setMangafireSearchResults([]);
+                    try {
+                        const results = await manhwaScraperService.searchManga(searchQuery, 'mangafire');
+                        setMangafireSearchResults(results);
+                    } catch (e) {
+                        console.error('MangaFire search failed:', e);
+                    } finally {
+                        setIsSearchingMangafire(false);
                     }
                 } else {
                     // Search novels
@@ -393,7 +455,7 @@ export const Discover = () => {
                                 sessionStorage.removeItem('discoverSearchQuery');
                             }}
                         />
-                    ) : (
+                    ) : mode === 'manhwa' ? (
                         <ManhwaDiscoverSection
                             manhwaData={manhwaData}
                             isLoadingManhwa={isLoadingManhwa}
@@ -408,6 +470,24 @@ export const Discover = () => {
                                 setSearchQuery('');
                                 sessionStorage.removeItem('discoverSearchPerformed');
                                 sessionStorage.removeItem('discoverManhwaSearchResults');
+                                sessionStorage.removeItem('discoverSearchQuery');
+                            }}
+                        />
+                    ) : (
+                        <ManhwaDiscoverSection
+                            manhwaData={mangafireData}
+                            isLoadingManhwa={isLoadingMangafire}
+                            loadManhwaData={loadMangafireData}
+                            isSearchingManhwa={isSearchingMangafire}
+                            searchPerformed={searchPerformed}
+                            manhwaSearchResults={mangafireSearchResults}
+                            searchQuery={searchQuery}
+                            onClearSearch={() => {
+                                setSearchPerformed(false);
+                                setMangafireSearchResults([]);
+                                setSearchQuery('');
+                                sessionStorage.removeItem('discoverSearchPerformed');
+                                sessionStorage.removeItem('discoverMangafireSearchResults');
                                 sessionStorage.removeItem('discoverSearchQuery');
                             }}
                         />

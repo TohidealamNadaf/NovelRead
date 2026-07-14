@@ -5,6 +5,7 @@ import { notificationService } from './notification.service';
 import * as cheerio from 'cheerio';
 import type { NovelMetadata, ScraperProgress } from './scraper.service';
 import { asuraScraperService } from './manhwa/asura.service';
+import { mangafireScraperService } from './manhwa/mangafire.service';
 
 export class ManhwaScraperService {
     private isScrapingInternal = false;
@@ -175,8 +176,11 @@ export class ManhwaScraperService {
     // --- Core Scraping Logic ---
 
     // --- Discovery API ---
-    async getDiscoveryData(): Promise<{ trending: NovelMetadata[], popular: NovelMetadata[], latest: NovelMetadata[] }> {
+    async getDiscoveryData(source: 'asura' | 'mangafire' = 'asura'): Promise<{ trending: NovelMetadata[], popular: NovelMetadata[], latest: NovelMetadata[] }> {
         try {
+            if (source === 'mangafire') {
+                return await mangafireScraperService.getDiscoverManga();
+            }
             return await asuraScraperService.getDiscoverManga();
         } catch (error) {
             console.error('[ManhwaScraper] Error fetching discovery data:', error);
@@ -184,16 +188,28 @@ export class ManhwaScraperService {
         }
     }
 
-    async fetchSeriesList(page: number): Promise<NovelMetadata[]> {
+    async fetchSeriesList(page: number, source: 'asura' | 'mangafire' = 'asura'): Promise<NovelMetadata[]> {
+        if (source === 'mangafire') {
+            return await mangafireScraperService.fetchSeriesList(page);
+        }
         return await asuraScraperService.fetchSeriesList(page);
     }
 
     // --- Search API ---
-    async searchManga(query: string): Promise<NovelMetadata[]> {
+    async searchManga(query: string, source: 'asura' | 'mangafire' = 'asura'): Promise<NovelMetadata[]> {
+        if (source === 'mangafire') {
+            return await mangafireScraperService.searchManga(query);
+        }
         return await asuraScraperService.searchManga(query);
     }
 
     async fetchNovel(url: string): Promise<NovelMetadata> {
+        // MANGAFIRE
+        if (url.includes('mangafire.to')) {
+            const data = await mangafireScraperService.fetchMangaDetails(url);
+            if (data) return data;
+        }
+
         // ASURA SCANS
         if (url.includes('asuracomic.net') || url.includes('asuratoon.com') || url.includes('asurascans.com')) {
             const data = await asuraScraperService.fetchMangaDetails(url);
@@ -254,6 +270,10 @@ export class ManhwaScraperService {
             // For Asura Scans: /comics/slug or /series/slug
             if ((url.includes('asuracomic.net') || url.includes('asurascans.com')) && pathParts.length >= 2) {
                 slug = pathParts[1];
+            } else if (url.includes('mangafire.to')) {
+                // For MangaFire: /manga/slug.id or /title/id-slug
+                const lastPart = pathParts[pathParts.length - 1] || '';
+                slug = lastPart.split('.')[0]; // grab the slug part
             } else {
                 slug = pathParts[pathParts.length - 1] || '';
             }
@@ -338,15 +358,29 @@ export class ManhwaScraperService {
      * Check if an image is likely a chapter page (content) or an ad/extra.
      */
     private isContentPage(url: string): boolean {
-        // Explicitly exclude GIFs
-        if (url.toLowerCase().includes('.gif')) return false;
+        if (!url || url.toLowerCase().includes('.gif')) return false;
 
-        const filename = url.split('/').pop() || '';
+        // MangaFire CDN pattern: filename is always literally "p.jpg"/"p.webp" etc,
+        // with the real identifying hash living in the path (e.g. /mf/{64charhash}/h/p.jpg).
+        // Must check this BEFORE filename-based heuristics since "p" alone fails all of them.
+        if (/\/mf\/[a-f0-9]{20,}\/h\/p\.(jpg|jpeg|png|webp|avif)(\?.*)?$/i.test(url)) {
+            return true;
+        }
+
+        const urlWithoutQuery = url.split('?')[0];
+        const filename = urlWithoutQuery.split('/').pop() || '';
         const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
         const cleanName = nameWithoutExt.replace(/-optimized|_optimized/i, '');
+        const lowerName = cleanName.toLowerCase();
+
+        const blacklist = ['logo', 'banner', 'discord', 'promo', 'ad-', '_ad', 'patreon', 'ko-fi', 'credit', 'recruit', 'intro', 'outro'];
+        if (blacklist.some(term => lowerName.includes(term))) return false;
 
         if (/^\d+$/.test(cleanName)) return true;
-        if (/^[a-zA-Z0-9_-]{0,10}[-_]?\d+$/.test(cleanName)) return true;
+        if (/^(page|img|image|p|i)?[-_]?\d+$/i.test(cleanName)) return true;
+        if (/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(cleanName)) return true;
+        if (/^[a-f0-9]{4,32}$/i.test(cleanName)) return true;
+
         return false;
     }
 
@@ -388,6 +422,13 @@ export class ManhwaScraperService {
     }
 
     async fetchChapterImages(url: string): Promise<string> {
+        // MANGAFIRE
+        if (url.includes('mangafire.to')) {
+            const images = await mangafireScraperService.fetchChapterImages(url);
+            if (images.length === 0) return '<p>No images found.</p>';
+            return images.map(src => `<img src="${src}" class="w-full object-contain" loading="lazy" />`).join('');
+        }
+
         // ASURA SCANS
         if (url.includes('asuracomic.net') || url.includes('asuratoon.com') || url.includes('asurascans.com')) {
             const images = await asuraScraperService.fetchChapterImages(url);
