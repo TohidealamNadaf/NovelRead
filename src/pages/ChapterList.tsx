@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -18,6 +18,9 @@ export const ChapterList = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const parentRef = useRef<HTMLDivElement>(null);
+    const listContainerRef = useRef<HTMLDivElement>(null);
+    const headerRef = useRef<HTMLDivElement>(null);
+    const [listScrollMargin, setListScrollMargin] = useState(0);
     const [searchTerm, setSearchTerm] = useState('');
 
     // --- Hooks ---
@@ -96,12 +99,31 @@ export const ChapterList = () => {
         onShowModal: showModal
     });
 
+    useLayoutEffect(() => {
+        const measure = () => {
+            if (listContainerRef.current && parentRef.current) {
+                const mainRect = parentRef.current.getBoundingClientRect();
+                const listRect = listContainerRef.current.getBoundingClientRect();
+                const offset = listRect.top - mainRect.top + parentRef.current.scrollTop;
+                setListScrollMargin(offset);
+            }
+        };
+        measure();
+        let ro: ResizeObserver | undefined;
+        if (headerRef.current) {
+            ro = new ResizeObserver(measure);
+            ro.observe(headerRef.current);
+        }
+        return () => ro?.disconnect();
+    }, [isSynopsisExpanded, novel?.id, loading]);
+
     // --- Virtualizer ---
     const rowVirtualizer = useVirtualizer({
         count: filteredChapters.length,
         getScrollElement: () => parentRef.current,
         estimateSize: () => 73,
         overscan: 8,
+        scrollMargin: listScrollMargin,
     });
 
     // --- Scroll Restoration ---
@@ -272,7 +294,7 @@ export const ChapterList = () => {
                 className="flex-1 overflow-y-auto hide-scrollbar overscroll-y-contain"
             >
                 {/* Novel Info Header (scrolls away naturally) */}
-                <div className="p-4 bg-background-light dark:bg-background-dark">
+                <div ref={headerRef} className="p-4 bg-background-light dark:bg-background-dark">
                     <div className="flex gap-5">
                         {/* Cover Image */}
                         <div className="relative shrink-0">
@@ -412,6 +434,7 @@ export const ChapterList = () => {
 
                 {/* Virtualized Chapter List */}
                 <div
+                    ref={listContainerRef}
                     style={{
                         height: `${rowVirtualizer.getTotalSize()}px`,
                         width: '100%',
@@ -439,7 +462,7 @@ export const ChapterList = () => {
                                     top: 0,
                                     left: 0,
                                     width: '100%',
-                                    transform: `translateY(${virtualRow.start}px)`,
+                                    transform: `translateY(${virtualRow.start - listScrollMargin}px)`,
                                 }}
                             >
                                 <ChapterRow

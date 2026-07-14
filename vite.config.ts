@@ -5,6 +5,21 @@ import http from 'http'
 import https from 'https'
 import zlib from 'zlib'
 
+let browserSingleton: any = null;
+const getBrowser = async () => {
+    if (!browserSingleton || !browserSingleton.connected) {
+        const puppeteer = await import('puppeteer');
+        browserSingleton = await puppeteer.default.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        });
+    }
+    return browserSingleton;
+};
+const cookieJar = new Map<string, any[]>();
+const solvingCache = new Map<string, Promise<string>>();
+const htmlCache = new Map<string, { html: string; t: number }>();
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
@@ -92,25 +107,62 @@ export default defineConfig({
 
             const triggerPuppeteer = () => {
               console.warn(`[Proxy] Cloudflare challenge detected for ${targetRaw} - Puppeteer fallback...`);
-              (async () => {
-                let browser;
-                try {
-                  const puppeteer = await import('puppeteer');
-                  browser = await puppeteer.default.launch({ headless: true, args: ['--no-sandbox'] });
-                  const page = await browser.newPage();
-                  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-                  await page.goto(targetRaw, { waitUntil: 'networkidle2', timeout: 30000 });
-                  const html = await page.content();
+              
+              // 1. Return cached HTML if fresh
+              const cached = htmlCache.get(targetRaw);
+              const ttl = targetRaw.includes('ajax=chapters') ? 300000 : 60000;
+              if (cached && Date.now() - cached.t < ttl) {
                   res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/html; charset=utf-8' });
-                  res.end(html);
-                } catch (err: any) {
-                  console.error('[Proxy] Puppeteer fallback failed:', err.message);
-                  res.writeHead(502, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/plain' });
-                  res.end(`Puppeteer fallback failed: ${err.message}`);
-                } finally {
-                  if (browser) await browser.close();
-                }
+                  res.end(cached.html);
+                  return;
+              }
+
+              // 2. Dedupe concurrent same-URL requests
+              if (solvingCache.has(targetRaw)) {
+                  solvingCache.get(targetRaw)!.then(html => {
+                      if (!res.writableEnded) {
+                          res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/html; charset=utf-8' });
+                          res.end(html);
+                      }
+                  }).catch(() => { if (!res.writableEnded) res.destroy(); });
+                  return;
+              }
+
+              // 3. Detect client disconnect → abort early
+              let clientGone = false;
+              req.on('close', () => { clientGone = true; });
+
+              const solvePromise = (async (): Promise<string> => {
+                  const browser = await getBrowser();
+                  const page = await browser.newPage();
+                  const domain = targetUrl.hostname;
+                  const cachedCookies = cookieJar.get(domain);
+                  if (cachedCookies) await page.setCookie(...cachedCookies);
+                  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+                  await page.goto(targetRaw, { waitUntil: 'networkidle2', timeout: 45000 });
+                  const cookies = await page.cookies();
+                  cookieJar.set(domain, cookies); // ← persist cf_clearance!
+                  const html = await page.content();
+                  await page.close();
+                  htmlCache.set(targetRaw, { html, t: Date.now() });
+                  return html;
               })();
+
+              solvingCache.set(targetRaw, solvePromise);
+              solvePromise.then(html => {
+                  solvingCache.delete(targetRaw);
+                  if (clientGone) return; // ← don't waste bandwidth
+                  if (!res.writableEnded) {
+                      res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/html; charset=utf-8' });
+                      res.end(html);
+                  }
+              }).catch(err => {
+                  solvingCache.delete(targetRaw);
+                  if (!res.writableEnded) {
+                      res.writeHead(502, { 'Content-Type': 'text/plain' });
+                      res.end(`Puppeteer failed: ${err.message}`);
+                  }
+              });
             };
 
             if (isBlockedStatus) {
@@ -168,7 +220,7 @@ export default defineConfig({
             res.end(`Proxy error: ${err.message}`);
           });
 
-          proxyReq.setTimeout(30000, () => {
+          proxyReq.setTimeout(60000, () => {
             proxyReq.destroy();
             if (!res.headersSent) {
               res.writeHead(504, { 'Content-Type': 'text/plain' });

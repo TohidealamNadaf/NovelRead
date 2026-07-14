@@ -50,6 +50,7 @@ export class ScraperService {
     // Ensures quick back/forth navigation and instant prefetch resolution
     private chapterCache = new Map<string, { content: string, timestamp: number }>();
     private pendingFetches = new Map<string, Promise<string>>();
+    private chapterListCache = new Map<string, { data: NovelMetadata; t: number }>();
 
     get isScraping() { return this.isScrapingInternal; }
     get progress() { return this.currentProgress; }
@@ -96,9 +97,25 @@ export class ScraperService {
     async fetchNovelFast(
         url: string,
         onProgress?: (chapters: { title: string; url: string; date?: string }[], page: number, metadata?: Partial<NovelMetadata>) => void,
-        knownChapterCount: number = 0
+        knownChapterCount: number = 0,
+        signal?: AbortSignal
     ): Promise<NovelMetadata> {
-        return this.getScraper(url).fetchNovelFast(url, onProgress, knownChapterCount);
+        // Skip cache if we have known chapters (incremental sync) or signal (fresh fetch)
+        if (knownChapterCount === 0 && !signal) {
+            const cached = this.chapterListCache.get(url);
+            if (cached && Date.now() - cached.t < 10 * 60 * 1000) {  // 10min
+                onProgress?.(cached.data.chapters, 1, cached.data);
+                return cached.data;
+            }
+        }
+        
+        const data = await this.getScraper(url).fetchNovelFast(url, onProgress, knownChapterCount, signal);
+        
+        if (knownChapterCount === 0 && !signal) {
+            this.chapterListCache.set(url, { data, t: Date.now() });
+        }
+        
+        return data;
     }
 
     async fetchNovel(url: string, userProvidedChapters?: boolean): Promise<NovelMetadata> {

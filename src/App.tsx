@@ -16,12 +16,11 @@ import { ManhwaReader } from './pages/ManhwaReader';
 import { syncService } from './services/sync.service';
 
 import { App as CapApp } from '@capacitor/app';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 
 function App() {
   const navigate = useNavigate();
-  const location = useLocation();
 
   useEffect(() => {
     // Start Discovery sync service
@@ -30,13 +29,11 @@ function App() {
     let backButtonListener: any;
 
     const setupListener = async () => {
-      backButtonListener = await CapApp.addListener('backButton', ({ canGoBack }) => {
-        if (location.pathname === '/') {
-          CapApp.exitApp();
-        } else if (canGoBack) {
+      backButtonListener = await CapApp.addListener('backButton', () => {
+        if (window.history.state?.idx > 0) {
           navigate(-1);
         } else {
-          navigate('/', { replace: true });
+          CapApp.exitApp();
         }
       });
     };
@@ -48,7 +45,7 @@ function App() {
         backButtonListener.remove();
       }
     };
-  }, [location, navigate]);
+  }, [navigate]);
 
   return (
     <>

@@ -35,15 +35,24 @@ export function useChapterData() {
     const [scrapingProgress, setScrapingProgress] = useState<ScraperProgress>(scraperService.progress);
     const [isGlobalScraping, setIsGlobalScraping] = useState(scraperService.isScraping);
 
-    // Lock to prevent re-entry into loadData (prevents DB transaction errors)
-    const isLoadingRef = useRef(false);
+    const activeLoadRef = useRef<AbortController | null>(null);
 
-    const loadData = async () => {
+    const loadData = async (externalSignal?: AbortSignal) => {
         if (!novelId) return;
-        if (isLoadingRef.current) return; // Prevent re-entry
+
+        // Abort any previous in-flight load, then create a FRESH controller
+        activeLoadRef.current?.abort();
+        const controller = new AbortController();
+        activeLoadRef.current = controller;
+
+        if (externalSignal) {
+            if (externalSignal.aborted) controller.abort();
+            else externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+        }
+
+        const signal = controller.signal;
 
         try {
-            isLoadingRef.current = true;
             setLoading(true);
             await dbService.initialize();
 
@@ -51,10 +60,12 @@ export function useChapterData() {
             const dbNovel = await dbService.getNovel(novelId);
             let currentNovel = dbNovel;
 
+            let dbChaptersCount = 0;
             if (dbNovel) {
                 setNovel(dbNovel);
                 const dbChapters = await dbService.getChapters(novelId);
                 setChapters(dbChapters);
+                dbChaptersCount = dbChapters.length;
                 setAddedToLibrary(true);
                 setIsPreviewMode(false);
                 setLoading(false); // Show DB content immediately
@@ -121,11 +132,12 @@ export function useChapterData() {
 
             // Critical check: Do we actually HAVE the chapters in DB?
             // If totalChapters says 2000 but we only have 5 in DB, we must fetch the list.
-            const dbChaptersCount = chapters ? chapters.length : 0; // Use the 'chapters' state which is from DB
             const isCacheComplete = dbChaptersCount >= (currentNovel?.totalChapters || 0) * 0.9; // 90% tolerance for rough matches
 
             // Should we skip fetching? 
             const shouldSkipFetch = dbNovel && isFresh && hasChapters && isCacheComplete;
+
+            console.log(`[useChapterData] shouldSkipFetch=${shouldSkipFetch} dbCount=${dbChaptersCount} total=${currentNovel?.totalChapters} fresh=${isFresh}`);
 
             if (sourceUrl && navigator.onLine && !shouldSkipFetch) {
                 // console.log(`[useChapterData] Triggering Live Sync for ${novelId}`);
@@ -176,7 +188,7 @@ export function useChapterData() {
                                 currentNovel = updatedNovel; // Update local ref
                             }
                         }
-                    }, dbChaptersCount); // pass knownChapterCount
+                    }, dbChaptersCount, signal); // pass knownChapterCount and signal
 
                     if (data) {
                         const indexedChapters = data.chapters.map((ch, idx) => ({ ...ch, _index: dbChaptersCount + idx }));
@@ -251,28 +263,35 @@ export function useChapterData() {
             }
 
         } catch (e) {
-            console.error("Failed to load novel data", e);
+            if (!signal?.aborted) console.error("Failed to load novel data", e);
             setLoading(false);
         } finally {
             setLoadingPage(0);
-            isLoadingRef.current = false;
+            if (activeLoadRef.current === controller) activeLoadRef.current = null;
         }
     };
 
     useEffect(() => {
+        const extController = new AbortController();
+
         const unsub = scraperService.subscribe((progress: ScraperProgress, isScraping: boolean) => {
             setScrapingProgress(progress);
             setIsGlobalScraping(isScraping);
 
             // Reload if scraping finished for this novel
             if (!isScraping && progress.current > 0 && progress.current === progress.total) {
-                loadData();
+                loadData(extController.signal);
             }
         });
 
-        loadData();
-        return unsub;
-    }, [novelId, location.state, location.key]);
+        loadData(extController.signal);
+        
+        return () => {
+            unsub();
+            extController.abort();
+            console.log('[useChapterData] unmounted, aborting scrape');
+        };
+    }, [novelId]);
 
     // Computed filtered chapters
     const filteredChapters = useMemo(() => {

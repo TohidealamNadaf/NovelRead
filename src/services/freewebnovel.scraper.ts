@@ -273,7 +273,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         };
     }
 
-    private async scrapeChapterList(url: string): Promise<ScrapedChapter[]> {
+    private async scrapeChapterList(url: string, signal?: AbortSignal): Promise<ScrapedChapter[]> {
         const allChapters: ScrapedChapter[] = [];
         const chapterUrlSet = new Set<string>();
         const pageQueue = [url];
@@ -282,6 +282,10 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         let consecutiveFailures = 0;
 
         while (pageQueue.length > 0 && pageCount < 200) {
+            if (signal?.aborted) {
+                console.log('[FreeWebNovel] scrape cancelled by user navigation');
+                break;
+            }
             const currentUrl = pageQueue.shift()!;
             if (visitedUrls.has(currentUrl)) continue;
             visitedUrls.add(currentUrl);
@@ -290,7 +294,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
 
             for (const proxyUrl of this.getProxies(currentUrl)) {
                 try {
-                    const rawHtml = await this.fetchHtml(currentUrl, proxyUrl);
+                    const rawHtml = await this.fetchHtml(currentUrl, proxyUrl, 35000, signal);
                     if (!rawHtml || rawHtml.length < 10) continue;
 
                     let htmlToParse = rawHtml;
@@ -327,8 +331,10 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
 
                     if (effectiveTotalPage > 1) {
                         const cleanUrl = currentUrl.split('?')[0];
-                        const nextP = currentUrl.includes('ajax=chapters') ? 2 : 2; // simplest safe default since this reverted version doesn't track a startPage offset
-                        for (let p = nextP; p <= effectiveTotalPage; p++) {
+                        const currentPage = currentUrl.includes('ajax=chapters') ? parseInt(new URL(currentUrl).searchParams.get('page')||'1') : 1;
+                        const nextP = currentPage + 1; 
+                        const maxQueue = Math.min(effectiveTotalPage, currentPage + 2);
+                        for (let p = nextP; p <= maxQueue; p++) {
                             const ajaxUrl = `${cleanUrl}?ajax=chapters&page=${p}&pageSize=40`;
                             if (!visitedUrls.has(ajaxUrl) && !pageQueue.includes(ajaxUrl)) {
                                 pageQueue.push(ajaxUrl);
@@ -367,6 +373,11 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                 }
             }
 
+            if (signal?.aborted) {
+                console.log('[FreeWebNovel] Aborted, stopping pagination');
+                break;
+            }
+
             if (pageSuccess) {
                 consecutiveFailures = 0;
             } else {
@@ -388,7 +399,8 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
     async fetchNovelFast(
         url: string,
         onProgress?: (chapters: { title: string; url: string; date?: string }[], page: number, metadata?: Partial<NovelMetadata>) => void,
-        knownChapterCount: number = 0
+        knownChapterCount: number = 0,
+        signal?: AbortSignal
     ): Promise<NovelMetadata> {
         let title = '', author = 'Unknown', coverUrl = '', summary = '', status = 'Ongoing';
         let workingProxy: string | undefined;
@@ -435,133 +447,77 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         const allChapters: ScrapedChapter[] = [];
         const chapterUrlSet = new Set<string>();
         const proxyOrder = workingProxy ? [workingProxy, ...this.getProxies(url).filter(p => p !== workingProxy)] : this.getProxies(url);
-        const pageQueue = [url];
-        const visitedUrls = new Set<string>();
-        let pageCount = 0;
-        let consecutiveFailures = 0;
-        let complete = true;
 
-        while (pageQueue.length > 0 && pageCount < 200) {
-            const currentUrl = pageQueue.shift()!;
-            if (visitedUrls.has(currentUrl)) continue;
-            visitedUrls.add(currentUrl);
-            pageCount++;
-            let pageSuccess = false;
-
+        // Helper to fetch a single AJAX page
+        const fetchAjaxPage = async (ajaxUrl: string): Promise<ScrapedChapter[]> => {
             for (const proxyUrl of proxyOrder) {
+                if (signal?.aborted) return [];
                 try {
-                    const rawHtml = await this.fetchHtml(currentUrl, proxyUrl);
+                    const rawHtml = await this.fetchHtml(ajaxUrl, proxyUrl, 60000, signal);
                     if (!rawHtml || rawHtml.length < 10) continue;
-
                     let htmlToParse = rawHtml;
-                    let knownTotalPage: number | null = null;
                     if (rawHtml.trim().startsWith('{')) {
                         try {
                             const data = JSON.parse(rawHtml);
                             if (data.html) htmlToParse = data.html;
-                            if (typeof data.totalPage === 'number') knownTotalPage = data.totalPage;
-                        } catch (e) { }
+                        } catch { }
                     }
-                    if (htmlToParse.length < 10) continue;
-
                     const $ = cheerio.load(htmlToParse);
-                    const newChapters = this.extractChapters($, currentUrl);
-
-                    for (const ch of newChapters) {
-                        if (!chapterUrlSet.has(ch.url)) {
-                            chapterUrlSet.add(ch.url);
-                            allChapters.push(ch);
-                        }
-                    }
-
-                    // Total chapters aren't sent repeatedly to onProgress once we've extracted them, but we could if we wanted.
-                    onProgress?.(allChapters, pageCount, { title, author, summary, status, coverUrl });
-
-                    const scripts = $('script').map((_, el) => $(el).html()).get().join(' ');
-                    const totalPageMatch = scripts.match(/totalPage\s*:\s*(\d+)/);
-                    let totalPage = 0;
-                    if (totalPageMatch) {
-                        totalPage = parseInt(totalPageMatch[1], 10);
-                    } else if ($('#indexselect option').length > 0) {
-                        totalPage = $('#indexselect option').length;
-                    }
-
-                    const effectiveTotalPage = knownTotalPage || totalPage;
-
-                    if (effectiveTotalPage > 1) {
-                        const cleanUrl = currentUrl.split('?')[0];
-                        const nextP = currentUrl.includes('ajax=chapters') ? 2 : Math.floor(knownChapterCount / 40) + 1; // start fetching from the page containing our last known chapter
-                        for (let p = Math.max(nextP, 2); p <= effectiveTotalPage; p++) {
-                            const ajaxUrl = `${cleanUrl}?ajax=chapters&page=${p}&pageSize=40`;
-                            if (!visitedUrls.has(ajaxUrl) && !pageQueue.includes(ajaxUrl)) {
-                                pageQueue.push(ajaxUrl);
-                            }
-                        }
-                    }
-
-                    // FreeWebNovel typically uses a <select> dropdown for pagination
-                    $('select option').each((_, el) => {
-                        const val = $(el).attr('value');
-                        if (val && val.length > 5 && !val.includes('javascript:') && !val.match(/^\d+$/)) {
-                            const fullPageUrl = this.resolveUrl(currentUrl, val);
-                            if (!visitedUrls.has(fullPageUrl) && !pageQueue.includes(fullPageUrl)) {
-                                pageQueue.push(fullPageUrl);
-                            }
-                        }
-                    });
-
-                    const nextSelectors = ['.pagination .next a', '.pager .next a'];
-                    for (const sel of nextSelectors) {
-                        const el = $(sel);
-                        const nextPath = el.attr('href');
-                        if (nextPath) {
-                            const fullNext = this.resolveUrl(currentUrl, nextPath);
-                            if (!visitedUrls.has(fullNext) && !pageQueue.includes(fullNext)) {
-                                pageQueue.push(fullNext);
-                            }
-                        }
-                    }
-
-                    if (proxyUrl !== proxyOrder[0]) {
-                        workingProxy = proxyUrl;
-                    }
-
-                    pageSuccess = true;
-                    break;
+                    return this.extractChapters($, ajaxUrl);
                 } catch (e) {
-                    console.warn(`[FreeWebNovel:Fast] Chapter page failed`, e);
+                    console.warn(`[FreeWebNovel:Fast] AJAX page failed ${ajaxUrl}`, e);
                 }
             }
-
-            if (pageSuccess) {
-                consecutiveFailures = 0;
-            } else {
-                consecutiveFailures++;
-                if (consecutiveFailures >= 5) {
-                    console.warn(`[FreeWebNovel] Hit 5 consecutive failures, aborting pagination.`);
-                    complete = false;
-                    break;
-                }
-            }
-
-            if (pageQueue.length > 0 && pageCount > 0) {
-                await new Promise(resolve => setTimeout(resolve, 600));
-            }
-        }
-
-        if (!title && allChapters.length === 0) {
-            throw new Error('Failed to fetch novel metadata and chapters from FreeWebNovel.');
-        }
-
-        return {
-            title: title || 'Unknown Title',
-            author,
-            coverUrl,
-            summary,
-            status,
-            chapters: allChapters,
-            complete
+            return [];
         };
+
+        // Step 1: Fetch novel page ONCE, keep the HTML
+        let totalPage = 1;
+        let firstChapters: ScrapedChapter[] = [];
+        for (const proxyUrl of proxyOrder) {
+            if (signal?.aborted) break;
+            try {
+                const rawHtml = await this.fetchHtml(url, proxyUrl, 60000, signal);
+                if (!rawHtml) continue;
+                const $ = cheerio.load(rawHtml);
+                firstChapters = this.extractChapters($, url);
+                const scripts = $('script').map((_, el) => $(el).html()).get().join(' ');
+                const m = scripts.match(/totalPage\s*:\s*(\d+)/);
+                if (m) totalPage = parseInt(m[1], 10);
+                else if ($('#indexselect option').length > 0) totalPage = $('#indexselect option').length;
+                break;
+            } catch { }
+        }
+
+        for (const ch of firstChapters) {
+            if (!chapterUrlSet.has(ch.url)) { chapterUrlSet.add(ch.url); allChapters.push(ch); }
+        }
+        onProgress?.(allChapters, 1, { title, author, summary, status, coverUrl });
+
+        // Step 3: Parallel-fetch remaining pages (batches of 3, NO 600ms delay)
+        const CONCURRENCY = 3;
+        const cleanUrl = url.split('?')[0];
+        
+        // Skip fetching if DB has all chapters
+        const startPage = Math.floor(knownChapterCount / 40) + 1;
+        
+        for (let start = Math.max(startPage, 2); start <= totalPage; start += CONCURRENCY) {
+            if (signal?.aborted) break;
+            const batch: Promise<ScrapedChapter[]>[] = [];
+            for (let p = start; p <= Math.min(start + CONCURRENCY - 1, totalPage); p++) {
+                batch.push(fetchAjaxPage(`${cleanUrl}?ajax=chapters&page=${p}&pageSize=40`));
+            }
+            const results = await Promise.all(batch);
+            for (const chs of results) {
+                for (const ch of chs) {
+                    if (!chapterUrlSet.has(ch.url)) { chapterUrlSet.add(ch.url); allChapters.push(ch); }
+                }
+            }
+            onProgress?.(allChapters, Math.min(start + CONCURRENCY - 1, totalPage), { title, author, summary, status, coverUrl });
+        }
+
+        if (!title && allChapters.length === 0) throw new Error('Failed to fetch novel metadata and chapters from FreeWebNovel.');
+        return { title: title || 'Unknown Title', author, coverUrl, summary, status, chapters: allChapters, complete: true };
     }
 
     async fetchChapterContent(url: string): Promise<string> {

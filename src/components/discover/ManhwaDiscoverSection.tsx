@@ -40,6 +40,11 @@ export const ManhwaDiscoverSection = memo(({
                 <div className="flex flex-col gap-4 px-4 py-2 animate-in fade-in">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-bold tracking-tight">Search Results</h3>
+                        {onClearSearch && (
+                            <button onClick={onClearSearch} className="text-sm font-bold text-primary">
+                                Clear
+                            </button>
+                        )}
                     </div>
 
                     {isSearchingManhwa ? (

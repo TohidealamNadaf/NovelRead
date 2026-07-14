@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, memo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Minimize2, WifiOff } from 'lucide-react';
 import { scraperService, type ScraperProgress, type NovelMetadata } from '../services/scraper.service';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
@@ -51,8 +51,63 @@ const GlobalScrapingBar = memo(({ isGlobalScraping, scrapingProgress }: { isGlob
 
 export const Discover = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const scrollContainerRef = useRef<HTMLDivElement>(null);
-    const [searchQuery, setSearchQuery] = useState(() => sessionStorage.getItem('discoverSearchQuery') || '');
+
+    const queryParams = new URLSearchParams(location.search);
+    const initialMode = (queryParams.get('mode') as 'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire') || 'novelfire';
+    const initialQuery = queryParams.get('q') || '';
+    const initialSearchPerformed = queryParams.get('s') === '1';
+
+    const [searchQuery, setSearchQueryState] = useState(initialQuery);
+    const [searchPerformed, setSearchPerformedState] = useState(initialSearchPerformed);
+    const [mode, setModeState] = useState<'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire'>(initialMode);
+
+    const syncUrl = useCallback((newMode: string, newQuery: string, newPerformed: boolean, replace = true) => {
+        const params = new URLSearchParams();
+        if (newMode !== 'novelfire') params.set('mode', newMode);
+        if (newQuery) params.set('q', newQuery);
+        if (newPerformed) params.set('s', '1');
+        navigate({ search: params.toString() }, { replace });
+    }, [navigate]);
+
+    const setSearchQuery = useCallback((val: string) => {
+        setSearchQueryState(val);
+        syncUrl(mode, val, searchPerformed);
+    }, [mode, searchPerformed, syncUrl]);
+
+    const setSearchPerformed = useCallback((val: boolean) => {
+        setSearchPerformedState(val);
+        const isNewSearch = val && !searchPerformed;
+        syncUrl(mode, searchQuery, val, !isNewSearch);
+    }, [mode, searchQuery, searchPerformed, syncUrl]);
+
+    const setMode = useCallback((val: 'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire') => {
+        setModeState(val);
+        syncUrl(val, searchQuery, searchPerformed);
+    }, [searchQuery, searchPerformed, syncUrl]);
+
+    const clearSearch = useCallback(() => {
+        setSearchQueryState('');
+        setSearchPerformedState(false);
+        setNovelSearchResults([]);
+        setManhwaSearchResults([]);
+        setMangafireSearchResults([]);
+        syncUrl(mode, '', false);
+    }, [mode, syncUrl]);
+
+    // Keep state in sync with URL when back/forward navigation occurs
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const urlMode = (params.get('mode') as 'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire') || 'novelfire';
+        const urlQuery = params.get('q') || '';
+        const urlPerformed = params.get('s') === '1';
+        setModeState(urlMode);
+        setSearchQueryState(urlQuery);
+        setSearchPerformedState(urlPerformed);
+    }, [location.search]);
+
+
     const [homeData, setHomeData] = useState<Record<string, any>>({});
     const [isSyncingHome, setIsSyncingHome] = useState(false);
     const [scrapingProgress, setScrapingProgress] = useState<ScraperProgress>(scraperService.progress);
@@ -61,45 +116,20 @@ export const Discover = () => {
     const [showSyncModal, setShowSyncModal] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const [mode, setMode] = useState<'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire'>(() => {
-        return (sessionStorage.getItem('discoverTabMode') as 'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire') || 'novelfire';
-    });
     const [manhwaData, setManhwaData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
     const [isLoadingManhwa, setIsLoadingManhwa] = useState(false);
-    const [novelSearchResults, setNovelSearchResults] = useState<NovelMetadata[]>(() => {
-        try {
-            const cached = sessionStorage.getItem('discoverNovelSearchResults');
-            return cached ? JSON.parse(cached) : [];
-        } catch {
-            return [];
-        }
-    });
+    const [novelSearchResults, setNovelSearchResults] = useState<NovelMetadata[]>([]);
     const [isSearchingNovels, setIsSearchingNovels] = useState(false);
 
     // Manhwa Search State
-    const [manhwaSearchResults, setManhwaSearchResults] = useState<NovelMetadata[]>(() => {
-        try {
-            const cached = sessionStorage.getItem('discoverManhwaSearchResults');
-            return cached ? JSON.parse(cached) : [];
-        } catch {
-            return [];
-        }
-    });
+    const [manhwaSearchResults, setManhwaSearchResults] = useState<NovelMetadata[]>([]);
     const [isSearchingManhwa, setIsSearchingManhwa] = useState(false);
 
     // MangaFire Search State
     const [mangafireData, setMangafireData] = useState<{ trending: any[], popular: any[], latest: any[] } | null>(null);
     const [isLoadingMangafire, setIsLoadingMangafire] = useState(false);
-    const [mangafireSearchResults, setMangafireSearchResults] = useState<NovelMetadata[]>(() => {
-        try {
-            const cached = sessionStorage.getItem('discoverMangafireSearchResults');
-            return cached ? JSON.parse(cached) : [];
-        } catch {
-            return [];
-        }
-    });
+    const [mangafireSearchResults, setMangafireSearchResults] = useState<NovelMetadata[]>([]);
     const [isSearchingMangafire, setIsSearchingMangafire] = useState(false);
-    const [searchPerformed, setSearchPerformed] = useState(() => sessionStorage.getItem('discoverSearchPerformed') === 'true');
     const [isOffline, setIsOffline] = useState(!navigator.onLine);
     const profileImage = useProfileImage();
 
@@ -172,34 +202,16 @@ export const Discover = () => {
         };
     }, []);
 
-    useEffect(() => {
-        sessionStorage.setItem('discoverSearchQuery', searchQuery);
-        sessionStorage.setItem('discoverSearchPerformed', searchPerformed.toString());
-    }, [searchQuery, searchPerformed]);
-
-    useEffect(() => {
-        sessionStorage.setItem('discoverManhwaSearchResults', JSON.stringify(manhwaSearchResults));
-    }, [manhwaSearchResults]);
-
-    useEffect(() => {
-        sessionStorage.setItem('discoverNovelSearchResults', JSON.stringify(novelSearchResults));
-    }, [novelSearchResults]);
-
-    useEffect(() => {
-        sessionStorage.setItem('discoverMangafireSearchResults', JSON.stringify(mangafireSearchResults));
-    }, [mangafireSearchResults]);
-
     // Load data when switching tabs
     useEffect(() => {
-        sessionStorage.setItem('discoverTabMode', mode);
         if (mode === 'manhwa') {
-            loadManhwaData();
+            if (!searchPerformed) loadManhwaData();
         } else if (mode === 'mangafire') {
-            loadMangafireData();
+            if (!searchPerformed) loadMangafireData();
         } else if (mode === 'novelfire' || mode === 'freewebnovel') {
-            if (!homeData[mode]) loadHomeData(mode);
+            if (!homeData[mode] && !searchPerformed) loadHomeData(mode);
         }
-    }, [mode, homeData]);
+    }, [mode, homeData, searchPerformed]);
 
     const loadHomeData = async (currentMode: 'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire' = mode) => {
         if (currentMode === 'manhwa') return;
@@ -425,6 +437,7 @@ export const Discover = () => {
             isCollapsed={isHeaderCollapsed}
             onSearchIconClick={handleSearchIconClick}
             scrollContainerRef={scrollContainerRef}
+            onClearSearch={clearSearch}
         />
     );
 
@@ -459,14 +472,7 @@ export const Discover = () => {
                             searchPerformed={searchPerformed}
                             novelSearchResults={novelSearchResults}
                             searchQuery={searchQuery}
-                            onClearSearch={() => {
-                                setSearchPerformed(false);
-                                setNovelSearchResults([]);
-                                setSearchQuery('');
-                                sessionStorage.removeItem('discoverSearchPerformed');
-                                sessionStorage.removeItem('discoverNovelSearchResults');
-                                sessionStorage.removeItem('discoverSearchQuery');
-                            }}
+                            onClearSearch={clearSearch}
                         />
                     ) : mode === 'manhwa' ? (
                         <ManhwaDiscoverSection
@@ -478,14 +484,7 @@ export const Discover = () => {
                             searchPerformed={searchPerformed}
                             manhwaSearchResults={manhwaSearchResults}
                             searchQuery={searchQuery}
-                            onClearSearch={() => {
-                                setSearchPerformed(false);
-                                setManhwaSearchResults([]);
-                                setSearchQuery('');
-                                sessionStorage.removeItem('discoverSearchPerformed');
-                                sessionStorage.removeItem('discoverManhwaSearchResults');
-                                sessionStorage.removeItem('discoverSearchQuery');
-                            }}
+                            onClearSearch={clearSearch}
                         />
                     ) : (
                         <ManhwaDiscoverSection
@@ -497,14 +496,7 @@ export const Discover = () => {
                             searchPerformed={searchPerformed}
                             manhwaSearchResults={mangafireSearchResults}
                             searchQuery={searchQuery}
-                            onClearSearch={() => {
-                                setSearchPerformed(false);
-                                setMangafireSearchResults([]);
-                                setSearchQuery('');
-                                sessionStorage.removeItem('discoverSearchPerformed');
-                                sessionStorage.removeItem('discoverMangafireSearchResults');
-                                sessionStorage.removeItem('discoverSearchQuery');
-                            }}
+                            onClearSearch={clearSearch}
                         />
                     )}
                 </div>

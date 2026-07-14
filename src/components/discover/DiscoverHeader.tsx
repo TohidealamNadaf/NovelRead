@@ -21,6 +21,7 @@ interface DiscoverHeaderProps {
     isCollapsed: boolean;
     onSearchIconClick: () => void;
     scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
+    onClearSearch: () => void;
 }
 
 export const DiscoverHeader = memo(({
@@ -38,7 +39,8 @@ export const DiscoverHeader = memo(({
     navigate,
     isCollapsed,
     onSearchIconClick,
-    scrollContainerRef
+    scrollContainerRef,
+    onClearSearch
 }: DiscoverHeaderProps) => {
     const headerWrapperRef = useRef<HTMLDivElement>(null);
     const [baseHeaderHeight, setBaseHeaderHeight] = useState(0);
@@ -169,7 +171,7 @@ export const DiscoverHeader = memo(({
                     </div>
                     <input
                         className="flex w-full min-w-0 flex-1 border-none bg-transparent focus:outline-0 focus:ring-0 text-[15px] font-medium placeholder:text-slate-400 dark:placeholder:text-[#8a86a3] px-3 text-slate-900 dark:text-white"
-                        placeholder={mode === 'manhwa' ? "Search Asura Scans..." : "Search titles or paste URL..."}
+                        placeholder={mode === 'mangafire' ? "Search MangaFire..." : mode === 'manhwa' ? "Search Asura Scans..." : "Search titles or paste URL..."}
                         value={searchQuery}
                         id="search-input"
                         name="search-query"
@@ -181,7 +183,7 @@ export const DiscoverHeader = memo(({
                         <button
                             onClick={(e) => {
                                 e.preventDefault();
-                                setSearchQuery('');
+                                onClearSearch();
                             }}
                             className="flex items-center justify-center pr-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                         >

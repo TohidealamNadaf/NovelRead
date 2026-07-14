@@ -40,7 +40,7 @@ export abstract class BaseScraper {
         throw new Error(`All proxies failed for ${url}`);
     }
 
-    public async fetchHtml(url: string, proxyPrefix: string = '', timeoutMs: number = 10000): Promise<string | null> {
+    public async fetchHtml(url: string, proxyPrefix: string = '', timeoutMs: number = 10000, signal?: AbortSignal): Promise<string | null> {
         if (!url) return null;
 
         try {
@@ -75,10 +75,16 @@ export abstract class BaseScraper {
                     : `/api/proxy?url=${encodeURIComponent(url)}`;
 
                 const isLocalProxy = fetchUrl.startsWith('/api/proxy');
-                const effectiveTimeout = isLocalProxy ? 35000 : timeoutMs;
+                const effectiveTimeout = isLocalProxy ? 60000 : timeoutMs;
 
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
+                
+                // Merge external abort
+                if (signal) {
+                    if (signal.aborted) controller.abort();
+                    else signal.addEventListener('abort', () => controller.abort(), { once: true });
+                }
 
                 try {
                     const response = await fetch(fetchUrl, {
@@ -101,8 +107,11 @@ export abstract class BaseScraper {
                     }
                 } catch (fetchErr) {
                     clearTimeout(timeoutId);
-                    if ((fetchErr as any).name !== 'AbortError' || !isLocalProxy) {
-                        throw fetchErr;
+                    if ((fetchErr as any).name === 'AbortError') {
+                        if (isLocalProxy && signal?.aborted) {
+                            throw fetchErr;
+                        }
+                        if (!isLocalProxy) throw fetchErr;
                     }
                 }
             }

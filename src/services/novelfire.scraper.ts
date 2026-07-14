@@ -370,9 +370,27 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         return { title: title || 'Unknown Title', author, coverUrl, summary, status, chapters: allChapters };
     }
 
+    private findTotalPages($: cheerio.CheerioAPI): number {
+        let max = 1;
+        const selectors = ['.pagination a', '.pager a', 'ul.pagination a', '.page-item a', 'a[rel="last"]'];
+        for (const sel of selectors) {
+            $(sel).each((_, el) => {
+                const href = $(el).attr('href') || '';
+                const m = href.match(/[?&]page=(\d+)/);
+                if (m) max = Math.max(max, parseInt(m[1], 10));
+                const txt = $(el).text().trim();
+                const nm = txt.match(/^\d+$/);
+                if (nm) max = Math.max(max, parseInt(nm[0], 10));
+            });
+        }
+        return max;
+    }
+
     async fetchNovelFast(
         url: string,
-        onProgress?: (chapters: { title: string; url: string; date?: string }[], page: number, metadata?: Partial<NovelMetadata>) => void
+        onProgress?: (chapters: { title: string; url: string; date?: string }[], page: number, metadata?: Partial<NovelMetadata>) => void,
+        _knownChapterCount: number = 0,
+        signal?: AbortSignal
     ): Promise<NovelMetadata> {
         const infoUrl = url.replace(/\/chapters\/?(\?.*)?$/, '');
         let listUrl = url;
@@ -445,48 +463,67 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
             }
         }
 
-        const allChapters: ScrapedChapter[] = [];
-        const chapterUrlSet = new Set<string>();
-        const visitedUrls = new Set<string>();
-        let pageCount = 0;
-        let currentUrl = listUrl;
-
         const proxyOrder = workingProxy ? [workingProxy, ...this.getProxies(listUrl).filter(p => p !== workingProxy)] : this.getProxies(listUrl);
 
-        while (currentUrl && !visitedUrls.has(currentUrl) && pageCount < 50) {
-            visitedUrls.add(currentUrl);
-            pageCount++;
-            let pageFound = false;
-
+        const fetchChaptersPage = async (pageUrl: string): Promise<ScrapedChapter[]> => {
             for (const proxyUrl of proxyOrder) {
+                if (signal?.aborted) return [];
                 try {
-                    const html = await this.fetchHtml(currentUrl, proxyUrl);
-                    if (!html || html.length < 500) continue;
-                    
-                    const $ = cheerio.load(html);
-                    const newChapters = this.extractChaptersFromPage($, currentUrl);
-
-                    for (const ch of newChapters) {
-                        if (!chapterUrlSet.has(ch.url)) {
-                            chapterUrlSet.add(ch.url);
-                            allChapters.push(ch);
-                        }
-                    }
-
-                    onProgress?.(allChapters, pageCount, { title, author, summary, status, coverUrl });
-
-                    const nextPage = this.findNextPage($, currentUrl);
-                    currentUrl = nextPage && !visitedUrls.has(nextPage) ? nextPage : '';
-                    pageFound = true;
-                    if (proxyUrl !== proxyOrder[0]) workingProxy = proxyUrl;
-                    break;
+                    const rawHtml = await this.fetchHtml(pageUrl, proxyUrl, 60000, signal);
+                    if (!rawHtml || rawHtml.length < 10) continue;
+                    const $ = cheerio.load(rawHtml);
+                    return this.extractChaptersFromPage($, pageUrl);
                 } catch (e) {
-                    console.warn(`[NovelFire:Fast] Chapter page failed`, e);
+                    console.warn(`[NovelFire:Fast] page failed ${pageUrl}`, e);
                 }
             }
+            return [];
+        };
 
-            if (!pageFound) break;
-            if (pageCount > 0) await new Promise(resolve => setTimeout(resolve, 300));
+        // Step 1: Fetch page 1 ONCE → get totalPage + pageSize
+        let firstChapters: ScrapedChapter[] = [];
+        let totalPage = 1;
+        let pageSize = 50;
+        for (const proxyUrl of proxyOrder) {
+            if (signal?.aborted) break;
+            try {
+                const rawHtml = await this.fetchHtml(listUrl, proxyUrl, 60000, signal);
+                if (!rawHtml) continue;
+                const $ = cheerio.load(rawHtml);
+                const chs = this.extractChaptersFromPage($, listUrl);
+                if (chs.length > 0) pageSize = chs.length;
+                totalPage = this.findTotalPages($);
+                if (_knownChapterCount === 0) firstChapters = chs; // skip if DB already has chaps
+                break;
+            } catch { }
+        }
+
+        const allChapters: ScrapedChapter[] = [];
+        const chapterUrlSet = new Set<string>();
+        for (const ch of firstChapters) {
+            if (!chapterUrlSet.has(ch.url)) { chapterUrlSet.add(ch.url); allChapters.push(ch); }
+        }
+        onProgress?.(allChapters, 1, { title, author, summary, status, coverUrl });
+
+        // Step 2: Parallel batches (no 300ms delay)
+        const CONCURRENCY = 3;
+        const cleanUrl = listUrl.split('?')[0];
+        const urlWithPage = (p: number) => `${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}page=${p}`;
+        const startPage = Math.floor(_knownChapterCount / pageSize) + 1;
+
+        for (let start = Math.max(startPage, 2); start <= totalPage; start += CONCURRENCY) {
+            if (signal?.aborted) break;
+            const batch: Promise<ScrapedChapter[]>[] = [];
+            for (let p = start; p <= Math.min(start + CONCURRENCY - 1, totalPage); p++) {
+                batch.push(fetchChaptersPage(urlWithPage(p)));
+            }
+            const results = await Promise.all(batch);
+            for (const chs of results) {
+                for (const ch of chs) {
+                    if (!chapterUrlSet.has(ch.url)) { chapterUrlSet.add(ch.url); allChapters.push(ch); }
+                }
+            }
+            onProgress?.(allChapters, Math.min(start + CONCURRENCY - 1, totalPage), { title, author, summary, status, coverUrl });
         }
 
         if (!title && allChapters.length === 0) {
