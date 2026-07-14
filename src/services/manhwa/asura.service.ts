@@ -6,6 +6,8 @@ import type { NovelMetadata } from '../scraper.service';
 const BASE_URL = 'https://asurascans.com';
 
 export class AsuraScraperService {
+    private sessionWorkingProxy: 'local' | 'corsproxy.io' | 'codetabs' | null = null;
+
     async searchManga(query: string): Promise<NovelMetadata[]> {
         const trimmedQuery = query.trim().toLowerCase();
         if (!trimmedQuery) return [];
@@ -242,64 +244,45 @@ export class AsuraScraperService {
         if (!html) return null;
 
         const $ = cheerio.load(html);
+        const metadata = this.parseMetadata($, url);
+        const chapters = this.parseChapters($, url);
 
-        // Help deduplicate repeating text like "ONGOINGONGOING" or "Ongoing Ongoing"
+        return { ...metadata, chapters };
+    }
+
+    private parseMetadata($: cheerio.CheerioAPI, url: string): Omit<NovelMetadata, 'chapters'> {
         const dedupeString = (str: string): string => {
             if (!str || str.length < 3) return str;
-            // Remove hidden characters and normalize whitespace
             const normalized = str.replace(/[^\x20-\x7E\t\n\r]/g, '').trim().replace(/\s+/g, ' ');
-
             if (normalized.length < 3) return normalized;
-
-            // Check for space-separated word repetitions e.g. "Ongoing Ongoing"
             const words = normalized.split(' ');
             if (words.length > 1 && words.every(w => w.toLowerCase() === words[0].toLowerCase())) {
                 return words[0];
             }
-
-            // Check for joined word repetitions e.g. "ONGOINGONGOING" or "OngoingOngoing"
-            // We search for a repeating prefix
             const lower = normalized.toLowerCase();
             for (let i = 1; i <= Math.floor(normalized.length / 2); i++) {
                 const sub = lower.substring(0, i);
                 let isRepeating = true;
                 for (let j = i; j < lower.length; j += i) {
                     const nextPart = lower.substring(j, j + i);
-                    if (!sub.startsWith(nextPart) && !nextPart.startsWith(sub)) {
-                        isRepeating = false;
-                        break;
-                    }
+                    if (!sub.startsWith(nextPart) && !nextPart.startsWith(sub)) { isRepeating = false; break; }
                 }
-                if (isRepeating) {
-                    return normalized.substring(0, i);
-                }
+                if (isRepeating) return normalized.substring(0, i);
             }
-
             return normalized;
         };
 
         const isNoise = (t: string) => this.isNoiseTitle(t) || t.toUpperCase() === 'ASURA SCANS';
 
-        // Multi-layered Title extraction
-        // 1. Meta tags (most reliable)
         let title = $('meta[property="og:title"]').attr('content') ||
             $('meta[property="twitter:title"]').attr('content') ||
             $('meta[name="title"]').attr('content') ||
             $('title').text();
 
         if (title) {
-            // Split by common separators and find the first part that isn't noise
             const parts = title.split(/ - | \| | – |—/).map(p => p.trim());
-            
-            // Specifically reject the site name
             const bestPart = parts.find(p => !isNoise(p) && p.toLowerCase() !== 'asura scans' && p.toLowerCase() !== 'asuratoon');
-            
-            if (bestPart) {
-                title = bestPart;
-            } else {
-                title = parts[0]; // Fallback to first part if somehow all are noise
-            }
-
+            title = bestPart || parts[0];
             if (title.toUpperCase().startsWith('READ ')) {
                 const possible = title.substring(5).trim();
                 if (!isNoise(possible)) title = possible;
@@ -307,7 +290,6 @@ export class AsuraScraperService {
             if (title.toUpperCase().endsWith(' MANHWA')) title = title.substring(0, title.length - 7).trim();
         }
 
-        // 2. DOM extraction if meta is noise or missing
         if (isNoise(title || '')) {
             title = $('h1').filter((_, el) => !isNoise($(el).text())).first().text().trim() ||
                 $('span.text-xl.font-bold').filter((_, el) => !isNoise($(el).text())).first().text().trim() ||
@@ -316,7 +298,6 @@ export class AsuraScraperService {
         }
 
         if (!title || isNoise(title)) {
-            // Hard fallback: Try to get it from the URL slug if all else fails
             try {
                 const slug = url.split('/').filter(Boolean).pop();
                 if (slug && !slug.includes('beta-site')) {
@@ -324,62 +305,40 @@ export class AsuraScraperService {
                 }
             } catch (e) { }
         }
-
         if (!title || isNoise(title)) title = 'Unknown Title';
 
         let coverUrl = '';
-        // 1. Try the rounded-xl container img (new Asura layout)
         $('div.rounded-xl img.object-cover').each((_, el) => {
             const src = $(el).attr('src');
             if (src && !src.includes('banner') && !src.includes('logo') && !src.includes('favicon')) {
-                coverUrl = src;
-                return false;
+                coverUrl = src; return false;
             }
         });
-        // 2. Fallback: img[alt="poster"]
         if (!coverUrl) {
             $('img[alt="poster"]').each((_, el) => {
                 const src = $(el).attr('src');
-                if (src && !src.includes('banner') && !src.includes('logo')) {
-                    coverUrl = src;
-                    return false;
-                }
+                if (src && !src.includes('banner') && !src.includes('logo')) { coverUrl = src; return false; }
             });
         }
-        // 3. Fallback: any img with 'covers' in src path (CDN pattern)
         if (!coverUrl) {
             $('img[src*="covers"]').each((_, el) => {
                 const src = $(el).attr('src');
-                if (src) {
-                    coverUrl = src;
-                    return false;
-                }
+                if (src) { coverUrl = src; return false; }
             });
         }
-        // 4. Fallback: og:image meta tag
-        if (!coverUrl) {
-            coverUrl = $('meta[property="og:image"]').attr('content') || '';
-        }
+        if (!coverUrl) coverUrl = $('meta[property="og:image"]').attr('content') || '';
 
         let author = 'Unknown';
         let status = 'Unknown';
-
-        // Loop through the grid-cols-2 items for Status and Type, or other metadata
-        // Status is explicitly labeled
         $('div.bg-\\[\\#343434\\], div.bg-\\[\\#222222\\], .grid div').each((_, el) => {
             const h3s = $(el).find('h3');
             if (h3s.length >= 2) {
                 const label = h3s.first().text().trim();
-                let value = h3s.last().text().trim();
-
-                value = dedupeString(value);
-
+                let value = dedupeString(h3s.last().text().trim());
                 if (label.includes('Status')) status = value;
                 if (label.includes('Author') && (author === 'Unknown' || !author)) author = value;
             }
         });
-
-        // Fallback author search
         if (author === 'Unknown') {
             $('.grid div').each((_, el) => {
                 const h3s = $(el).find('h3');
@@ -392,71 +351,52 @@ export class AsuraScraperService {
         }
 
         let summary = $('span.font-medium.text-sm p').text().trim();
-        if (!summary) {
-            summary = $('div.text-sm.font-medium.opacity-80').text().trim();
-        }
-        if (!summary) {
-            // Try og:description and meta description (most reliable on new Asura layout)
-            summary = $('meta[property="og:description"]').attr('content')?.trim() || '';
-        }
+        if (!summary) summary = $('div.text-sm.font-medium.opacity-80').text().trim();
+        if (!summary) summary = $('meta[property="og:description"]').attr('content')?.trim() || '';
         if (!summary || summary.toLowerCase().includes('read manga') || summary.toLowerCase().includes('online for free')) {
             summary = $('meta[name="description"]').attr('content')?.trim() || '';
         }
-        
-        // Final sanity check for generic SEO descriptions
         if (summary.toLowerCase().includes('read manga') || summary.toLowerCase().includes('online for free')) {
             summary = 'No synopsis available.';
         }
 
+        return { title, author, coverUrl, status, summary, category: 'Manhwa', sourceUrl: url, sourceId: url };
+    }
+
+    private parseChapters($: cheerio.CheerioAPI, url: string): { title: string; url: string; date?: string }[] {
         let chapters: { title: string; url: string; date?: string }[] = [];
         const chapterUrlSetAsura = new Set<string>();
-
-        // --- NEW ASTRO DATA EXTRACTION ---
-        // Asura now uses Astro, which stores the full chapter list in <astro-island> props
         let astroChaptersFound = false;
+
         $('astro-island[component-url*="ChapterList"]').each((_, el) => {
             const propsStr = $(el).attr('props');
             if (propsStr) {
                 try {
                     const props = JSON.parse(propsStr);
-                    // Astro serializes arrays weirdly: [1, [[0, {"id":[0,123], "number":[0,50], ...}]]]
-                    
                     const extractAstroChapters = (obj: any) => {
                         if (!obj) return;
-                        if (Array.isArray(obj)) {
-                            obj.forEach(extractAstroChapters);
-                        } else if (typeof obj === 'object') {
-                            // Astro encodes scalar values as [0, value]
+                        if (Array.isArray(obj)) { obj.forEach(extractAstroChapters); return; }
+                        if (typeof obj === 'object') {
                             const getAstroVal = (val: any) => Array.isArray(val) ? val[1] : val;
-                            
                             const slugVal = getAstroVal(obj.slug);
                             const titleVal = getAstroVal(obj.title);
                             const numVal = getAstroVal(obj.number);
                             const timeVal = getAstroVal(obj.time_ago);
-                            
-                            // If this object represents a chapter (must have slug, and either a title OR a number)
+
                             if (slugVal && typeof slugVal === 'string' && (titleVal || numVal !== undefined)) {
                                 const chapterUrl = `${BASE_URL}/comics/${url.split('/comics/')[1]?.split('/')[0] || 'series'}/chapter/${slugVal.replace('chapter-', '')}`;
-                                
                                 let chapTitle = titleVal ? String(titleVal) : `Chapter ${numVal}`;
                                 if (numVal && titleVal) chapTitle = `Chapter ${numVal}: ${titleVal}`;
-                                
                                 if (!chapterUrlSetAsura.has(chapterUrl)) {
                                     chapterUrlSetAsura.add(chapterUrl);
-                                    chapters.push({
-                                        title: chapTitle,
-                                        url: chapterUrl,
-                                        date: timeVal ? String(timeVal) : undefined
-                                    });
+                                    chapters.push({ title: chapTitle, url: chapterUrl, date: timeVal ? String(timeVal) : undefined });
                                 }
                                 astroChaptersFound = true;
                             } else {
-                                // Keep digging deeply
                                 Object.values(obj).forEach(extractAstroChapters);
                             }
                         }
                     };
-
                     extractAstroChapters(props);
                 } catch (e) {
                     console.error("[Asura Scraper] Failed to parse Astro props:", e);
@@ -464,123 +404,89 @@ export class AsuraScraperService {
             }
         });
 
-        // --- DOM FALLBACK (If Astro extraction failed) ---
         if (!astroChaptersFound || chapters.length === 0) {
-        // Chapter list container - try multiple selectors
-        // New: div with max-h-[500px] and overflow-y-auto, or a.group links
-        const chapterContainerSelectors = [
-            'div[class*="max-h"] a[href*="/chapter/"]',        // New: max-h container
-            'div.overflow-y-auto a[href*="/chapter/"]',         // Legacy
-            'div[class*="overflow-y"] a[href*="/chapter/"]',    // Broader
-            'a.group[href*="/chapter/"]',                        // New: a.group chapter links
-        ];
-
-        let chapterLinks: any[] = [];
-        for (const sel of chapterContainerSelectors) {
-            const found = $(sel);
-            if (found.length > 0) {
-                chapterLinks = found.toArray();
-                break;
+            const chapterContainerSelectors = [
+                'div[class*="max-h"] a[href*="/chapter/"]',
+                'div.overflow-y-auto a[href*="/chapter/"]',
+                'div[class*="overflow-y"] a[href*="/chapter/"]',
+                'a.group[href*="/chapter/"]',
+            ];
+            let chapterLinks: any[] = [];
+            for (const sel of chapterContainerSelectors) {
+                const found = $(sel);
+                if (found.length > 0) { chapterLinks = found.toArray(); break; }
             }
-        }
+            if (chapterLinks.length === 0) chapterLinks = $('a[href*="/chapter/"]').toArray();
 
-        // Fallback: get ALL chapter links if none found via specific selectors
-        if (chapterLinks.length === 0) {
-            chapterLinks = $('a[href*="/chapter/"]').toArray();
-        }
+            chapterLinks.forEach((el) => {
+                const link = $(el).attr('href');
+                const fontMediumSpans = $(el).find('span.font-medium');
+                const h3s = $(el).find('h3');
+                const spans = $(el).find('span');
+                const cleanText = (t: string) => t.replace(/<!--\s*-->/g, '').replace(/\s+/g, ' ').trim();
 
-        chapterLinks.forEach((el) => {
-            const link = $(el).attr('href');
-            // Try span.font-medium first (new layout), then h3, then all spans
-            const fontMediumSpans = $(el).find('span.font-medium');
-            const h3s = $(el).find('h3');
-            const spans = $(el).find('span');
-
-            // Helper to clean React hydration markers (<!-- -->)
-            const cleanText = (t: string) => t.replace(/<!--\s*-->/g, '').replace(/\s+/g, ' ').trim();
-
-            let texts: string[] = [];
-            if (fontMediumSpans.length > 0) {
-                texts = fontMediumSpans.map((_: number, s: any) => cleanText($(s).text()).replace('MANHWA', '')).get().filter(Boolean);
-                // Also grab subtitle spans (not font-medium)
-                const otherSpans = $(el).find('span:not(.font-medium)');
-                if (otherSpans.length > 0) {
-                    otherSpans.each((_: number, s: any) => {
-                        const t = cleanText($(s).text()).replace('MANHWA', '');
-                        if (t && !texts.includes(t)) texts.push(t);
-                    });
-                }
-            } else if (h3s.length > 0) {
-                texts = h3s.map((_: number, h: any) => cleanText($(h).text()).replace('MANHWA', '')).get().filter(Boolean);
-            } else if (spans.length > 0) {
-                texts = spans.map((_: number, s: any) => cleanText($(s).text()).replace('MANHWA', '')).get().filter(Boolean);
-            } else {
-                // Use direct text
-                const directText = cleanText($(el).text());
-                if (directText) texts = [directText];
-            }
-
-            if (texts.length > 0) {
-                let chapTitle = texts[0] || 'Unknown Chapter';
-                let subLabel = texts.length > 1 ? texts[1] : '';
-                let dateLabel = texts.length > 2 ? texts[2] : '';
-
-                // 1. Aggressive Clean for "First Chapter" and "New Chapter"
-                if (chapTitle.match(/^(First|New)\s*Chapter/i)) {
-                    const cleaned = chapTitle.replace(/^(First|New)\s*Chapter/i, '').trim();
-                    if (cleaned.toLowerCase().startsWith('chapter') || cleaned.match(/^\d/)) {
-                        chapTitle = cleaned;
-                    } else if (subLabel && subLabel.toLowerCase().includes('chapter')) {
-                        chapTitle = subLabel;
-                        subLabel = '';
-                    }
-                    chapTitle = chapTitle.replace(/ChapterChapter/i, 'Chapter');
-                }
-
-                // 2. Identify Date
-                const isDateText = (text: string) => {
-                    const t = text.toLowerCase();
-                    return t.includes('ago') || t.includes('last week') || t.includes('yesterday') || t.includes('today') || t.match(/^[A-Za-z]+ \d+/) || t.match(/^\d+/);
-                };
-
-                if (subLabel && !dateLabel && isDateText(subLabel)) {
-                    dateLabel = subLabel;
-                    subLabel = '';
-                }
-
-                // 3. Merge Intelligent
-                if (subLabel) {
-                    if (subLabel.toLowerCase().includes('chapter') && !chapTitle.toLowerCase().includes('chapter')) {
-                        chapTitle = `${subLabel}: ${chapTitle}`;
-                    } else if (!chapTitle.includes(subLabel)) {
-                        chapTitle = `${chapTitle} ${subLabel}`;
-                    }
-                }
-
-                if (link) {
-                    const chapterUrl = link.startsWith('http') ? link : `${BASE_URL}${link.startsWith('/') ? '' : '/'}${link}`;
-                    chapTitle = chapTitle.replace(/\s+/g, ' ').trim();
-
-                    // Deduplicate
-                    if (!chapterUrlSetAsura.has(chapterUrl)) {
-                        chapterUrlSetAsura.add(chapterUrl);
-                        chapters.push({
-                            title: chapTitle,
-                            url: chapterUrl,
-                            date: dateLabel
+                let texts: string[] = [];
+                if (fontMediumSpans.length > 0) {
+                    texts = fontMediumSpans.map((_: number, s: any) => cleanText($(s).text()).replace('MANHWA', '')).get().filter(Boolean);
+                    const otherSpans = $(el).find('span:not(.font-medium)');
+                    if (otherSpans.length > 0) {
+                        otherSpans.each((_: number, s: any) => {
+                            const t = cleanText($(s).text()).replace('MANHWA', '');
+                            if (t && !texts.includes(t)) texts.push(t);
                         });
                     }
+                } else if (h3s.length > 0) {
+                    texts = h3s.map((_: number, h: any) => cleanText($(h).text()).replace('MANHWA', '')).get().filter(Boolean);
+                } else if (spans.length > 0) {
+                    texts = spans.map((_: number, s: any) => cleanText($(s).text()).replace('MANHWA', '')).get().filter(Boolean);
+                } else {
+                    const directText = cleanText($(el).text());
+                    if (directText) texts = [directText];
                 }
-            }
-        });
 
+                if (texts.length > 0) {
+                    let chapTitle = texts[0] || 'Unknown Chapter';
+                    let subLabel = texts.length > 1 ? texts[1] : '';
+                    let dateLabel = texts.length > 2 ? texts[2] : '';
+
+                    if (chapTitle.match(/^(First|New)\s*Chapter/i)) {
+                        const cleaned = chapTitle.replace(/^(First|New)\s*Chapter/i, '').trim();
+                        if (cleaned.toLowerCase().startsWith('chapter') || cleaned.match(/^\d/)) {
+                            chapTitle = cleaned;
+                        } else if (subLabel && subLabel.toLowerCase().includes('chapter')) {
+                            chapTitle = subLabel;
+                            subLabel = '';
+                        }
+                        chapTitle = chapTitle.replace(/ChapterChapter/i, 'Chapter');
+                    }
+
+                    const isDateText = (text: string) => {
+                        const t = text.toLowerCase();
+                        return t.includes('ago') || t.includes('last week') || t.includes('yesterday') || t.includes('today') || t.match(/^[A-Za-z]+ \d+/) || t.match(/^\d+/);
+                    };
+                    if (subLabel && !dateLabel && isDateText(subLabel)) { dateLabel = subLabel; subLabel = ''; }
+
+                    if (subLabel) {
+                        if (subLabel.toLowerCase().includes('chapter') && !chapTitle.toLowerCase().includes('chapter')) {
+                            chapTitle = `${subLabel}: ${chapTitle}`;
+                        } else if (!chapTitle.includes(subLabel)) {
+                            chapTitle = `${chapTitle} ${subLabel}`;
+                        }
+                    }
+
+                    if (link) {
+                        const chapterUrl = link.startsWith('http') ? link : `${BASE_URL}${link.startsWith('/') ? '' : '/'}${link}`;
+                        chapTitle = chapTitle.replace(/\s+/g, ' ').trim();
+                        if (!chapterUrlSetAsura.has(chapterUrl)) {
+                            chapterUrlSetAsura.add(chapterUrl);
+                            chapters.push({ title: chapTitle, url: chapterUrl, date: dateLabel });
+                        }
+                    }
+                }
+            });
         }
 
-        // Reverse to ensure Oldest -> Newest (Asura DOM gives Newest -> Oldest)
         chapters.reverse();
-
-        // Robust Numeric Sort as a safety net after reversing
-        // Extracts the chapter number from the title (e.g., "Chapter 42" -> 42)
         const hasNumbers = chapters.some(c => /\d+/.test(c.title));
         if (hasNumbers) {
             chapters.sort((a, b) => {
@@ -592,17 +498,7 @@ export class AsuraScraperService {
             });
         }
 
-        return {
-            title,
-            author,
-            coverUrl,
-            status,
-            summary,
-            category: 'Manhwa',
-            chapters: chapters,
-            sourceUrl: url,
-            sourceId: url
-        };
+        return chapters;
     }
 
     /**
@@ -821,6 +717,14 @@ export class AsuraScraperService {
                     { name: 'codetabs', url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}` },
                 ];
 
+                if (this.sessionWorkingProxy) {
+                    const idx = webProxies.findIndex(p => p.name === this.sessionWorkingProxy);
+                    if (idx > -1) {
+                        const [working] = webProxies.splice(idx, 1);
+                        webProxies.unshift(working);
+                    }
+                }
+
                 for (const proxy of webProxies) {
                     try {
                         const response = await fetch(proxy.url, {
@@ -837,6 +741,7 @@ export class AsuraScraperService {
                         const valid = this.isValidHtml(html);
                         if (valid) {
                             console.log(`[Asura][diag] ${proxy.name}: HTTP ${response.status}, ${html.length} chars, isValidHtml=true ✓`);
+                            this.sessionWorkingProxy = proxy.name as 'local' | 'corsproxy.io' | 'codetabs';
                             return html;
                         }
                         // Log which blocked indicator matched

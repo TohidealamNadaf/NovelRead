@@ -9,15 +9,17 @@ interface SeriesHeroProps {
     inLibrary?: boolean;
     chapterCount?: number;
     hasStartedReading?: boolean;
+    isLoading?: boolean;
 }
 
-export const SeriesHero: React.FC<SeriesHeroProps> = ({
+const SeriesHeroBase: React.FC<SeriesHeroProps> = ({
     novel,
     onReadNow,
     onToggleLibrary,
     inLibrary,
     chapterCount = 0,
-    hasStartedReading = false
+    hasStartedReading = false,
+    isLoading = false
 }) => {
     // Defensive deduplication for status (e.g. "ONGOINGONGOING")
     const displayStatus = React.useMemo(() => {
@@ -42,6 +44,58 @@ export const SeriesHero: React.FC<SeriesHeroProps> = ({
         }
         return t;
     }, [novel.title]);
+
+    if (isLoading) {
+        return (
+            <div className="relative w-full animate-pulse">
+                {/* Cover Image & Gradient Overlay */}
+                <div className="relative w-full h-[460px] overflow-hidden bg-slate-200 dark:bg-white/5">
+                    <div className="absolute inset-0 bg-gradient-to-t from-background-light dark:from-background-dark via-background-light/20 dark:via-background-dark/20 to-transparent shadow-[inset_0_-120px_80px_-20px_rgba(0,0,0,0.5)] dark:shadow-[inset_0_-120px_80px_-20px_rgba(19,16,34,1)]"></div>
+
+                    {/* Content Overlay */}
+                    <div className="absolute bottom-0 left-0 right-0 p-6 flex flex-col justify-end">
+                        <div className="flex gap-4 items-end mb-4">
+                            {/* Foreground Thumbnail Poster */}
+                            <div className="w-[100px] sm:w-[120px] aspect-[2/3] rounded-md overflow-hidden bg-slate-300 dark:bg-white/10 shadow-xl flex-shrink-0 relative">
+                            </div>
+
+                            {/* Text Content */}
+                            <div className="flex flex-col gap-2 pb-1 w-full">
+                                <div className="flex flex-wrap gap-2">
+                                    <div className="w-16 h-5 rounded-md bg-slate-300 dark:bg-white/10"></div>
+                                    <div className="w-20 h-5 rounded-md bg-slate-300 dark:bg-white/10"></div>
+                                </div>
+
+                                <div className="w-3/4 h-8 rounded-md bg-slate-300 dark:bg-white/10 mt-1 mb-1"></div>
+
+                                <div className="w-24 h-5 rounded-md bg-slate-300 dark:bg-white/10"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="px-6 -mt-4 relative z-10 grid grid-cols-2 gap-3">
+                    <div className="flex items-center justify-center gap-2 bg-slate-300 dark:bg-white/10 h-10 rounded-lg text-transparent shadow-md">
+                        Read Now
+                    </div>
+                    <div className="flex items-center justify-center gap-2 bg-slate-300 dark:bg-white/10 border border-slate-200 dark:border-white/5 h-10 rounded-lg text-transparent">
+                        Library
+                    </div>
+                </div>
+
+                {/* Summary Section */}
+                <div className="px-6 mt-8">
+                    <h2 className="text-lg font-bold mb-3 text-slate-900 dark:text-white">Summary</h2>
+                    <div className="flex flex-col gap-2">
+                        <div className="w-full h-4 rounded bg-slate-200 dark:bg-white/5"></div>
+                        <div className="w-11/12 h-4 rounded bg-slate-200 dark:bg-white/5"></div>
+                        <div className="w-4/5 h-4 rounded bg-slate-200 dark:bg-white/5"></div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="relative w-full">
@@ -124,3 +178,5 @@ export const SeriesHero: React.FC<SeriesHeroProps> = ({
         </div>
     );
 };
+
+export const SeriesHero = React.memo(SeriesHeroBase);

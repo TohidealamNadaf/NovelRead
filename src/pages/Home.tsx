@@ -6,8 +6,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Search, Bell, X, Clock, Play, ArrowUp } from 'lucide-react';
 import { notificationService } from '../services/notification.service';
 import { useProfileImage } from '../hooks/useProfileImage';
-import { motion, AnimatePresence, useMotionValueEvent } from 'framer-motion';
-import { useQuickReturnHeader } from '../hooks/useQuickReturnHeader';
+import { motion, AnimatePresence } from 'framer-motion';
 import { NovelGrid } from '../components/NovelGrid';
 
 // Custom hook for responsive grid columns
@@ -57,7 +56,6 @@ export const Home = () => {
 
     const SEARCH_BLOCK_HEIGHT = 118;
     const isSearchExpanded = !editMode && !isHeaderCollapsed;
-    const totalHeaderHeight = baseHeaderHeight + (isSearchExpanded ? SEARCH_BLOCK_HEIGHT : 0);
 
     const [showScrollTop, setShowScrollTop] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -65,34 +63,75 @@ export const Home = () => {
 
     const COLUMN_COUNT = useResponsiveColumns();
     
-    // FIX: Pass the precise dynamic `totalHeaderHeight` as the threshold.
-    // If the header hides at the default 50px threshold while being 160px tall,
-    // it will reveal 110px of completely empty space, causing a visible gap.
-    // By tying the threshold exactly to the header's true rendered height, 
-    // it is guaranteed that 160px of real content has already scrolled up behind it
-    // *before* it slides away, ensuring a seamless reveal.
-    const { hidden: isHeaderHidden, scrollY } = useQuickReturnHeader(containerRef, totalHeaderHeight);
+    const [isHeaderHidden, setIsHeaderHidden] = useState(false);
 
-    useMotionValueEvent(scrollY, "change", (latest) => {
-        if (!sessionStorageTimeoutRef.current) {
-            sessionStorageTimeoutRef.current = setTimeout(() => {
-                sessionStorage.setItem('homeScroll', scrollY.get().toString());
-                sessionStorageTimeoutRef.current = null;
-            }, 150);
-        }
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
 
-        const targetShowScrollTop = latest > 500;
-        setShowScrollTop(prev => prev !== targetShowScrollTop ? targetShowScrollTop : prev);
+        let rafId: number | null = null;
+        let lastY = el.scrollTop;
 
-        const targetScrolled = latest > 10;
-        setIsScrolled(prev => prev !== targetScrolled ? targetScrolled : prev);
-        
-        setIsHeaderCollapsed(prev => {
-            if (latest > 80) return true;
-            if (latest < 15) return false;
-            return prev;
-        });
-    });
+        // Local mirrors (avoid redundant setState)
+        let headerHidden = isHeaderHidden;
+        let collapsed = isHeaderCollapsed;
+        let scrolled = isScrolled;
+        let showTop = showScrollTop;
+
+        const onScroll = () => {
+            if (rafId !== null) return;
+            rafId = requestAnimationFrame(() => {
+                const y = el.scrollTop;
+
+                // 1. Quick-return header (2px hysteresis deadzone)
+                if (y < 10) {
+                    if (headerHidden) { setIsHeaderHidden(false); headerHidden = false; }
+                } else if (y > lastY + 2 && y > 100) {
+                    if (!headerHidden) { setIsHeaderHidden(true); headerHidden = true; }
+                } else if (y < lastY - 2) {
+                    if (headerHidden) { setIsHeaderHidden(false); headerHidden = false; }
+                }
+
+                // 2. Collapse search bar (separate boundary + hysteresis)
+                const shouldCollapse = y > 120 && y > lastY + 2;
+                const shouldExpand = y < 15 || (y < lastY - 2 && y < 100);
+
+                if (shouldCollapse && !collapsed) {
+                    setIsHeaderCollapsed(true);
+                    collapsed = true;
+                } else if (shouldExpand && collapsed) {
+                    setIsHeaderCollapsed(false);
+                    collapsed = false;
+                }
+
+                // 3. Frosted background
+                const shouldScrolled = y > 10;
+                if (shouldScrolled !== scrolled) { setIsScrolled(shouldScrolled); scrolled = shouldScrolled; }
+
+                // 4. Scroll-to-top FAB
+                const shouldShowTop = y > 500;
+                if (shouldShowTop !== showTop) { setShowScrollTop(shouldShowTop); showTop = shouldShowTop; }
+
+                // 5. Debounced session storage
+                if (!sessionStorageTimeoutRef.current) {
+                    sessionStorageTimeoutRef.current = setTimeout(() => {
+                        sessionStorage.setItem('homeScroll', y.toString());
+                        sessionStorageTimeoutRef.current = null;
+                    }, 150);
+                }
+
+                lastY = y;
+                rafId = null;
+            });
+        };
+
+        el.addEventListener('scroll', onScroll, { passive: true });
+        return () => {
+            el.removeEventListener('scroll', onScroll);
+            if (rafId !== null) cancelAnimationFrame(rafId);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Long Press Edit Mode Tracking
     const pressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -481,8 +520,10 @@ export const Home = () => {
                         initial={{ opacity: 0, y: 20, scale: 0.8 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 20, scale: 0.8 }}
+                        whileTap={{ scale: 0.9 }}
+                        transition={{ type: "spring", stiffness: 400, damping: 30, mass: 0.6 }}
                         onClick={scrollToTop}
-                        className="absolute bottom-24 right-6 z-40 p-3.5 bg-primary text-white rounded-full shadow-xl shadow-primary/30 hover:bg-primary/90 active:scale-90 transition-all"
+                        className="fixed bottom-24 right-6 z-40 p-3.5 bg-primary text-white rounded-full shadow-xl shadow-primary/30 hover:bg-primary/90 transition-colors"
                         aria-label="Scroll to top"
                     >
                         <ArrowUp size={24} />

@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, ChevronRight, Search, Plus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -24,7 +24,7 @@ const jiggleVariants: any = {
     }
 };
 
-export const NovelGrid = memo(({
+const NovelGridBase: React.FC<NovelGridProps> = ({
     filteredNovels,
     searchQuery,
     selectedCategory,
@@ -168,4 +168,6 @@ export const NovelGrid = memo(({
             )}
         </div>
     );
-});
+};
+
+export const NovelGrid = React.memo(NovelGridBase);

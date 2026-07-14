@@ -5,12 +5,23 @@ import { Capacitor } from '@capacitor/core';
 const BASE_URL = 'https://mangafire.to';
 
 export class MangaFireScraperService {
+    private sessionProxyMode: 'vite' | 'codetabs' | 'corsproxy' | null = null;
+    private viteBlockedUntil = 0;
+
+    private sleep(ms: number) {
+        return new Promise(res => setTimeout(res, ms));
+    }
     
     private async fetchWithProxy(url: string): Promise<string> {
         const isNative = Capacitor.isNativePlatform();
         
         if (!isNative) {
-            // Web environment - use Vite proxy
+            const now = Date.now();
+            // Already know Vite proxy is rate-limited this session — skip straight to fallback
+            if (now < this.viteBlockedUntil) {
+                return await this.tryFallbackProxies(url);
+            }
+
             const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
             try {
                 console.log(`[MangaFire] Fetching via Vite proxy: ${url}`);
@@ -22,9 +33,14 @@ export class MangaFireScraperService {
                     }
                 });
                 
+                if (response.status === 429) {
+                    console.warn('[MangaFire] Vite proxy 429 — backing off 60s for this session');
+                    this.viteBlockedUntil = Date.now() + 60_000;
+                    return await this.tryFallbackProxies(url);
+                }
+                
                 if (!response.ok) {
                     console.error(`[MangaFire] HTTP ${response.status} for ${url}`);
-                    // Try fallback proxy
                     return await this.tryFallbackProxies(url);
                 }
                 
@@ -42,29 +58,41 @@ export class MangaFireScraperService {
     }
 
     private async tryFallbackProxies(url: string): Promise<string> {
-        const fallbackProxies = [
-            'https://api.codetabs.com/v1/proxy?quest=',
-            'https://corsproxy.io/?url='
-        ];
+        // If a fallback already worked this session, try it FIRST instead of always
+        // starting from codetabs — avoids re-discovering the working proxy every page.
+        const order: Array<'codetabs' | 'corsproxy'> =
+            this.sessionProxyMode === 'corsproxy'
+                ? ['corsproxy', 'codetabs']
+                : ['codetabs', 'corsproxy'];
 
-        for (const proxy of fallbackProxies) {
+        const proxyUrls = {
+            codetabs: 'https://api.codetabs.com/v1/proxy?quest=',
+            corsproxy: 'https://corsproxy.io/?url=',
+        };
+
+        for (const key of order) {
             try {
-                console.log(`[MangaFire] Trying fallback proxy: ${proxy}`);
-                const proxyUrl = `${proxy}${encodeURIComponent(url)}`;
+                console.log(`[MangaFire] Trying fallback proxy: ${key}`);
+                const proxyUrl = `${proxyUrls[key]}${encodeURIComponent(url)}`;
                 const response = await fetch(proxyUrl, {
                     headers: {
                         'Accept': 'application/json, text/plain, */*',
                         'X-Requested-With': 'XMLHttpRequest',
                     }
                 });
+                if (response.status === 429) {
+                    await this.sleep(800);
+                    continue;
+                }
                 if (response.ok) {
                     const text = await response.text();
                     if (text && text.length > 100) {
+                        this.sessionProxyMode = key; // remember the winner for next page
                         return text;
                     }
                 }
             } catch (e) {
-                console.warn(`[MangaFire] Fallback proxy failed: ${proxy}`, e);
+                console.warn(`[MangaFire] Fallback proxy failed: ${key}`, e);
             }
         }
         return '';
@@ -111,8 +139,8 @@ export class MangaFireScraperService {
                 // Check for id-slug format
                 if (lastPart.includes('-')) {
                     const firstPart = lastPart.split('-')[0];
-                    // Validate it looks like an ID (alphanumeric, typically 4-8 chars)
-                    if (/^[a-z0-9]{4,8}$/i.test(firstPart)) {
+                    // Validate it looks like an ID (alphanumeric, typically 2-10 chars)
+                    if (/^[a-z0-9]{2,10}$/i.test(firstPart)) {
                         return firstPart;
                     }
                 }
@@ -202,69 +230,68 @@ export class MangaFireScraperService {
         }
     }
 
-    async fetchMangaDetails(url: string): Promise<NovelMetadata | null> {
+    // Phase 1 — fast, single request, no chapters
+    async fetchMetadata(url: string): Promise<NovelMetadata | null> {
         const id = this.extractIdFromUrl(url);
         if (!id) return null;
 
-        try {
-            // Fetch metadata
-            const metadataJson = await this.fetchJson(`${BASE_URL}/api/titles/${id}`);
-            if (!metadataJson) return null;
-            
-            const item = metadataJson.data || metadataJson;
-            const novel = this.parseTitleObject(item);
-            
-            // Overwrite sourceUrl just in case
-            novel.sourceUrl = url.startsWith('http') ? url : `${BASE_URL}/title/${id}`;
+        const metadataJson = await this.fetchJson(`${BASE_URL}/api/titles/${id}`);
+        if (!metadataJson) return null;
 
-            // Fetch chapters with pagination
-            let allChapterItems: any[] = [];
-            let page = 1;
-            let hasMore = true;
+        const item = metadataJson.data || metadataJson;
+        const novel = this.parseTitleObject(item);
+        novel.sourceUrl = url.startsWith('http') ? url : `${BASE_URL}/title/${id}`;
+        novel.chapters = []; // filled in later by phase 2
+        return novel;
+    }
 
-            while (hasMore && page <= 50) { // Safety limit of 50 pages (approx 1500 chapters)
-                const chaptersJson = await this.fetchJson(`${BASE_URL}/api/titles/${id}/chapters?language=en&sort=number&order=desc&page=${page}&limit=30`);
-                
-                if (chaptersJson) {
-                    let chapterItems: any[] = [];
-                    if (Array.isArray(chaptersJson)) chapterItems = chaptersJson;
-                    else if (chaptersJson.items && Array.isArray(chaptersJson.items)) chapterItems = chaptersJson.items;
-                    else if (chaptersJson.data && Array.isArray(chaptersJson.data)) chapterItems = chaptersJson.data;
-                    else if (chaptersJson.result && Array.isArray(chaptersJson.result)) chapterItems = chaptersJson.result;
-                    else if (chaptersJson.data && chaptersJson.data.items && Array.isArray(chaptersJson.data.items)) chapterItems = chaptersJson.data.items;
+    // Phase 2 — slow, paginated, runs after the hero is already on screen
+    async fetchChapterList(url: string): Promise<{ title: string; url: string; date: string }[]> {
+        const id = this.extractIdFromUrl(url);
+        if (!id) return [];
 
-                    if (chapterItems.length > 0) {
-                        allChapterItems = allChapterItems.concat(chapterItems);
-                        page++;
-                    } else {
-                        hasMore = false;
-                    }
-                } else {
-                    hasMore = false;
-                }
-            }
+        let allChapterItems: any[] = [];
+        let page = 1;
+        let totalPages: number | null = null;
 
-            if (allChapterItems.length > 0) {
-                // Sort ascending by real chapter number so orderIndex 0 = chapter 1,
-                // matching normal chapter numbering (highest orderIndex = latest chapter)
-                allChapterItems.sort((a, b) => {
-                    const numA = parseFloat(a.number || a.chapter) || 0;
-                    const numB = parseFloat(b.number || b.chapter) || 0;
-                    return numA - numB;
-                });
+        while (page <= (totalPages ?? 50)) {
+            const chaptersJson = await this.fetchJson(
+                `${BASE_URL}/api/titles/${id}/chapters?language=en&sort=number&order=desc&page=${page}&limit=30`
+            );
+            if (!chaptersJson) break;
 
-                novel.chapters = allChapterItems.map((ch: any) => ({
-                    title: ch.name || `Chapter ${ch.number || ch.chapter}`,
-                    url: `${BASE_URL}/api/chapters/${ch.id}`, // Storing the API endpoint as URL to fetch later easily
-                    date: ch.created_at || ''
-                }));
-            }
+            const meta = chaptersJson.meta || chaptersJson.data?.meta;
+            if (meta?.last_page) totalPages = meta.last_page;
+            else if (meta?.total && meta?.per_page) totalPages = Math.ceil(meta.total / meta.per_page);
 
-            return novel;
-        } catch (e) {
-            console.error('[MangaFire] Details error:', e);
-            return null;
+            let chapterItems: any[] = [];
+            if (Array.isArray(chaptersJson)) chapterItems = chaptersJson;
+            else if (chaptersJson.items) chapterItems = chaptersJson.items;
+            else if (chaptersJson.data && Array.isArray(chaptersJson.data)) chapterItems = chaptersJson.data;
+            else if (chaptersJson.result) chapterItems = chaptersJson.result;
+            else if (chaptersJson.data?.items) chapterItems = chaptersJson.data.items;
+
+            if (chapterItems.length === 0) break;
+            allChapterItems = allChapterItems.concat(chapterItems);
+            page++;
+            if (page <= (totalPages ?? 50)) await this.sleep(350);
         }
+
+        allChapterItems.sort((a, b) => (parseFloat(a.number || a.chapter) || 0) - (parseFloat(b.number || b.chapter) || 0));
+
+        return allChapterItems.map((ch: any) => ({
+            title: ch.name || `Chapter ${ch.number || ch.chapter}`,
+            url: `${BASE_URL}/api/chapters/${ch.id}`,
+            date: ch.created_at || ''
+        }));
+    }
+
+    // Kept for any existing caller that wants everything at once (background refresh, etc.)
+    async fetchMangaDetails(url: string): Promise<NovelMetadata | null> {
+        const novel = await this.fetchMetadata(url);
+        if (!novel) return null;
+        novel.chapters = await this.fetchChapterList(url);
+        return novel;
     }
 
     async fetchChapterImages(url: string): Promise<string[]> {

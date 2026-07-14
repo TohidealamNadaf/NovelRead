@@ -23,6 +23,8 @@ export const ManhwaSeries = () => {
     const [failedChapterIds, setFailedChapterIds] = useState<Set<string>>(new Set());
     const [inLibrary, setInLibrary] = useState(true);
     const [remoteMetadata, setRemoteMetadata] = useState<any>(null); // Keep original metadata for import
+    const [chaptersLoading, setChaptersLoading] = useState(false);
+    const [metadataLoading, setMetadataLoading] = useState(false);
     
     const novelRef = useRef(novel);
     useEffect(() => { novelRef.current = novel; }, [novel]);
@@ -36,37 +38,56 @@ export const ManhwaSeries = () => {
     // Dynamic Header State
     const [showHeader, setShowHeader] = useState(true);
     const [isScrolled, setIsScrolled] = useState(false);
-    const lastScrollY = useRef(0);
+
 
     useEffect(() => {
+        let rafId: number | null = null;
+        let lastY = window.scrollY;
+        
+        // Local mirrors to avoid redundant setState calls
+        let headerHidden = !showHeader;
+        let fixedBtn = showFixedButton;
+        let scrolled = isScrolled;
+
         const handleScroll = () => {
-            const currentScrollY = window.scrollY;
-            
-            // 1. Show/Hide Fixed Read Button (Resume)
-            if (currentScrollY > 450) {
-                setShowFixedButton(true);
-            } else {
-                setShowFixedButton(false);
-            }
+            if (rafId !== null) return; // Already scheduled
+            rafId = requestAnimationFrame(() => {
+                const currentScrollY = window.scrollY;
 
-            // 2. Dynamic Header Logic (Hide on scroll down, Show on scroll up)
-            if (currentScrollY < 10) {
-                // Always show at the very top
-                setShowHeader(true);
-            } else if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
-                // Scrolling Down + passed threshold
-                setShowHeader(false);
-            } else if (currentScrollY < lastScrollY.current) {
-                // Scrolling Up
-                setShowHeader(true);
-            }
+                // 1. Resume button (toggle only on change)
+                const shouldShowBtn = currentScrollY > 450;
+                if (shouldShowBtn !== fixedBtn) {
+                    setShowFixedButton(shouldShowBtn);
+                    fixedBtn = shouldShowBtn;
+                }
 
-            setIsScrolled(currentScrollY > 40);
-            lastScrollY.current = currentScrollY;
+                // 2. Background cross-fade (toggle only on change)
+                const shouldScrolled = currentScrollY > 40;
+                if (shouldScrolled !== scrolled) {
+                    setIsScrolled(shouldScrolled);
+                    scrolled = shouldScrolled;
+                }
+
+                // 3. Quick-return header with 2px hysteresis deadzone
+                if (currentScrollY < 10) {
+                    if (headerHidden) { setShowHeader(true); headerHidden = false; }
+                } else if (currentScrollY > lastY + 2 && currentScrollY > 100) {
+                    if (!headerHidden) { setShowHeader(false); headerHidden = true; }
+                } else if (currentScrollY < lastY - 2) {
+                    if (headerHidden) { setShowHeader(true); headerHidden = false; }
+                }
+
+                lastY = currentScrollY;
+                rafId = null;
+            });
         };
 
         window.addEventListener('scroll', handleScroll, { passive: true });
-        return () => window.removeEventListener('scroll', handleScroll);
+        return () => {
+            window.removeEventListener('scroll', handleScroll);
+            if (rafId !== null) cancelAnimationFrame(rafId);
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -96,12 +117,30 @@ export const ManhwaSeries = () => {
                         setChapters(chapterData);
                         setInLibrary(true);
                     } else {
-                        // Fetch remotely for preview
-                        const metadata = await manhwaScraperService.fetchNovel(decodedId);
+                        // REMOTE PREVIEW — two phases so the hero paints immediately
+                        setNovel({
+                            id: decodedId,
+                            title: '',
+                            author: '',
+                            coverUrl: '',
+                            status: '',
+                            summary: '',
+                            category: 'Manhwa',
+                            sourceUrl: decodedId,
+                            createdAt: Date.now()
+                        } as Novel);
+
+                        setMetadataLoading(true);
+                        setChaptersLoading(true);
+                        setIsLoading(false); // hero renders now, chapter list shows its own spinner below
+
+                        // Phase 1: metadata only (one fast request)
+                        const metadata = await manhwaScraperService.fetchNovelMetadata(decodedId);
                         if (!isMounted) return;
+
                         if (metadata) {
                             const adaptedNovel: Novel = {
-                                id: decodedId, // Temporary ID
+                                id: decodedId,
                                 title: metadata.title,
                                 author: metadata.author,
                                 coverUrl: metadata.coverUrl,
@@ -111,23 +150,30 @@ export const ManhwaSeries = () => {
                                 sourceUrl: decodedId,
                                 createdAt: Date.now()
                             };
-
-                            const adaptedChapters: Chapter[] = metadata.chapters.map((ch, idx) => ({
-                                id: `${decodedId}-ch-${idx}`,
-                                novelId: decodedId,
-                                title: ch.title,
-                                content: '',
-                                orderIndex: idx,
-                                audioPath: ch.url, // URL stored here
-                                date: ch.date || '',
-                                isRead: 0
-                            }));
-
                             setNovel(adaptedNovel);
-                            setChapters(adaptedChapters);
-                            setInLibrary(false);
                             setRemoteMetadata(metadata);
+                            setInLibrary(false);
                         }
+                        setMetadataLoading(false);
+
+                        // Phase 2: paginated chapter list — can take a few seconds, doesn't block the page
+                        const chapterList = await manhwaScraperService.fetchNovelChapters(decodedId);
+                        if (!isMounted) return;
+
+                        const adaptedChapters: Chapter[] = chapterList.map((ch, idx) => ({
+                            id: `${decodedId}-ch-${idx}`,
+                            novelId: decodedId,
+                            title: ch.title,
+                            content: '',
+                            orderIndex: idx,
+                            audioPath: ch.url,
+                            date: ch.date || '',
+                            isRead: 0
+                        }));
+
+                        setChapters(adaptedChapters);
+                        setRemoteMetadata((prev: any) => prev ? { ...prev, chapters: chapterList } : prev);
+                        setChaptersLoading(false);
                     }
                 } else {
                     const novelData = await dbService.getNovel(novelId);
@@ -140,7 +186,10 @@ export const ManhwaSeries = () => {
             } catch (error) {
                 console.error("Failed to load series data", error);
             } finally {
-                if (isMounted) setIsLoading(false);
+                if (isMounted) {
+                    setIsLoading(false);
+                    setChaptersLoading(false);
+                }
             }
         };
 
@@ -280,15 +329,19 @@ export const ManhwaSeries = () => {
         return () => { isMounted = false; };
     }, [isLoading, novelId, inLibrary]);
 
-    const handleChapterSelect = (chapter: Chapter) => {
+    const handleChapterSelect = useCallback((chapter: Chapter) => {
         if (!inLibrary || !novel?.id || novel.id.startsWith('http')) {
             showToast("Please save the series to your library first to read chapters.", "warning");
             return;
         }
         navigate(`/manhwa/read/${encodeURIComponent(novelId!)}/${encodeURIComponent(chapter.id)}`); // Using the new reader route
-    };
+    }, [inLibrary, novel, showToast, navigate, novelId]);
 
-    const handleToggleLibrary = async () => {
+    const handleToggleLibrary = useCallback(async () => {
+        if (chaptersLoading) {
+            showToast("Still fetching chapters — one sec.", "info");
+            return;
+        }
         if (inLibrary) {
             showToast("Already in library.", "info");
             return;
@@ -296,11 +349,11 @@ export const ManhwaSeries = () => {
         if (remoteMetadata && novel) {
             await manhwaScraperService.startImport(novel.sourceUrl!, remoteMetadata);
             showToast("Import complete!", "success");
-            navigate('/'); // The library is actually at '/'
+            navigate('/');
         }
-    };
+    }, [chaptersLoading, inLibrary, remoteMetadata, novel, showToast, navigate]);
 
-    const handleReadNow = () => {
+    const handleReadNow = useCallback(() => {
         if (!novel || chapters.length === 0) return;
         if (!inLibrary) {
             showToast("Please save the series to your library first to read chapters.", "warning");
@@ -314,9 +367,9 @@ export const ManhwaSeries = () => {
         }
 
         handleChapterSelect(targetChapter);
-    };
+    }, [novel, chapters, inLibrary, showToast, handleChapterSelect]);
 
-    const handleDownload = async (chapter: Chapter) => {
+    const handleDownload = useCallback(async (chapter: Chapter) => {
         if (!novel || !novelId) return;
 
         setDownloadingChapterIds(prev => new Set(prev).add(chapter.id));
@@ -352,11 +405,11 @@ export const ManhwaSeries = () => {
                 return next;
             });
         }
-    };
+    }, [novel, novelId]);
 
     const [massDownloadProgress, setMassDownloadProgress] = useState<{ current: number; total: number } | null>(null);
 
-    const handleMassDownload = async () => {
+    const handleMassDownload = useCallback(async () => {
         if (!novel || chapters.length === 0) return;
 
         const undownloaded = chapters.filter(c => !c.content && !c.isRead);
@@ -389,7 +442,7 @@ export const ManhwaSeries = () => {
         setMassDownloadProgress(null);
         showToast(`Downloaded ${targetChapters.length} chapters`, "success");
         console.log("[ManhwaSeries] Mass download complete.");
-    };
+    }, [novel, chapters, handleDownload, showToast]);
 
     if (isLoading) {
         return (
@@ -421,7 +474,8 @@ export const ManhwaSeries = () => {
             <motion.div
                 initial={false}
                 animate={{ y: showHeader ? 0 : -100 }}
-                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                transition={{ duration: 0.22, ease: 'circOut' }}
+                style={{ willChange: 'transform' }}
                 className="fixed top-0 left-0 right-0 z-50 pointer-events-none"
             >
                 {/* Background layer: Gradient (Top of page) */}
@@ -448,12 +502,13 @@ export const ManhwaSeries = () => {
             </motion.div>
 
             <SeriesHero
-                novel={novel}
+                novel={novel!}
                 onReadNow={handleReadNow}
                 onToggleLibrary={handleToggleLibrary}
                 chapterCount={chapters.length}
                 inLibrary={inLibrary}
                 hasStartedReading={hasStartedReading}
+                isLoading={metadataLoading}
             />
 
             <div className="mt-8 flex-1 flex flex-col">
@@ -466,6 +521,7 @@ export const ManhwaSeries = () => {
                     downloadingChapterIds={downloadingChapterIds}
                     failedChapterIds={failedChapterIds}
                     massDownloadProgress={massDownloadProgress}
+                    isLoadingChapters={chaptersLoading}
                 />
             </div>
 

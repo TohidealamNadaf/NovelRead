@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { Download, CheckCircle2, ArrowUpDown, Grip, List as ListIcon, Loader2, WifiOff, AlignJustify } from 'lucide-react';
+import { Download, CheckCircle2, ArrowUpDown, Grip, List as ListIcon, Loader2, WifiOff, AlignJustify, ChevronUp, ChevronDown } from 'lucide-react';
 import type { Chapter } from '../../services/db.service';
 import clsx from 'clsx';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
@@ -13,6 +13,7 @@ interface ChapterListProps {
     downloadingChapterIds?: Set<string>;
     failedChapterIds?: Set<string>;
     massDownloadProgress?: { current: number; total: number } | null;
+    isLoadingChapters?: boolean;
 }
 
 const ChapterRow = React.memo(({
@@ -29,11 +30,11 @@ const ChapterRow = React.memo(({
     isDownloading: boolean;
     isFailed: boolean;
     viewDensity: 'compact' | 'comfortable';
-    onClick: () => void;
-    onDownload: (e: React.MouseEvent) => void;
+    onClick: (chapter: Chapter) => void;
+    onDownload: (chapter: Chapter, e: React.MouseEvent) => void;
 }) => (
     <div
-        onClick={onClick}
+        onClick={() => onClick(chapter)}
         className={clsx(
             "flex items-center justify-between group cursor-pointer active:opacity-70 transition-opacity px-6",
             viewDensity === 'compact' ? "py-2.5" : "py-4",
@@ -81,7 +82,7 @@ const ChapterRow = React.memo(({
             </div>
         </div>
         <button
-            onClick={onDownload}
+            onClick={(e) => { e.stopPropagation(); onDownload(chapter, e); }}
             disabled={isDownloading || !!chapter.content}
             className={clsx(
                 "p-2 -mr-2 transition-colors",
@@ -108,10 +109,10 @@ const ChapterGridItem = React.memo(({
 }: {
     chapter: Chapter;
     isCurrent: boolean;
-    onClick: () => void;
+    onClick: (chapter: Chapter) => void;
 }) => (
     <div
-        onClick={onClick}
+        onClick={() => onClick(chapter)}
         className={clsx(
             "aspect-square rounded-xl border flex flex-col items-center justify-center p-2 cursor-pointer active:scale-95 transition-transform relative overflow-hidden",
             isCurrent
@@ -134,7 +135,7 @@ const ChapterGridItem = React.memo(({
     </div>
 ));
 
-export const ChapterList: React.FC<ChapterListProps> = ({
+const ChapterListBase: React.FC<ChapterListProps> = ({
     chapters,
     onChapterSelect,
     onDownload,
@@ -142,13 +143,46 @@ export const ChapterList: React.FC<ChapterListProps> = ({
     currentChapterId,
     downloadingChapterIds = new Set(),
     failedChapterIds = new Set(),
-    massDownloadProgress = null
+    massDownloadProgress = null,
+    isLoadingChapters = false
 }) => {
     const [sortDesc, setSortDesc] = useState(true);
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
     const [viewDensity, setViewDensity] = useState<'compact' | 'comfortable'>('compact');
     const parentRef = useRef<HTMLDivElement>(null);
     const [scrollMargin, setScrollMargin] = useState(0);
+
+    const [showScrollTop, setShowScrollTop] = useState(false);
+    const [showScrollBottom, setShowScrollBottom] = useState(true);
+    const [isScrolledDeep, setIsScrolledDeep] = useState(false);
+
+    useEffect(() => {
+        let rafId: number | null = null;
+        let topShown = showScrollTop;
+        let bottomShown = showScrollBottom;
+        let deep = isScrolledDeep;
+
+        const handleScroll = () => {
+            if (rafId !== null) return;
+            rafId = requestAnimationFrame(() => {
+                const y = window.scrollY;
+                const atBottom = window.innerHeight + y >= document.documentElement.scrollHeight - 200;
+
+                if ((y > 200) !== topShown) { setShowScrollTop(y > 200); topShown = y > 200; }
+                if (!atBottom !== bottomShown) { setShowScrollBottom(!atBottom); bottomShown = !atBottom; }
+                if ((y > 450) !== deep) { setIsScrolledDeep(y > 450); deep = y > 450; }
+
+                rafId = null;
+            });
+        };
+
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        handleScroll();
+        return () => { 
+            window.removeEventListener('scroll', handleScroll); 
+            if (rafId) cancelAnimationFrame(rafId); 
+        };
+    }, []);
 
     useLayoutEffect(() => {
         const updateScrollMargin = () => {
@@ -211,7 +245,30 @@ export const ChapterList: React.FC<ChapterListProps> = ({
         }
     }, [currentChapterId, sortedChapters, rowVirtualizer, viewMode]);
 
+    const scrollToTop = () => {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+    };
+
+    const scrollToBottom = () => {
+        const lastIndex = viewMode === 'list'
+            ? sortedChapters.length - 1
+            : Math.ceil(sortedChapters.length / 3) - 1;
+        if (lastIndex < 0) return;
+        rowVirtualizer.scrollToIndex(lastIndex, { align: 'end' });
+        requestAnimationFrame(() => {
+            rowVirtualizer.scrollToIndex(lastIndex, { align: 'end' });
+        });
+    };
+
     if (chapters.length === 0) {
+        if (isLoadingChapters) {
+            return (
+                <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
+                    <Loader2 size={32} className="animate-spin text-primary" />
+                    <p className="font-medium">Loading chapters...</p>
+                </div>
+            );
+        }
         return (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400">
                 <span className="text-4xl mb-4">📭</span>
@@ -365,11 +422,8 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                                         isDownloading={downloadingChapterIds.has(chapter.id)}
                                         isFailed={failedChapterIds.has(chapter.id)}
                                         viewDensity={viewDensity}
-                                        onClick={() => onChapterSelect(chapter)}
-                                        onDownload={(e) => {
-                                            e.stopPropagation();
-                                            onDownload(chapter);
-                                        }}
+                                        onClick={onChapterSelect}
+                                        onDownload={onDownload}
                                     />
                                 </div>
                             );
@@ -395,7 +449,7 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                                             key={chapter.id}
                                             chapter={chapter}
                                             isCurrent={chapter.id === currentChapterId}
-                                            onClick={() => onChapterSelect(chapter)}
+                                            onClick={onChapterSelect}
                                         />
                                     ))}
                                 </div>
@@ -404,6 +458,29 @@ export const ChapterList: React.FC<ChapterListProps> = ({
                     })}
                 </div>
             </div>
+
+            <div className={`fixed right-4 z-30 flex flex-col gap-2 transition-all duration-300 ${isScrolledDeep ? 'bottom-24' : 'bottom-6'}`}>
+                {showScrollTop && (
+                    <button
+                        onClick={scrollToTop}
+                        aria-label="Scroll to top"
+                        className="h-11 w-11 flex items-center justify-center rounded-full bg-white dark:bg-[#1d1c27] border border-slate-200 dark:border-white/10 shadow-lg text-slate-600 dark:text-slate-300 active:scale-90 transition-transform"
+                    >
+                        <ChevronUp size={22} />
+                    </button>
+                )}
+                {showScrollBottom && (
+                    <button
+                        onClick={scrollToBottom}
+                        aria-label="Scroll to bottom"
+                        className="h-11 w-11 flex items-center justify-center rounded-full bg-white dark:bg-[#1d1c27] border border-slate-200 dark:border-white/10 shadow-lg text-slate-600 dark:text-slate-300 active:scale-90 transition-transform"
+                    >
+                        <ChevronDown size={22} />
+                    </button>
+                )}
+            </div>
         </div>
     );
 };
+
+export const ChapterList = React.memo(ChapterListBase);

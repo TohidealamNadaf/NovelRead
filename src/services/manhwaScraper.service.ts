@@ -203,21 +203,78 @@ export class ManhwaScraperService {
         return await asuraScraperService.searchManga(query);
     }
 
-    async fetchNovel(url: string): Promise<NovelMetadata> {
-        // MANGAFIRE
+    async fetchNovelMetadata(url: string): Promise<NovelMetadata | null> {
+        const cacheKey = `novelMeta_${url}`;
+        const cached = await dbService.getCache(cacheKey);
+        if (cached?.timestamp && Date.now() - cached.timestamp < 15 * 60 * 1000) {
+            return cached.data;
+        }
+
         if (url.includes('mangafire.to')) {
-            const data = await mangafireScraperService.fetchMangaDetails(url);
-            if (data) return data;
+            const result = await mangafireScraperService.fetchMetadata(url);
+            if (result) await dbService.setCache(cacheKey, { data: result, timestamp: Date.now() });
+            return result;
         }
 
-        // ASURA SCANS
         if (url.includes('asuracomic.net') || url.includes('asuratoon.com') || url.includes('asurascans.com')) {
-            const data = await asuraScraperService.fetchMangaDetails(url);
-            if (data) return data;
+            const full = await asuraScraperService.fetchMangaDetails(url);
+            if (!full) return null;
+
+            const { chapters, ...metaOnly } = full;
+            await dbService.setCache(cacheKey, { data: { ...metaOnly, chapters: [] }, timestamp: Date.now() });
+            const mappedChapters = chapters.map(ch => ({ ...ch, date: ch.date || '' }));
+            await dbService.setCache(`novelChapters_${url}`, { data: mappedChapters, timestamp: Date.now() });
+            return { ...metaOnly, chapters: [] } as NovelMetadata;
         }
 
-        // GENERIC FALLBACK
-        return this.fetchGenericNovel(url);
+        const result = await this.fetchGenericNovel(url);
+        if (result) await dbService.setCache(cacheKey, { data: result, timestamp: Date.now() });
+        return result;
+    }
+
+    async fetchNovelChapters(url: string): Promise<{ title: string; url: string; date: string }[]> {
+        const cacheKey = `novelChapters_${url}`;
+        const cached = await dbService.getCache(cacheKey);
+        if (cached?.timestamp && Date.now() - cached.timestamp < 15 * 60 * 1000) {
+            return cached.data;
+        }
+
+        let chapters: { title: string; url: string; date: string }[] = [];
+        if (url.includes('mangafire.to')) {
+            chapters = await mangafireScraperService.fetchChapterList(url);
+        } else if (url.includes('asuracomic.net') || url.includes('asuratoon.com') || url.includes('asurascans.com')) {
+            const full = await asuraScraperService.fetchMangaDetails(url);
+            chapters = (full?.chapters || []).map(ch => ({ ...ch, date: ch.date || '' }));
+        } else {
+            const full = await this.fetchGenericNovel(url);
+            chapters = (full?.chapters || []).map(ch => ({ ...ch, date: ch.date || '' }));
+        }
+
+        if (chapters.length > 0) await dbService.setCache(cacheKey, { data: chapters, timestamp: Date.now() });
+        return chapters;
+    }
+
+    async fetchNovel(url: string): Promise<NovelMetadata> {
+        const cacheKey = `novelDetails_${url}`;
+        const cached = await dbService.getCache(cacheKey);
+        if (cached?.timestamp && Date.now() - cached.timestamp < 15 * 60 * 1000) {
+            console.log('[ManhwaScraper] Serving cached novel details (15 min TTL) — no network hit');
+            return cached.data;
+        }
+
+        let result: NovelMetadata;
+        if (url.includes('mangafire.to')) {
+            result = (await mangafireScraperService.fetchMangaDetails(url)) || await this.fetchGenericNovel(url);
+        } else if (url.includes('asuracomic.net') || url.includes('asuratoon.com') || url.includes('asurascans.com')) {
+            result = (await asuraScraperService.fetchMangaDetails(url)) || await this.fetchGenericNovel(url);
+        } else {
+            result = await this.fetchGenericNovel(url);
+        }
+
+        if (result?.chapters?.length > 0) {
+            await dbService.setCache(cacheKey, { data: result, timestamp: Date.now() });
+        }
+        return result;
     }
 
     private async fetchGenericNovel(url: string): Promise<NovelMetadata> {
