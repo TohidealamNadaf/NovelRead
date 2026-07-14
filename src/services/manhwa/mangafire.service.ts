@@ -328,6 +328,19 @@ export class MangaFireScraperService {
             return [];
         }
     }
+
+    async fetchLatestUpdates(page: number): Promise<NovelMetadata[]> {
+        try {
+            // Correct sort param for "Latest Updates" on MangaFire
+            const data = await this.fetchJson(
+                `${BASE_URL}/api/titles?order[chapter_updated_at]=desc&page=${page}&limit=30`
+            );
+            return this.extractListFromData(data);
+        } catch (e) {
+            console.error('[MangaFire] Latest updates error:', e);
+            return [];
+        }
+    }
 }
 
 export const mangafireScraperService = new MangaFireScraperService();

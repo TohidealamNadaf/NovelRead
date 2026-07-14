@@ -11,6 +11,7 @@ interface ManhwaDiscoverSectionProps {
     manhwaSearchResults?: any[];
     searchQuery?: string;
     onClearSearch?: () => void;
+    mode?: 'manhwa' | 'mangafire';
 }
 
 export const ManhwaDiscoverSection = memo(({
@@ -21,7 +22,8 @@ export const ManhwaDiscoverSection = memo(({
     searchPerformed,
     manhwaSearchResults,
     searchQuery,
-    onClearSearch
+    onClearSearch,
+    mode = 'manhwa'
 }: ManhwaDiscoverSectionProps) => {
     const navigate = useNavigate();
 
@@ -210,7 +212,7 @@ export const ManhwaDiscoverSection = memo(({
                     <div className="flex items-center justify-between px-4">
                         <h3 className="text-lg font-bold tracking-tight">Latest Updates</h3>
                         <button
-                            onClick={() => navigate('/discover/latest?mode=manhwa')}
+                            onClick={() => navigate(`/discover/latest?mode=${mode}`)}
                             className="text-primary text-sm font-medium"
                         >
                             See all

@@ -4,6 +4,18 @@ import type { HomeData, NovelMetadata, ScrapedChapter } from './scraper.service'
 import * as cheerio from 'cheerio';
 
 export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
+    public getProxies(_url?: string): string[] {
+        const isNative = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
+        if (isNative) {
+            return ['', 'https://api.codetabs.com/v1/proxy?quest=', 'https://corsproxy.io/?'];
+        }
+        return [
+            'https://api.codetabs.com/v1/proxy?quest=',
+            'https://corsproxy.io/?',
+            'https://api.allorigins.win/raw?url=',
+            '/api/proxy?url='
+        ];
+    }
     private parseFreeWebNovelsList($: cheerio.CheerioAPI, selector: string): (NovelMetadata & { sourceUrl: string })[] {
         const novels: (NovelMetadata & { sourceUrl: string })[] = [];
         const origin = 'https://freewebnovel.com';

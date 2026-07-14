@@ -4,12 +4,19 @@ import { RefreshCcw } from 'lucide-react';
 interface DiscoverSyncModalProps {
     showSyncModal: boolean;
     syncProgress: { task: string; current: number; total: number };
+    mode?: 'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire';
 }
 
-export const DiscoverSyncModal = memo(({ showSyncModal, syncProgress }: DiscoverSyncModalProps) => {
+export const DiscoverSyncModal = memo(({ showSyncModal, syncProgress, mode = 'novelfire' }: DiscoverSyncModalProps) => {
     if (!showSyncModal) return null;
 
     const progressPercentage = syncProgress.total > 0 ? (syncProgress.current / syncProgress.total) * 100 : 0;
+
+    const sourceLabel =
+        mode === 'freewebnovel' ? 'FreeWebNovel' :
+        mode === 'manhwa' ? 'Asura Scans' :
+        mode === 'mangafire' ? 'MangaFire' :
+        'NovelFire';
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -20,7 +27,7 @@ export const DiscoverSyncModal = memo(({ showSyncModal, syncProgress }: Discover
                 </div>
                 <h3 className="text-xl font-bold mb-2">Syncing Discover</h3>
                 <p className="text-slate-500 dark:text-[#a19db9] text-sm mb-6 leading-relaxed">
-                    Updating all categories from NovelFire. This may take a few seconds.
+                    Updating all categories from {sourceLabel}. This may take a few seconds.
                 </p>
 
                 <div className="w-full space-y-4">

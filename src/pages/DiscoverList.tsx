@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { useQuickReturnHeader } from '../hooks/useQuickReturnHeader';
 import { scraperService } from '../services/scraper.service';
 import { manhwaScraperService } from '../services/manhwaScraper.service';
+import { dbService } from '../services/db.service';
 import { useLocation } from 'react-router-dom';
 
 export const DiscoverList = () => {
@@ -72,41 +73,42 @@ export const DiscoverList = () => {
         const homeData = storedHomeData ? JSON.parse(storedHomeData) : null;
 
         try {
-            if (mode === 'manhwa') {
-                const storedManhwaData = localStorage.getItem('manhwaDiscoveryData');
-                let manhwaData = storedManhwaData ? JSON.parse(storedManhwaData) : null;
+            if (mode === 'manhwa' || mode === 'mangafire') {
+                const cacheKey = mode === 'mangafire' ? 'mangafireDiscoveryData' : 'manhwaDiscoveryData';
+                let sectionData = await dbService.getCache(cacheKey);
 
-                // Fallback: if no cached data and page 1, try to fetch home data
-                if (!manhwaData && pageNum === 1) {
+                if (!sectionData && pageNum === 1) {
                     try {
-                        manhwaData = await manhwaScraperService.getDiscoveryData();
-                        if (manhwaData) {
-                            localStorage.setItem('manhwaDiscoveryData', JSON.stringify(manhwaData));
-                        }
-                    } catch (e) {
-                        console.error("Discovery fetch failed", e);
-                    }
+                        sectionData = mode === 'mangafire'
+                            ? await manhwaScraperService.getDiscoveryData('mangafire')
+                            : await manhwaScraperService.getDiscoveryData('asura');
+                        if (sectionData) await dbService.setCache(cacheKey, sectionData);
+                    } catch (e) { console.error("Discovery fetch failed", e); }
                 }
 
                 if (category === 'trending') {
-                    pageTitle = 'Trending Manhwa';
-                    data = manhwaData?.trending || [];
+                    pageTitle = mode === 'mangafire' ? 'Trending Manga' : 'Trending Manhwa';
+                    data = sectionData?.trending || [];
                     setHasMore(false);
                 } else if (category === 'popular') {
-                    pageTitle = 'Popular Manhwa';
-                    data = manhwaData?.popular || [];
+                    pageTitle = mode === 'mangafire' ? 'Popular Manga' : 'Popular Manhwa';
+                    data = sectionData?.popular || [];
                     setHasMore(false);
                 } else if (category === 'latest') {
                     pageTitle = 'Latest Updates';
-                    const liveLatest = await manhwaScraperService.fetchSeriesList(pageNum);
-                    data = liveLatest;
-                    // If no live data, fallback to home data for page 1
-                    if (data.length === 0 && pageNum === 1) {
-                        data = manhwaData?.latest || [];
+                    // Page 1: use cached discovery section if available (instant)
+                    // Page 2+: always fetch from API with correct pagination + sort
+                    if (pageNum === 1 && sectionData?.latest?.length > 0) {
+                        data = sectionData.latest;
+                    } else {
+                        data = await manhwaScraperService.fetchLatestUpdates(
+                            pageNum,
+                            mode === 'mangafire' ? 'mangafire' : 'asura'
+                        );
                     }
-                    setHasMore(liveLatest.length >= 10); // Asura usually shows 15+ per page
+                    setHasMore(data.length >= 10);
                 } else {
-                    pageTitle = category ? category.charAt(0).toUpperCase() + category.slice(1) : 'Manhwa';
+                    pageTitle = category ? category.charAt(0).toUpperCase() + category.slice(1) : (mode === 'mangafire' ? 'Manga' : 'Manhwa');
                     setHasMore(false);
                 }
             } else {
@@ -168,7 +170,7 @@ export const DiscoverList = () => {
     const filteredItems = items.filter(n => n.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const handleItemClick = (item: any) => {
-        if (mode === 'manhwa') {
+        if (mode === 'manhwa' || mode === 'mangafire') {
             navigate(`/manhwa/${encodeURIComponent(item.sourceUrl)}`);
         } else {
             navigate(`/novel/live-${encodeURIComponent(item.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`, { state: { liveMode: true, novel: item } });
@@ -248,7 +250,7 @@ export const DiscoverList = () => {
                     <div className="flex flex-col gap-6">
                         <div className="grid grid-cols-4 gap-x-3 gap-y-4">
                             {filteredItems.map((item, index) => (
-                                <div key={index} className="flex flex-col gap-1.5 cursor-pointer active:scale-95 transition-transform" onClick={() => handleItemClick(item)}>
+                                <div key={item.sourceUrl || `${mode}-${category}-${index}`} className="flex flex-col gap-1.5 cursor-pointer active:scale-95 transition-transform" onClick={() => handleItemClick(item)}>
                                     <div className="relative aspect-[2/3] w-full rounded-lg overflow-hidden shadow-md border border-slate-100 dark:border-white/5 bg-slate-200 dark:bg-[#2b2839]">
                                         {item.coverUrl ? (
                                             <img
@@ -295,8 +297,8 @@ export const DiscoverList = () => {
                         </div>
 
                         {/* Pagination Controls */}
-                        {((mode !== 'manhwa' && (category === 'ranking' || category === 'latest' || category === 'completed' || category === 'new' || category === 'recentlyAdded' || category === 'recently-added')) ||
-                            (mode === 'manhwa' && category === 'latest')) && (
+                        {((mode !== 'manhwa' && mode !== 'mangafire' && (category === 'ranking' || category === 'latest' || category === 'completed' || category === 'new' || category === 'recentlyAdded' || category === 'recently-added')) ||
+                            ((mode === 'manhwa' || mode === 'mangafire') && category === 'latest')) && (
                                 <div className="flex items-center justify-between pt-4 pb-8">
                                     <button
                                         onClick={() => handlePageChange('prev')}

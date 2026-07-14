@@ -195,6 +195,14 @@ export class ManhwaScraperService {
         return await asuraScraperService.fetchSeriesList(page);
     }
 
+    async fetchLatestUpdates(page: number, source: 'asura' | 'mangafire' = 'asura'): Promise<NovelMetadata[]> {
+        if (source === 'mangafire') {
+            return await mangafireScraperService.fetchLatestUpdates(page);
+        }
+        // Asura has no dedicated "latest" API; /browse?page=N is the closest paginated feed
+        return await asuraScraperService.fetchSeriesList(page);
+    }
+
     // --- Search API ---
     async searchManga(query: string, source: 'asura' | 'mangafire' = 'asura'): Promise<NovelMetadata[]> {
         if (source === 'mangafire') {

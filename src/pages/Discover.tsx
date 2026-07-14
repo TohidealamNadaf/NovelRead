@@ -105,6 +105,8 @@ export const Discover = () => {
 
     // Scroll collapse state
     const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+    
+    const [syncMode, setSyncMode] = useState<'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire'>('novelfire');
 
     const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
         const scrollTop = e.currentTarget.scrollTop;
@@ -287,7 +289,9 @@ export const Discover = () => {
     };
 
     const syncHomeData = useCallback(async (targetModeOrEvent?: 'novelfire' | 'freewebnovel' | 'manhwa' | any) => {
-        const actualTargetMode = typeof targetModeOrEvent === 'string' ? targetModeOrEvent : mode;
+        const actualTargetMode = (typeof targetModeOrEvent === 'string' ? targetModeOrEvent : mode) as 'novelfire' | 'freewebnovel' | 'manhwa' | 'mangafire';
+
+        setSyncMode(actualTargetMode);
 
         if (!navigator.onLine) {
             alert("No internet connection available for sync.");
@@ -457,6 +461,7 @@ export const Discover = () => {
                         />
                     ) : mode === 'manhwa' ? (
                         <ManhwaDiscoverSection
+                            mode="manhwa"
                             manhwaData={manhwaData}
                             isLoadingManhwa={isLoadingManhwa}
                             loadManhwaData={loadManhwaData}
@@ -475,6 +480,7 @@ export const Discover = () => {
                         />
                     ) : (
                         <ManhwaDiscoverSection
+                            mode="mangafire"
                             manhwaData={mangafireData}
                             isLoadingManhwa={isLoadingMangafire}
                             loadManhwaData={loadMangafireData}
@@ -504,7 +510,7 @@ export const Discover = () => {
                 message="The discover page has been refreshed with the latest data."
             />
 
-            <DiscoverSyncModal showSyncModal={showSyncModal} syncProgress={syncProgress} />
+            <DiscoverSyncModal showSyncModal={showSyncModal} syncProgress={syncProgress} mode={syncMode} />
         </div>
     );
 };
