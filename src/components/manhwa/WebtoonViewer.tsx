@@ -3,6 +3,8 @@ import { Loader2 } from 'lucide-react';
 import type { ReaderImageSettings } from '../../pages/ManhwaReader';
 import { Capacitor } from '@capacitor/core';
 
+const IS_NATIVE = Capacitor.isNativePlatform();
+
 interface WebtoonViewerProps {
     content?: string; // HTML content or just parsing logic
     images?: string[]; // If we pre-parse (preferred)
@@ -48,11 +50,6 @@ const filterContentImages = (pages: ImagePage[]): ImagePage[] => {
 const getProxiedUrl = (url: string, cacheBustTimestamp?: number): string => {
     if (!url) return '';
     if (url.startsWith('https://wsrv.nl') || url.startsWith('data:')) return url;
-    
-    const isNative = Capacitor.isNativePlatform();
-    if (isNative) {
-        return url;
-    }
     
     const ts = cacheBustTimestamp ? cacheBustTimestamp : -1;
     return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=1000&output=webp&q=82&il&n=${ts}`;
@@ -125,9 +122,9 @@ export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: p
 
                 const retryCount = retries[page.src] || 0;
                 
-                let currentSrc = getProxiedUrl(page.src);
-                if (retryCount === 1) currentSrc = page.src;
-                else if (retryCount === 2) currentSrc = getProxiedUrl(page.src, Date.now());
+                let currentSrc = IS_NATIVE ? page.src : getProxiedUrl(page.src);
+                if (retryCount === 1) currentSrc = IS_NATIVE ? getProxiedUrl(page.src) : page.src;
+                else if (retryCount >= 2) currentSrc = getProxiedUrl(page.src, Date.now());
 
                 const handleRetryClick = (e: React.MouseEvent<HTMLImageElement>) => {
                     const img = e.currentTarget;
@@ -135,7 +132,7 @@ export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: p
                         e.stopPropagation();
                         setRetries(prev => ({ ...prev, [page.src]: 0 }));
                         img.style.opacity = '1';
-                        img.src = getProxiedUrl(page.src);
+                        img.src = IS_NATIVE ? page.src : getProxiedUrl(page.src);
                     }
                 };
 
