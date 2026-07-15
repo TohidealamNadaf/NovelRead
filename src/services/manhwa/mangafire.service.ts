@@ -4,6 +4,8 @@ import { Capacitor } from '@capacitor/core';
 
 const BASE_URL = 'https://mangafire.to';
 
+export interface MangaFirePage { url: string; width: number; height: number; }
+
 export class MangaFireScraperService {
     private sessionProxyMode: 'vite' | 'codetabs' | 'corsproxy' | null = null;
     private viteBlockedUntil = 0;
@@ -294,7 +296,7 @@ export class MangaFireScraperService {
         return novel;
     }
 
-    async fetchChapterImages(url: string): Promise<string[]> {
+    async fetchChapterImages(url: string): Promise<MangaFirePage[]> {
         // url is either the original web URL or the api URL we stored above
         let apiUrl = url;
         if (!url.includes('/api/chapters/')) {
@@ -310,7 +312,7 @@ export class MangaFireScraperService {
             
             const chapterObj = data.data || data;
             if (chapterObj && chapterObj.pages && Array.isArray(chapterObj.pages)) {
-                return chapterObj.pages.map((p: any) => p.url || p);
+                return chapterObj.pages.map((p: any) => ({ url: p.url || p, width: parseInt(p.width)||0, height: parseInt(p.height)||0 }));
             }
             return [];
         } catch (e) {

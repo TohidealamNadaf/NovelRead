@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { ReaderImageSettings } from '../../pages/ManhwaReader';
+import { Capacitor } from '@capacitor/core';
 
 interface WebtoonViewerProps {
     content?: string; // HTML content or just parsing logic
@@ -9,89 +10,75 @@ interface WebtoonViewerProps {
     imageSettings?: ReaderImageSettings;
 }
 
-/**
- * Check if an image is likely a chapter page (content) or an ad/extra.
- */
-/**
- * Extract page number for sorting.
- * Handles digits and ULID patterns.
- */
+interface ImagePage {
+    src: string;
+    width: number;
+    height: number;
+    trusted?: boolean;
+}
 
-/**
- * Check if an image is content (not ad).
- * Supports Numeric, Prefix-Numeric, ULID, and Hex patterns.
- */
 const isContentPage = (url: string): boolean => {
     if (!url || url.toLowerCase().includes('.gif')) return false;
 
-    // MangaFire CDN pattern: filename is always literally "p.jpg"/"p.webp" etc,
-    // with the real identifying hash living in the path (e.g. /mf/{64charhash}/h/p.jpg).
-    // Must check this BEFORE filename-based heuristics since "p" alone fails all of them.
     if (/\/mf\/[a-f0-9]{20,}\/h\/p\.(jpg|jpeg|png|webp|avif)(\?.*)?$/i.test(url)) {
         return true;
     }
 
-    // Strip query parameters before extracting filename — some CDN URLs
-    // include cache-busting suffixes like ?v=123 that would corrupt the
-    // filename match (e.g. "a1cdd1.webp?v=1" → filename becomes
-    // "a1cdd1.webp?v=1" instead of "a1cdd1.webp").
     const urlWithoutQuery = url.split('?')[0];
     const filename = urlWithoutQuery.split('/').pop() || '';
     const nameWithoutExt = filename.replace(/\.(jpg|jpeg|png|webp|avif|gif)$/i, '');
     const cleanName = nameWithoutExt.replace(/-optimized|_optimized/i, '');
     const lowerName = cleanName.toLowerCase();
 
-    // Blacklist common ad/promo keywords
     const blacklist = ['logo', 'banner', 'discord', 'promo', 'ad-', '_ad', 'patreon', 'ko-fi', 'credit', 'recruit', 'intro', 'outro'];
     if (blacklist.some(term => lowerName.includes(term))) return false;
 
-    // 1. Numeric
     if (/^\d+$/.test(cleanName)) return true;
-
-    // 2. Prefix + Numeric (Restrictive)
     if (/^(page|img|image|p|i)?[-_]?\d+$/i.test(cleanName)) return true;
-
-    // 3. ULID (Asura's newer format) -> 26 chars, starts with 0-7
     if (/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(cleanName)) return true;
-
-    // 4. Short/Long alphanumeric hex hashes (e.g. "a1cdd1", "034de8674d89643194a2b9ed5c0c80d4") —
-    // used by Tomb Raider King, Asura, and MangaFire.
     if (/^[a-f0-9]{4,32}$/i.test(cleanName)) return true;
 
     return false;
 };
 
-/**
- * Filter image URLs: EXTRACT ONLY CONTENT IMAGES.
- * Filters out ads/extras (UUIDs, GIFs) entirely.
- * DOES NOT RE-SORT. Trusts source order.
- */
-const filterContentImages = (urls: string[]): string[] => {
-    return urls.filter(url => url && !url.toLowerCase().includes('.gif') && isContentPage(url));
+const filterContentImages = (pages: ImagePage[]): ImagePage[] => {
+    return pages.filter(page => page.src && !page.src.toLowerCase().includes('.gif') && isContentPage(page.src));
 };
 
-const getProxiedUrl = (url: string): string => {
+const getProxiedUrl = (url: string, cacheBustTimestamp?: number): string => {
     if (!url) return '';
     if (url.startsWith('https://wsrv.nl') || url.startsWith('data:')) return url;
-    // Optimization: WebP, Q75, W1200, Interlaced
-    return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=1200&q=75&output=webp&il`;
+    
+    const isNative = Capacitor.isNativePlatform();
+    if (isNative) {
+        return url;
+    }
+    
+    const ts = cacheBustTimestamp ? cacheBustTimestamp : -1;
+    return `https://wsrv.nl/?url=${encodeURIComponent(url)}&w=1000&output=webp&q=82&il&n=${ts}`;
 };
 
 export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: propImages, isLoading, imageSettings }) => {
-    const [images, setImages] = useState<string[]>([]);
+    const [images, setImages] = useState<ImagePage[]>([]);
+    const [retries, setRetries] = useState<Record<string, number>>({});
 
     useEffect(() => {
         if (propImages && propImages.length > 0) {
-            setImages(filterContentImages(propImages));
+            const pages = propImages.map(src => ({ src, width: 0, height: 0, trusted: false }));
+            setImages(filterContentImages(pages));
         } else if (content) {
-            // Parse images from HTML string
             const parser = new DOMParser();
             const doc = parser.parseFromString(content, 'text/html');
             const imgTags = Array.from(doc.getElementsByTagName('img'));
-            const imageUrls = imgTags
-                .map(img => img.getAttribute('src') || img.getAttribute('data-src'))
-                .filter((src): src is string => !!src);
-            setImages(filterContentImages(imageUrls));
+            const pages: ImagePage[] = imgTags.map(img => {
+                const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
+                const w = parseInt(img.getAttribute('data-w') || '0', 10);
+                const h = parseInt(img.getAttribute('data-h') || '0', 10);
+                const trusted = img.getAttribute('data-trusted') === 'true';
+                return { src, width: w, height: h, trusted };
+            }).filter(p => !!p.src);
+            
+            setImages(filterContentImages(pages));
         }
     }, [content, propImages]);
 
@@ -114,8 +101,8 @@ export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: p
 
     return (
         <div className="flex flex-col w-full bg-black" style={{ filter: imageSettings?.grayscale ? 'grayscale(100%)' : undefined }}>
-            {images.map((src, index) => {
-                const imgStyle: React.CSSProperties = { margin: '0 auto', padding: 0, display: 'block', minHeight: '300px' };
+            {images.map((page, index) => {
+                const imgStyle: React.CSSProperties = { margin: '0 auto', padding: 0, display: 'block', objectFit: 'contain', width: '100%' };
 
                 if (imageSettings?.limitMaxWidth) {
                     imgStyle.maxWidth = '800px';
@@ -123,10 +110,8 @@ export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: p
                 
                 if (imageSettings?.limitMaxHeight) {
                     imgStyle.maxHeight = '1200px';
-                    imgStyle.objectFit = 'contain';
                 } else if (imageSettings?.fitHeight) {
                     imgStyle.maxHeight = '100vh';
-                    imgStyle.objectFit = 'contain';
                 }
 
                 if (imageSettings?.fitWidth) {
@@ -138,42 +123,67 @@ export const WebtoonViewer: React.FC<WebtoonViewerProps> = ({ content, images: p
                     }
                 }
 
+                const retryCount = retries[page.src] || 0;
+                
+                let currentSrc = getProxiedUrl(page.src);
+                if (retryCount === 1) currentSrc = page.src;
+                else if (retryCount === 2) currentSrc = getProxiedUrl(page.src, Date.now());
+
+                const handleRetryClick = (e: React.MouseEvent<HTMLImageElement>) => {
+                    const img = e.currentTarget;
+                    if (img.style.opacity === '0.25') {
+                        e.stopPropagation();
+                        setRetries(prev => ({ ...prev, [page.src]: 0 }));
+                        img.style.opacity = '1';
+                        img.src = getProxiedUrl(page.src);
+                    }
+                };
+
                 return (
-                <img
-                    key={`${src}-${index}`}
-                    src={getProxiedUrl(src)}
-                    alt={`Page ${index + 1}`}
-                    loading={index < 3 ? "eager" : "lazy"}
-                    decoding="async"
-                    className="block"
-                    style={imgStyle}
-                    onError={(e) => {
-                        const img = e.currentTarget;
-                        if (img.src.includes('wsrv.nl')) {
-                            img.src = src;
-                        } else {
-                            img.style.display = 'none';
-                        }
-                    }}
-                    onLoad={(e) => {
-                        const img = e.currentTarget;
-                        const w = img.naturalWidth;
-                        const h = img.naturalHeight;
+                    <div 
+                        key={`${page.src}-${index}`} 
+                        style={{ 
+                            position: 'relative', 
+                            width: '100%', 
+                            backgroundColor: '#0a0a0a', 
+                            aspectRatio: page.width && page.height ? `${page.width}/${page.height}` : undefined, 
+                            minHeight: page.width && page.height ? undefined : '300px' 
+                        }}
+                    >
+                        <img
+                            src={currentSrc}
+                            alt={retryCount >= 3 ? `Tap to retry page ${index + 1}` : `Page ${index + 1}`}
+                            loading={index < 3 ? "eager" : "lazy"}
+                            decoding="async"
+                            referrerPolicy="no-referrer"
+                            className="block"
+                            style={{ ...imgStyle, opacity: retryCount >= 3 ? 0.25 : 1 }}
+                            onClick={handleRetryClick}
+                            onError={() => {
+                                const nextRetry = (retries[page.src] || 0) + 1;
+                                if (nextRetry <= 3) {
+                                    setRetries(prev => ({ ...prev, [page.src]: nextRetry }));
+                                }
+                            }}
+                            onLoad={(e) => {
+                                const img = e.currentTarget;
+                                if (page.trusted) return;
 
-                        // Heuristic 1: Wide Banner (e.g. 728x90, 800x200) - Limit height to avoid hiding wide panoramic panels
-                        const isBanner = w > h * 1.5 && h < 600;
+                                const w = img.naturalWidth;
+                                const h = img.naturalHeight;
 
-                        // Heuristic 2: Small/Medium Square or Landscape (e.g. 300x250, 500x500, 800x600 Discord invites)
-                        // Allow large double spreads (h > 800)
-                        const isSquareOrLandscapeAd = w >= h && h < 800;
+                                const isTinyAd = w <= 300 && h <= 100;
+                                const isBanner = w > h * 3 && h < 250;
 
-                        if (isBanner || isSquareOrLandscapeAd) {
-                            console.log(`[WebtoonViewer] Hiding ad-like image: ${src} (${w}x${h})`);
-                            img.style.display = 'none';
-                        }
-                    }}
-                />
-            )})}
+                                if (isTinyAd || isBanner) {
+                                    console.log(`[WebtoonViewer] Hiding ad-like image: ${page.src} (${w}x${h})`);
+                                    img.style.display = 'none';
+                                }
+                            }}
+                        />
+                    </div>
+                );
+            })}
         </div>
     );
 };

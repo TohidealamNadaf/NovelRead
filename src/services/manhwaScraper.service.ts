@@ -491,7 +491,7 @@ export class ManhwaScraperService {
         if (url.includes('mangafire.to')) {
             const images = await mangafireScraperService.fetchChapterImages(url);
             if (images.length === 0) return '<p>No images found.</p>';
-            return images.map(src => `<img src="${src}" class="w-full object-contain" loading="lazy" />`).join('');
+            return images.map(p => `<img src="${p.url}" data-w="${p.width}" data-h="${p.height}" data-trusted="true" width="${p.width}" height="${p.height}" class="w-full" loading="lazy" />`).join('');
         }
 
         // ASURA SCANS
@@ -499,7 +499,7 @@ export class ManhwaScraperService {
             const images = await asuraScraperService.fetchChapterImages(url);
             if (images.length === 0) return '<p>No images found.</p>';
             // Images from asura service are already sorted by filename number
-            return images.map(src => `<img src="${src}" class="w-full object-contain" loading="lazy" />`).join('');
+            return images.map(src => `<img src="${src}" data-trusted="true" class="w-full object-contain" loading="lazy" />`).join('');
         }
 
 
