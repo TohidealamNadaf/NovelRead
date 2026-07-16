@@ -53,7 +53,7 @@ export const Profile = () => {
                 quality: 80,
                 allowEditing: true,
                 resultType: useUri ? CameraResultType.Uri : CameraResultType.DataUrl,
-                source: Capacitor.getPlatform() === 'web' ? CameraSource.Prompt : CameraSource.Prompt,
+                source: CameraSource.Prompt,
                 width: 512, height: 512 // ← resize, saves space
             });
 
@@ -61,23 +61,24 @@ export const Profile = () => {
             if (useUri && image.path) {
                 // Copy native file into persistent app Data dir
                 const fileName = 'profile.jpg';
-                await Filesystem.writeFile({
-                    path: fileName,
-                    data: (await Filesystem.readFile({ path: image.path })).data,
-                    directory: Directory.Data,
-                });
-                const { uri } = await Filesystem.getUri({ path: fileName, directory: Directory.Data });
-                imageToStore = uri; // content:// or file://
+                try {
+                    // Strip file:// prefix if present (Filesystem wants raw path on Android)
+                    const cleanPath = image.path.replace(/^file:\/\//, '');
+                    const fileData = await Filesystem.readFile({ path: cleanPath });
+                    await Filesystem.writeFile({ path: fileName, data: fileData.data, directory: Directory.Data });
+                    const { uri } = await Filesystem.getUri({ path: fileName, directory: Directory.Data });
+                    imageToStore = uri; // content:// or file://
+                } catch (fsErr) {
+                    console.error('[Profile] FS copy failed, storing temp path', fsErr);
+                    imageToStore = image.path; // fallback: still displays now, may not survive cache clear
+                }
             } else if (image.dataUrl) {
                 imageToStore = image.dataUrl;
             } else {
                 return;
             }
 
-            setProfileName(profileName); // keep
             await saveProfile(profileName, imageToStore);
-            // Force re-render from stored value
-            window.dispatchEvent(new CustomEvent('profile-updated', { detail: imageToStore }));
         } catch (e) {
             console.error('Photo selection failed', e);
         }
