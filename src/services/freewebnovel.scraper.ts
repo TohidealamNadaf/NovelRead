@@ -60,10 +60,11 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
     }
 
     async searchNovels(query: string): Promise<NovelMetadata[]> {
-        const url = `https://freewebnovel.com/search`;
-        console.log(`[FreeWebNovel] Searching (POST): ${url} searchkey=${query}`);
+        const encodedQuery = encodeURIComponent(query);
+        const url = `https://freewebnovel.com/search?keyword=${encodedQuery}`;
+        console.log(`[FreeWebNovel] Searching (GET): ${url}`);
         try {
-            const html = await this.fetchHtmlPost(url, { searchkey: query });
+            const html = await this.fetchHtmlWithProxies(url);
             if (!html) return [];
             const $ = cheerio.load(html);
             const novels = this.parseFreeWebNovelsList($, 'div.li');
