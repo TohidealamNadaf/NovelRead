@@ -163,7 +163,7 @@ export class ManhwaScraperService {
     }
 
     // Try all proxies and return the first valid HTML
-    private async fetchWithAllProxies(url: string): Promise<string> {
+    public async fetchWithAllProxies(url: string): Promise<string> {
         for (const proxy of this.getProxies()) {
             const html = await this.fetchHtml(url, proxy || undefined);
             if (html && this.isValidHtml(html)) {
