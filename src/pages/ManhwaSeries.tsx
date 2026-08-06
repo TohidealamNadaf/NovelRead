@@ -177,7 +177,15 @@ export const ManhwaSeries = () => {
                     }
                 } else {
                     const novelData = await dbService.getNovel(novelId);
-                    const chapterData = await dbService.getChapters(novelId);
+                    let chapterData = await dbService.getChapters(novelId);
+
+                    // Auto-repair: fix duplicate chapters from previous sync bugs
+                    const wasRepaired = await dbService.repairDuplicateChapters(novelId);
+                    if (wasRepaired) {
+                        console.log('[ManhwaSeries] Duplicates repaired, reloading chapters');
+                        chapterData = await dbService.getChapters(novelId);
+                    }
+
                     if (!isMounted) return;
                     setNovel(novelData);
                     setChapters(chapterData);
@@ -347,11 +355,25 @@ export const ManhwaSeries = () => {
             return;
         }
         if (remoteMetadata && novel) {
-            await manhwaScraperService.startImport(novel.sourceUrl!, remoteMetadata);
+            // Use chapters from remoteMetadata, but fall back to the UI's
+            // chapters state (which is what the user actually sees listed)
+            // in case remoteMetadata.chapters didn't get populated.
+            let metaToImport = remoteMetadata;
+            if (!metaToImport.chapters || metaToImport.chapters.length === 0) {
+                metaToImport = {
+                    ...metaToImport,
+                    chapters: chapters.map(ch => ({
+                        title: ch.title,
+                        url: ch.audioPath || '',
+                        date: ch.date || '',
+                    })),
+                };
+            }
+            await manhwaScraperService.startImport(novel.sourceUrl!, metaToImport);
             showToast("Import complete!", "success");
             navigate('/');
         }
-    }, [chaptersLoading, inLibrary, remoteMetadata, novel, showToast, navigate]);
+    }, [chaptersLoading, inLibrary, remoteMetadata, novel, chapters, showToast, navigate]);
 
     const handleReadNow = useCallback(() => {
         if (!novel || chapters.length === 0) return;

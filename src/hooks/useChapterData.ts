@@ -63,7 +63,16 @@ export function useChapterData() {
             let dbChaptersCount = 0;
             if (dbNovel) {
                 setNovel(dbNovel);
-                const dbChapters = await dbService.getChapters(novelId);
+                let dbChapters = await dbService.getChapters(novelId);
+
+                // Auto-repair: fix duplicate chapters left by previous sync bugs.
+                // Runs once — if no duplicates exist, it returns false immediately.
+                const wasRepaired = await dbService.repairDuplicateChapters(novelId);
+                if (wasRepaired) {
+                    console.log('[useChapterData] Duplicates repaired, reloading chapters from DB');
+                    dbChapters = await dbService.getChapters(novelId);
+                }
+
                 setChapters(dbChapters);
                 dbChaptersCount = dbChapters.length;
                 setAddedToLibrary(true);

@@ -657,6 +657,100 @@ n.*,
         return (result.values as Chapter[]) || [];
     }
 
+    /**
+     * Auto-repair: detect and remove duplicate chapters for a novel.
+     * Keeps the "best" copy of each chapter (prefers read or downloaded ones).
+     * Re-indexes the surviving chapters sequentially (0, 1, 2, ...).
+     * Returns true if repairs were made.
+     */
+    async repairDuplicateChapters(novelId: string): Promise<boolean> {
+        const db = await this.getDB();
+        if (!db) return false;
+
+        try {
+            // Fetch ALL chapter rows for this novel, ordered by orderIndex
+            const result = await db.query(
+                'SELECT id, novelId, title, orderIndex, audioPath, isRead, date, contentPath FROM chapters WHERE novelId = ? ORDER BY orderIndex ASC',
+                [novelId]
+            );
+            const allChapters = (result.values as Chapter[]) || [];
+            if (allChapters.length === 0) return false;
+
+            // Group by audioPath (source URL) to find duplicates
+            const byUrl = new Map<string, Chapter[]>();
+            for (const ch of allChapters) {
+                const key = ch.audioPath || ch.id; // fallback to id if no audioPath
+                const group = byUrl.get(key) || [];
+                group.push(ch);
+                byUrl.set(key, group);
+            }
+
+            // Check if there are actually any duplicates
+            const hasDuplicates = Array.from(byUrl.values()).some(group => group.length > 1);
+            if (!hasDuplicates) return false;
+
+            console.log(`[DB:repair] Found duplicates in ${novelId}, repairing...`);
+
+            // Pick the best copy from each group: prefer read > downloaded > first
+            const survivors: Chapter[] = [];
+            const idsToDelete: string[] = [];
+
+            for (const [, group] of byUrl) {
+                // Sort: read first, then downloaded (contentPath), then lowest orderIndex
+                group.sort((a, b) => {
+                    if (a.isRead && !b.isRead) return -1;
+                    if (!a.isRead && b.isRead) return 1;
+                    if (a.contentPath && !b.contentPath) return -1;
+                    if (!a.contentPath && b.contentPath) return 1;
+                    return (a.orderIndex ?? 0) - (b.orderIndex ?? 0);
+                });
+
+                survivors.push(group[0]); // Keep the best one
+                for (let i = 1; i < group.length; i++) {
+                    idsToDelete.push(group[i].id);
+                }
+            }
+
+            if (idsToDelete.length === 0) return false;
+
+            console.log(`[DB:repair] Removing ${idsToDelete.length} duplicate chapters, keeping ${survivors.length}`);
+
+            // Delete duplicates
+            return this.enqueueWrite(async () => {
+                const db2 = await this.getDB();
+                if (!db2) return false;
+
+                // Delete in batches
+                const BATCH = 100;
+                for (let i = 0; i < idsToDelete.length; i += BATCH) {
+                    const batch = idsToDelete.slice(i, i + BATCH);
+                    const placeholders = batch.map(() => '?').join(',');
+                    await db2.run(`DELETE FROM chapters WHERE id IN (${placeholders})`, batch);
+                }
+
+                // Re-index survivors sequentially by their original order
+                survivors.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+                for (let i = 0; i < survivors.length; i++) {
+                    const ch = survivors[i];
+                    const newId = `${novelId}-ch-${i}`;
+                    if (ch.orderIndex !== i || ch.id !== newId) {
+                        await db2.run(
+                            'UPDATE chapters SET orderIndex = ?, id = ? WHERE id = ?',
+                            [i, newId, ch.id]
+                        );
+                    }
+                }
+
+                await this.save();
+                console.log(`[DB:repair] Repair complete for ${novelId}: ${survivors.length} chapters, ${idsToDelete.length} duplicates removed`);
+                return true;
+            }) as Promise<boolean>;
+        } catch (e) {
+            console.error(`[DB:repair] Failed for ${novelId}`, e);
+            return false;
+        }
+    }
+
     // --- Maintenance Methods ---
 
     async vacuum() {

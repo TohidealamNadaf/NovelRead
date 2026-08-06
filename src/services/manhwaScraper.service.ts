@@ -80,7 +80,7 @@ export class ManhwaScraperService {
         return true;
     }
 
-    async fetchHtml(url: string, proxyUrl?: string, extraHeaders: Record<string, string> = {}): Promise<string> {
+    async fetchHtml(url: string, proxyUrl?: string, extraHeaders: Record<string, string> = {}, skipValidation = false): Promise<string> {
         if (!navigator.onLine) {
             console.warn('[ManhwaScraper] Device is offline, skipping fetchHtml');
             return '';
@@ -151,9 +151,10 @@ export class ManhwaScraperService {
                 }
             }
 
-            // Validate the HTML is real content, not a challenge page
-            if (this.isValidHtml(html)) {
-                console.log(`[ManhwaScraper] ✓ Got valid HTML (${html.length} chars) via ${proxyName}`);
+            // Validate the response is real content, not a challenge page
+            // skipValidation=true is used for JSON/AJAX endpoints that aren't HTML
+            if (skipValidation || this.isValidHtml(html)) {
+                console.log(`[ManhwaScraper] ✓ Got valid response (${html.length} chars) via ${proxyName}`);
                 return html;
             } else {
                 console.warn(`[ManhwaScraper] ✗ Blocked/challenge page via ${proxyName}`);
@@ -164,11 +165,11 @@ export class ManhwaScraperService {
         return '';
     }
 
-    // Try all proxies and return the first valid HTML
-    public async fetchWithAllProxies(url: string, extraHeaders: Record<string, string> = {}): Promise<string> {
+    // Try all proxies and return the first valid response
+    public async fetchWithAllProxies(url: string, extraHeaders: Record<string, string> = {}, skipValidation = false): Promise<string> {
         for (const proxy of this.getProxies()) {
-            const html = await this.fetchHtml(url, proxy || undefined, extraHeaders);
-            if (html && this.isValidHtml(html)) {
+            const html = await this.fetchHtml(url, proxy || undefined, extraHeaders, skipValidation);
+            if (html && (skipValidation || this.isValidHtml(html))) {
                 return html;
             }
         }
@@ -221,9 +222,19 @@ export class ManhwaScraperService {
         }
 
         if (url.includes('mangafire.to')) {
-            const result = await mangafireScraperService.fetchMetadata(url);
-            if (result) await dbService.setCache(cacheKey, { data: result, timestamp: Date.now() });
-            return result;
+            const full = await mangafireScraperService.fetchMetadata(url);
+            if (!full) return null;
+
+            // Split chapters out and cache separately (same pattern as Asura)
+            // so fetchNovelChapters() hits cache instead of doing a redundant
+            // second network call that may fail and fall back to DOM (only 20).
+            const { chapters, ...metaOnly } = full;
+            await dbService.setCache(cacheKey, { data: { ...metaOnly, chapters: [] }, timestamp: Date.now() });
+            if (chapters && chapters.length > 0) {
+                const mappedChapters = chapters.map(ch => ({ ...ch, date: ch.date || '' }));
+                await dbService.setCache(`novelChapters_${url}`, { data: mappedChapters, timestamp: Date.now() });
+            }
+            return { ...metaOnly, chapters: [] } as NovelMetadata;
         }
 
         if (url.includes('asuracomic.net') || url.includes('asuratoon.com') || url.includes('asurascans.com')) {

@@ -12,13 +12,26 @@ export class MangaFireHtmlScraper {
     }
 
     /**
-     * Fetch a MangaFire AJAX endpoint through the vite proxy.
-     * The vite proxy detects `/ajax/` URLs and uses Puppeteer's browser context
-     * (with cf_clearance) to call `fetch()` with XHR headers, returning raw JSON.
+     * Fetch a MangaFire AJAX endpoint.
+     * Sends proper XHR headers so the server returns JSON (not an HTML challenge).
+     * Skips HTML validation since the response is JSON, not a web page.
      */
     private async fetchAjax(ajaxPath: string): Promise<any> {
         const url = `${BASE_URL}${ajaxPath}`;
-        const text = await this.fetchHtml(url, true);
+        
+        // Proper AJAX/XHR headers — without these, MangaFire returns
+        // an HTML page or Cloudflare challenge instead of JSON.
+        const text = await manhwaScraperService.fetchWithAllProxies(url, {
+            'x-force-puppeteer': 'true',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'Referer': `${BASE_URL}/`,
+        }, true); // skipValidation = true → JSON isn't HTML, skip isValidHtml
+        
+        if (!text || text.length < 2) {
+            console.warn(`[MangaFire] AJAX returned empty for ${ajaxPath}`);
+            return null;
+        }
         
         try {
             return JSON.parse(text);
