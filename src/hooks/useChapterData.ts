@@ -148,7 +148,10 @@ export function useChapterData() {
                         // Incremental Update: Show chapters as they arrive!
                         if (chaptersFound.length > 0) {
                             if (page <= 1 || page % 3 === 0) {
-                                const indexedChapters = chaptersFound.map((ch, idx) => ({
+                                const existingUrls = new Set((chapters || []).map(ch => ch.audioPath).filter(Boolean));
+                                const newChapters = chaptersFound.filter(ch => !existingUrls.has(ch.url));
+
+                                const indexedChapters = newChapters.map((ch, idx) => ({
                                     ...ch,
                                     _index: dbChaptersCount + idx,
                                     date: ch.date
@@ -191,7 +194,10 @@ export function useChapterData() {
                     }, dbChaptersCount, signal); // pass knownChapterCount and signal
 
                     if (data) {
-                        const indexedChapters = data.chapters.map((ch, idx) => ({ ...ch, _index: dbChaptersCount + idx }));
+                        const existingUrls = new Set((chapters || []).map(ch => ch.audioPath).filter(Boolean));
+                        const newChapters = data.chapters.filter(ch => !existingUrls.has(ch.url));
+
+                        const indexedChapters = newChapters.map((ch, idx) => ({ ...ch, _index: dbChaptersCount + idx }));
                         setLiveChapters([...(chapters || []).map(ch => ({
                                     title: ch.title,
                                     url: ch.audioPath || '',
@@ -210,7 +216,7 @@ export function useChapterData() {
                                     coverUrl: data.coverUrl || dbNovel.coverUrl,
                                     summary: data.summary || dbNovel.summary,
                                     status: (data.status && data.status !== 'Unknown' && data.status !== 'Ongoing') ? data.status : (dbNovel.status || data.status),
-                                    totalChapters: data.totalChapters ?? Math.max(dbNovel.totalChapters || 0, dbChaptersCount + data.chapters.length),
+                                    totalChapters: data.totalChapters ?? Math.max(dbNovel.totalChapters || 0, dbChaptersCount + newChapters.length),
                                     lastFetchedAt: Math.floor(Date.now() / 1000)
                                 }, true);
 
@@ -240,7 +246,7 @@ export function useChapterData() {
                                 setNovel(prev => prev ? {
                                     ...prev,
                                     title: (data.title && data.title !== 'Unknown Title' && data.title !== 'Unknown') ? data.title : prev.title,
-                                    totalChapters: data.totalChapters ?? Math.max(prev.totalChapters || 0, dbChaptersCount + data.chapters.length),
+                                    totalChapters: data.totalChapters ?? Math.max(prev.totalChapters || 0, dbChaptersCount + newChapters.length),
                                     lastFetchedAt: Math.floor(Date.now() / 1000)
                                 } : null);
                             }

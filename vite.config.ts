@@ -131,9 +131,58 @@ export default defineConfig({
                 const cachedCookies = cookieJar.get(domain);
                 if (cachedCookies) await page.setCookie(...cachedCookies);
                 await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+                // Special handling for MangaFire AJAX endpoints:
+                // Navigate to homepage first (to get cookies/session), then fetch the AJAX URL
+                // from within the browser context with proper XHR headers.
+                const isMangafireAjax = targetRaw.includes('mangafire.to') && targetRaw.includes('/ajax/');
+                
+                if (isMangafireAjax) {
+                    // Navigate to homepage to establish Cloudflare cookies
+                    await page.goto('https://mangafire.to/home', { waitUntil: 'networkidle2', timeout: 45000 });
+                    await page.waitForSelector('body', { timeout: 10000 }).catch(() => {});
+                    
+                    // Use the browser's fetch() to call the AJAX endpoint (shares cookies)
+                    const ajaxResult = await page.evaluate(async (url: string) => {
+                        try {
+                            const resp = await fetch(url, {
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                    'Accept': 'application/json, text/plain, */*'
+                                }
+                            });
+                            return await resp.text();
+                        } catch (e: any) {
+                            return JSON.stringify({ error: e.message });
+                        }
+                    }, targetRaw);
+                    
+                    const cookies = await page.cookies();
+                    cookieJar.set(domain, cookies);
+                    await page.close();
+                    htmlCache.set(targetRaw, { html: ajaxResult, t: Date.now() });
+                    return ajaxResult;
+                }
+                
+                // Normal page navigation
                 await page.goto(targetRaw, { waitUntil: 'networkidle2', timeout: 45000 });
+                if (targetRaw.includes('mangafire.to')) {
+                    if (targetRaw.includes('/chapter/')) {
+                        // Reader page: wait for reader to render
+                        await page.waitForSelector('.reader-img, .reader, .reader-swiper__img', { timeout: 15000 }).catch(() => {});
+                        // Give extra time for lazy images
+                        await new Promise(r => setTimeout(r, 3000));
+                    } else if (targetRaw.includes('/title/')) {
+                        // Title page
+                        await page.waitForSelector('.title-detail__chapters, h1', { timeout: 15000 }).catch(() => {});
+                    } else {
+                        await page.waitForSelector('.title-rows__link, .home-section__item, .unit-item, .manga-item', { timeout: 15000 }).catch(() => {});
+                    }
+                } else {
+                    await page.waitForSelector('.chapter-list, .manga-item', { timeout: 15000 }).catch(() => {});
+                }
                 const cookies = await page.cookies();
-                cookieJar.set(domain, cookies); // ← persist cf_clearance!
+                cookieJar.set(domain, cookies);
                 const html = await page.content();
                 await page.close();
                 htmlCache.set(targetRaw, { html, t: Date.now() });
@@ -181,7 +230,7 @@ export default defineConfig({
               return;
             }
 
-            if (isBlockedStatus) {
+            if (isBlockedStatus || req.headers['x-force-puppeteer']) {
                 return triggerPuppeteer();
             }
 

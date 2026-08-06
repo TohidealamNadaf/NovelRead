@@ -80,7 +80,7 @@ export class ManhwaScraperService {
         return true;
     }
 
-    async fetchHtml(url: string, proxyUrl?: string): Promise<string> {
+    async fetchHtml(url: string, proxyUrl?: string, extraHeaders: Record<string, string> = {}): Promise<string> {
         if (!navigator.onLine) {
             console.warn('[ManhwaScraper] Device is offline, skipping fetchHtml');
             return '';
@@ -114,6 +114,7 @@ export class ManhwaScraperService {
                 const response = await fetch(finalUrl, {
                     headers: {
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        ...extraHeaders
                     }
                 });
                 if (response.ok) {
@@ -130,6 +131,7 @@ export class ManhwaScraperService {
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                         'Accept-Language': 'en-US,en;q=0.5',
                         'Referer': 'https://google.com',
+                        ...extraHeaders
                     },
                     connectTimeout: 30000,
                     readTimeout: 30000
@@ -163,9 +165,9 @@ export class ManhwaScraperService {
     }
 
     // Try all proxies and return the first valid HTML
-    public async fetchWithAllProxies(url: string): Promise<string> {
+    public async fetchWithAllProxies(url: string, extraHeaders: Record<string, string> = {}): Promise<string> {
         for (const proxy of this.getProxies()) {
-            const html = await this.fetchHtml(url, proxy || undefined);
+            const html = await this.fetchHtml(url, proxy || undefined, extraHeaders);
             if (html && this.isValidHtml(html)) {
                 return html;
             }

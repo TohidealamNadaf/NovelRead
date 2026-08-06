@@ -493,7 +493,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                 const chs = this.extractChaptersFromPage($, listUrl);
                 if (chs.length > 0) pageSize = chs.length;
                 totalPage = this.findTotalPages($);
-                if (_knownChapterCount === 0) firstChapters = chs; // skip if DB already has chaps
+                firstChapters = chs; // Do NOT skip if known > 0, we need them for deduplication and new chapters
                 break;
             } catch { }
         }
