@@ -217,6 +217,21 @@ export const Reader = () => {
             const nData = await dbService.getNovel(nid);
             setNovel(nData);
 
+            console.log(`[Reader] loadData: nid=${nid}, cid=${cid}, cData=${!!cData}, nData=${!!nData}, lastRead=${nData?.lastReadChapterId}`);
+
+            // ALWAYS update reading progress if the novel exists in library
+            // This must happen regardless of whether cData was found
+            if (nData) {
+                await dbService.updateReadingProgress(nid, cid);
+                console.log(`[Reader] Progress saved: novelId=${nid}, chapterId=${cid}`);
+                setReadChapterIds(prev => {
+                    const next = new Set(prev);
+                    next.add(cid);
+                    if (cData?.audioPath) next.add(cData.audioPath);
+                    return next;
+                });
+            }
+
             if (cData) {
                 // AUTO-FETCH: If chapter is empty but has a source URL (stub), fetch it now
                 if ((!cData.content || cData.content.length < 50) && cData.audioPath && cData.audioPath.startsWith('http')) {
@@ -249,7 +264,11 @@ export const Reader = () => {
                     ids.add(c.id);
                     if (c.audioPath) ids.add(c.audioPath);
                 });
-                setReadChapterIds(ids);
+                setReadChapterIds(prev => {
+                    const next = new Set(prev);
+                    ids.forEach(id => next.add(id));
+                    return next;
+                });
 
                 // Restore navigation state if missing (Continue button flow)
                 if (navChapters.length === 0 && localChapters.length > 0) {
@@ -258,15 +277,6 @@ export const Reader = () => {
                         setNavChapters(localChapters);
                     }
                 }
-
-                // Update reading progress (marks chapter as read + updates lastReadChapterId)
-                await dbService.updateReadingProgress(nid, cid);
-                setReadChapterIds(prev => {
-                    const next = new Set(prev);
-                    next.add(cid);
-                    if (cData.audioPath) next.add(cData.audioPath);
-                    return next;
-                });
 
                 // Show content immediately — mark loading as done BEFORE background sync
                 setLoading(false);

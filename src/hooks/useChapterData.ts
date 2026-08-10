@@ -62,6 +62,7 @@ export function useChapterData() {
 
             let dbChaptersCount = 0;
             if (dbNovel) {
+                console.log(`[useChapterData] Novel loaded from DB: id=${dbNovel.id}, lastReadChapterId=${dbNovel.lastReadChapterId}, lastReadAt=${dbNovel.lastReadAt}`);
                 setNovel(dbNovel);
                 let dbChapters = await dbService.getChapters(novelId);
 

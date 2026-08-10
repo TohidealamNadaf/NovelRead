@@ -851,9 +851,11 @@ n.*,
 
                 // Fallback for Live novels (not in DB)
                 const changes = res.changes?.changes || 0;
+                console.log(`[DB] updateReadingProgress: novelId=${novelId}, chapterId=${chapterId}, rowsUpdated=${changes}`);
                 if (changes === 0 && typeof localStorage !== 'undefined') {
                     localStorage.setItem(`lastRead:${novelId}`, chapterId);
                     localStorage.setItem(`lastReadAt:${novelId}`, Date.now().toString());
+                    console.log(`[DB] updateReadingProgress: fallback to localStorage for ${novelId}`);
                 }
 
                 // Mark chapter as read

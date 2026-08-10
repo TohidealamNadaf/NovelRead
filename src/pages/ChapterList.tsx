@@ -526,7 +526,7 @@ export const ChapterList = () => {
                                 `${novel.id}-ch-${idx}` === novel.lastReadChapterId
                             );
 
-                            console.log('[ChapterList] foundChapter:', foundChapter?.id, 'foundLive:', foundLive?.url);
+                            console.log('[ChapterList] Continue click: lastReadChapterId:', novel.lastReadChapterId, 'foundChapter:', foundChapter?.id, 'foundLive:', foundLive?.url, 'chapters count:', chapters.length, 'liveChapters count:', liveChapters.length);
 
                             const lastReadValid = novel.lastReadChapterId && (!!foundChapter || !!foundLive);
 
@@ -588,9 +588,19 @@ export const ChapterList = () => {
                         }}
                         className="group flex items-center gap-2 bg-primary hover:bg-primary-dark text-white rounded-full px-6 py-4 shadow-xl shadow-primary/30 transition-all active:scale-95 hover:scale-105"
                     >
-                        <BookOpen size={24} className={(novel.lastReadChapterId && chapters.some(c => c.id === novel.lastReadChapterId)) ? "" : "animate-pulse"} />
+                        <BookOpen size={24} className={(
+                            novel.lastReadChapterId && (
+                                chapters.some(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId) ||
+                                liveChapters.some((c, idx) => c.url === novel.lastReadChapterId || `${novel.id}-ch-${idx}` === novel.lastReadChapterId)
+                            )
+                        ) ? "" : "animate-pulse"} />
                         <span className="font-bold text-lg">
-                            {(novel.lastReadChapterId && chapters.some(c => c.id === novel.lastReadChapterId)) ? 'Continue' : 'Start Reading'}
+                            {(
+                                novel.lastReadChapterId && (
+                                    chapters.some(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId) ||
+                                    liveChapters.some((c, idx) => c.url === novel.lastReadChapterId || `${novel.id}-ch-${idx}` === novel.lastReadChapterId)
+                                )
+                            ) ? 'Continue' : 'Start Reading'}
                         </span>
                     </button>
                 </div>
