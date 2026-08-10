@@ -308,7 +308,7 @@ export const Reader = () => {
                                 setNavChapters(localChapters);
                             }
                         }
-                    }).catch(syncErr => {
+                    }, localChapters.length, undefined).catch(syncErr => {
                         console.warn("[Reader] Background sync failed", syncErr);
                         if (navChapters.length === 0) {
                             setNavChapters(localChapters);

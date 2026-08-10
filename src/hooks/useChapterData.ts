@@ -52,6 +52,8 @@ export function useChapterData() {
 
         const signal = controller.signal;
 
+        let knownChapters: Chapter[] = [];
+
         try {
             setLoading(true);
             await dbService.initialize();
@@ -75,6 +77,7 @@ export function useChapterData() {
                 }
 
                 setChapters(dbChapters);
+                knownChapters = dbChapters; // keep in sync manually
                 dbChaptersCount = dbChapters.length;
                 setAddedToLibrary(true);
                 setIsPreviewMode(false);
@@ -158,16 +161,16 @@ export function useChapterData() {
                         // Incremental Update: Show chapters as they arrive!
                         if (chaptersFound.length > 0) {
                             if (page <= 1 || page % 3 === 0) {
-                                const existingUrls = new Set((chapters || []).map(ch => ch.audioPath).filter(Boolean));
+                                const existingUrls = new Set(knownChapters.map(ch => ch.audioPath).filter(Boolean));
                                 const newChapters = chaptersFound.filter(ch => !existingUrls.has(ch.url));
 
                                 const indexedChapters = newChapters.map((ch, idx) => ({
                                     ...ch,
-                                    _index: dbChaptersCount + idx,
+                                    _index: knownChapters.length + idx,
                                     date: ch.date
                                 }));
                                 // The scraper returns the growing list of NEW chapters, so we prepend the old ones
-                                setLiveChapters([...(chapters || []).map(ch => ({
+                                setLiveChapters([...knownChapters.map(ch => ({
                                     title: ch.title,
                                     url: ch.audioPath || '',
                                     _index: ch.orderIndex,
@@ -204,11 +207,11 @@ export function useChapterData() {
                     }, dbChaptersCount, signal); // pass knownChapterCount and signal
 
                     if (data) {
-                        const existingUrls = new Set((chapters || []).map(ch => ch.audioPath).filter(Boolean));
+                        const existingUrls = new Set(knownChapters.map(ch => ch.audioPath).filter(Boolean));
                         const newChapters = data.chapters.filter(ch => !existingUrls.has(ch.url));
 
-                        const indexedChapters = newChapters.map((ch, idx) => ({ ...ch, _index: dbChaptersCount + idx }));
-                        setLiveChapters([...(chapters || []).map(ch => ({
+                        const indexedChapters = newChapters.map((ch, idx) => ({ ...ch, _index: knownChapters.length + idx }));
+                        setLiveChapters([...knownChapters.map(ch => ({
                                     title: ch.title,
                                     url: ch.audioPath || '',
                                     _index: ch.orderIndex,
@@ -246,6 +249,7 @@ export function useChapterData() {
                                 // 3. Reload chapters from DB to ensure UI is in sync with DB state
                                 const updatedDbChapters = await dbService.getChapters(novelId);
                                 setChapters(updatedDbChapters);
+                                knownChapters = updatedDbChapters; // keep in sync here too
                             } catch (error) {
                                 console.error("Failed to update DB in loadData", error);
                             }
