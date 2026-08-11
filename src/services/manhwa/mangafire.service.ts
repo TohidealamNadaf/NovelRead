@@ -127,15 +127,6 @@ export class MangaFireHtmlScraper {
         return results;
     }
 
-    private slugify(text: string): string {
-        if (!text) return 'manga';
-        return text
-            .toLowerCase()
-            .replace(/[^\w\s-]/g, '')
-            .replace(/[\s_-]+/g, '-')
-            .replace(/^-+|-+$/g, '');
-    }
-
     /**
      * Extract the numeric manga ID from a MangaFire URL slug.
      * URL format: /manga/naruto.92kk8 or /title/naruto.92kk8 or /manga/naruto-92kk8
