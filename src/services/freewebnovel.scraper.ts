@@ -39,11 +39,14 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             }
 
             if (url) {
+                const author = $el.find('.author, .auth, a[href*="/author/"]').text().replace(/Author\s*:?/i, '').trim() || 'Unknown';
+                const summary = this.cleanSummary($el.find('.desc, .intro, .txt, .summary').text().trim());
+
                 novels.push({
                     title,
-                    author: 'Unknown',
+                    author,
                     coverUrl,
-                    summary: '',
+                    summary,
                     status: 'Ongoing',
                     sourceUrl: url,
                     chapters: []
@@ -218,17 +221,28 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                         extractedCover = `https://freewebnovel.com${extractedCover.startsWith('/') ? '' : '/'}${extractedCover}`;
                     }
                     coverUrl = extractedCover;
-                    let extractedSummary = this.cleanSummary($('.inner').text().trim());
-                    if (!extractedSummary) {
-                        extractedSummary = this.cleanSummary($('meta[property="og:description"]').attr('content') || '');
-                    }
+                    let extractedSummary = 
+                        this.cleanSummary($('.inner').text().trim()) ||
+                        this.cleanSummary($('.intro').text().trim()) ||
+                        this.cleanSummary($('.description').text().trim()) ||
+                        this.cleanSummary($('.detail').text().trim()) ||
+                        this.cleanSummary($('meta[property="og:description"]').attr('content') || '') ||
+                        this.cleanSummary($('meta[name="description"]').attr('content') || '');
                     summary = extractedSummary;
 
-                    const extractedAuthor = $('meta[property="og:novel:author"]').attr('content')?.trim()
-                        || $('span[title="Author"]').next('.right').text().trim();
+                    const extractedAuthor = 
+                        $('meta[property="og:novel:author"]').attr('content')?.trim() ||
+                        $('meta[name="author"]').attr('content')?.trim() ||
+                        $('span[title="Author"]').next('.right').text().trim() ||
+                        $('.right:contains("Author")').text().replace(/Author\s*:?/i, '').trim() ||
+                        $('a[href*="/author/"]').text().trim() ||
+                        $('span:contains("Author")').next().text().trim();
                     if (extractedAuthor) author = extractedAuthor;
 
-                    const extractedStatus = $('span[title="Status"]').next('.right').text().trim() || $('meta[property="og:novel:status"]').attr('content')?.trim();
+                    const extractedStatus = 
+                        $('span[title="Status"]').next('.right').text().trim() || 
+                        $('meta[property="og:novel:status"]').attr('content')?.trim() ||
+                        $('.right:contains("Status")').text().replace(/Status\s*:?/i, '').trim();
                     if (extractedStatus) status = extractedStatus;
 
                     const lastOption = $('#indexselect option').last();
@@ -404,17 +418,28 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                         extractedCover = `https://freewebnovel.com${extractedCover.startsWith('/') ? '' : '/'}${extractedCover}`;
                     }
                     coverUrl = extractedCover;
-                    let extractedSummary = this.cleanSummary($('.inner').text().trim());
-                    if (!extractedSummary) {
-                        extractedSummary = this.cleanSummary($('meta[property="og:description"]').attr('content') || '');
-                    }
+                    let extractedSummary = 
+                        this.cleanSummary($('.inner').text().trim()) ||
+                        this.cleanSummary($('.intro').text().trim()) ||
+                        this.cleanSummary($('.description').text().trim()) ||
+                        this.cleanSummary($('.detail').text().trim()) ||
+                        this.cleanSummary($('meta[property="og:description"]').attr('content') || '') ||
+                        this.cleanSummary($('meta[name="description"]').attr('content') || '');
                     summary = extractedSummary;
 
-                    const extractedAuthor = $('meta[property="og:novel:author"]').attr('content')?.trim()
-                        || $('span[title="Author"]').next('.right').text().trim();
+                    const extractedAuthor = 
+                        $('meta[property="og:novel:author"]').attr('content')?.trim() ||
+                        $('meta[name="author"]').attr('content')?.trim() ||
+                        $('span[title="Author"]').next('.right').text().trim() ||
+                        $('.right:contains("Author")').text().replace(/Author\s*:?/i, '').trim() ||
+                        $('a[href*="/author/"]').text().trim() ||
+                        $('span:contains("Author")').next().text().trim();
                     if (extractedAuthor) author = extractedAuthor;
 
-                    const extractedStatus = $('span[title="Status"]').next('.right').text().trim() || $('meta[property="og:novel:status"]').attr('content')?.trim();
+                    const extractedStatus = 
+                        $('span[title="Status"]').next('.right').text().trim() || 
+                        $('meta[property="og:novel:status"]').attr('content')?.trim() ||
+                        $('.right:contains("Status")').text().replace(/Status\s*:?/i, '').trim();
                     if (extractedStatus) status = extractedStatus;
 
                     let totalChapters: number | undefined;

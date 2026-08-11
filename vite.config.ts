@@ -179,7 +179,7 @@ export default defineConfig({
                         await page.waitForSelector('.title-rows__link, .home-section__item, .unit-item, .manga-item', { timeout: 15000 }).catch(() => {});
                     }
                 } else {
-                    await page.waitForSelector('.chapter-list, .manga-item', { timeout: 15000 }).catch(() => {});
+                    await page.waitForSelector('.chapter-list, .list-chapter, .manga-item, h1.tit, h1, .chapters', { timeout: 15000 }).catch(() => {});
                 }
                 const cookies = await page.cookies();
                 cookieJar.set(domain, cookies);
@@ -212,7 +212,7 @@ export default defineConfig({
 
           const proxyReq = transport.request(options, (proxyRes) => {
             const status = proxyRes.statusCode || 200;
-            const isBlockedStatus = status === 403 || status === 503;
+            const isBlockedStatus = status === 403 || status === 502 || status === 503 || status === 504 || status >= 520;
             const contentType = proxyRes.headers['content-type'] || '';
             const encoding = proxyRes.headers['content-encoding'];
 
@@ -279,13 +279,7 @@ export default defineConfig({
 
           proxyReq.on('error', (err: any) => {
             console.error('[Proxy] Error:', err.message);
-            if (err.code === 'ECONNRESET' || err.message.includes('ECONNRESET')) {
-              return triggerPuppeteer();
-            }
-            if (!res.headersSent) {
-              res.writeHead(502, { 'Content-Type': 'text/plain' });
-            }
-            res.end(`Proxy error: ${err.message}`);
+            return triggerPuppeteer();
           });
 
           proxyReq.setTimeout(60000, () => {
