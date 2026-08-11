@@ -50,14 +50,15 @@ export class MangaFireHtmlScraper {
         const results: NovelMetadata[] = [];
         
         // MangaFire uses specific classes for items in the new UI
-        $('.home-section__item, .title-grid__item, .title-list-item, .filter-item, .title-rows__link').each((_, el) => {
+        $('.unit-item, .manga-item, .inner-item, .item, .title-grid__item, .title-list-item, .filter-item, .home-section__item, .title-rows__link').each((_, el) => {
             const $el = $(el);
-            const $a = $el.is('a') ? $el : $el.find('a[href*="/title/"]').first();
+            const $a = $el.is('a') ? $el : $el.find('a[href*="/title/"], a[href*="/manga/"]').first();
             const link = $a.attr('href') || '';
-            const title = $el.find('.title-row-card__title, h6, .title, strong').first().text().trim() || $el.text().replace(/\n/g, '').trim();
+            const title = $el.find('.title-row-card__title, .info a, .name, .title, h6, strong').first().text().trim() || $a.attr('title') || $el.text().replace(/\n/g, '').trim();
             const cover = $el.find('img').first().attr('src') || 
-                         $el.find('img').first().attr('data-src') || '';
-            const type = $el.find('.title-row-card__type, .type').first().text().trim();
+                         $el.find('img').first().attr('data-src') || 
+                         $el.find('img').first().attr('data-lazy-src') || '';
+            const type = $el.find('.title-row-card__type, .type, .badge').first().text().trim();
             
             if (title && link) {
                 results.push({
@@ -104,11 +105,12 @@ export class MangaFireHtmlScraper {
         const results: NovelMetadata[] = [];
         $(selector).each((_, el) => {
             const $el = $(el);
-            const $a = $el.is('a') ? $el : $el.find('a[href*="/title/"]').first();
+            const $a = $el.is('a') ? $el : $el.find('a[href*="/title/"], a[href*="/manga/"]').first();
             const link = $a.attr('href') || '';
-            const title = $el.find('.title-row-card__title, h6, .title, strong').first().text().trim() || $el.text().replace(/\n/g, '').trim();
+            const title = $el.find('.title-row-card__title, .info a, .name, .title, h6, strong').first().text().trim() || $a.attr('title') || $el.text().replace(/\n/g, '').trim();
             const cover = $el.find('img').first().attr('src') || 
-                         $el.find('img').first().attr('data-src') || '';
+                         $el.find('img').first().attr('data-src') || 
+                         $el.find('img').first().attr('data-lazy-src') || '';
             
             if (title && link) {
                 results.push({
@@ -125,15 +127,24 @@ export class MangaFireHtmlScraper {
         return results;
     }
 
+    private slugify(text: string): string {
+        if (!text) return 'manga';
+        return text
+            .toLowerCase()
+            .replace(/[^\w\s-]/g, '')
+            .replace(/[\s_-]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+    }
+
     /**
      * Extract the numeric manga ID from a MangaFire URL slug.
-     * URL format: /title/92kk8-naruto or /manga/92kk8-naruto
-     * The numeric ID is the alphanumeric part before the dash: "92kk8"
+     * URL format: /manga/naruto.92kk8 or /title/naruto.92kk8 or /manga/naruto-92kk8
+     * The numeric/alphanumeric ID is the part after the last dot or dash: "92kk8"
      */
     private extractMangaId(url: string): string {
-        const urlPath = new URL(url.startsWith('http') ? url : `${BASE_URL}${url}`).pathname;
-        // Match /title/{id}-{slug} or /manga/{id}-{slug}
-        const match = urlPath.match(/\/(?:title|manga)\/([a-zA-Z0-9]+)/);
+        if (!url) return '';
+        const cleanUrl = url.split('?')[0].split('#')[0].replace(/\/$/, '');
+        const match = cleanUrl.match(/[\.\-]([a-zA-Z0-9]+)$/) || cleanUrl.match(/\/([a-zA-Z0-9]+)$/);
         return match ? match[1] : '';
     }
 
