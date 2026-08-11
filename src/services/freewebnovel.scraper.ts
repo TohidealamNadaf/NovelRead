@@ -39,14 +39,11 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             }
 
             if (url) {
-                const author = $el.find('.author, .auth, a[href*="/author/"]').text().replace(/Author\s*:?/i, '').trim() || 'Unknown';
-                const summary = this.cleanSummary($el.find('.desc, .intro, .txt, .summary').text().trim());
-
                 novels.push({
                     title,
-                    author,
+                    author: 'Unknown',
                     coverUrl,
-                    summary,
+                    summary: '',
                     status: 'Ongoing',
                     sourceUrl: url,
                     chapters: []
@@ -222,21 +219,20 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     }
                     coverUrl = extractedCover;
                     let extractedSummary = 
+                        this.cleanSummary($('.m-desc .txt .inner').text().trim()) ||
+                        this.cleanSummary($('.m-desc .inner').text().trim()) ||
                         this.cleanSummary($('.inner').text().trim()) ||
-                        this.cleanSummary($('.intro').text().trim()) ||
-                        this.cleanSummary($('.description').text().trim()) ||
-                        this.cleanSummary($('.detail').text().trim()) ||
                         this.cleanSummary($('meta[property="og:description"]').attr('content') || '') ||
                         this.cleanSummary($('meta[name="description"]').attr('content') || '');
                     summary = extractedSummary;
 
                     const extractedAuthor = 
+                        $('span[title="Author"]').parent().find('.right').text().trim() ||
+                        $('span[title="Author"]').siblings('.right').text().trim() ||
+                        $('.txt .item:has(span[title="Author"]) .right').text().trim() ||
                         $('meta[property="og:novel:author"]').attr('content')?.trim() ||
                         $('meta[name="author"]').attr('content')?.trim() ||
-                        $('span[title="Author"]').next('.right').text().trim() ||
-                        $('.right:contains("Author")').text().replace(/Author\s*:?/i, '').trim() ||
-                        $('a[href*="/author/"]').text().trim() ||
-                        $('span:contains("Author")').next().text().trim();
+                        $('a[href*="/author/"]').first().text().trim();
                     if (extractedAuthor) author = extractedAuthor;
 
                     const extractedStatus = 
@@ -419,21 +415,20 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     }
                     coverUrl = extractedCover;
                     let extractedSummary = 
+                        this.cleanSummary($('.m-desc .txt .inner').text().trim()) ||
+                        this.cleanSummary($('.m-desc .inner').text().trim()) ||
                         this.cleanSummary($('.inner').text().trim()) ||
-                        this.cleanSummary($('.intro').text().trim()) ||
-                        this.cleanSummary($('.description').text().trim()) ||
-                        this.cleanSummary($('.detail').text().trim()) ||
                         this.cleanSummary($('meta[property="og:description"]').attr('content') || '') ||
                         this.cleanSummary($('meta[name="description"]').attr('content') || '');
                     summary = extractedSummary;
 
                     const extractedAuthor = 
+                        $('span[title="Author"]').parent().find('.right').text().trim() ||
+                        $('span[title="Author"]').siblings('.right').text().trim() ||
+                        $('.txt .item:has(span[title="Author"]) .right').text().trim() ||
                         $('meta[property="og:novel:author"]').attr('content')?.trim() ||
                         $('meta[name="author"]').attr('content')?.trim() ||
-                        $('span[title="Author"]').next('.right').text().trim() ||
-                        $('.right:contains("Author")').text().replace(/Author\s*:?/i, '').trim() ||
-                        $('a[href*="/author/"]').text().trim() ||
-                        $('span:contains("Author")').next().text().trim();
+                        $('a[href*="/author/"]').first().text().trim();
                     if (extractedAuthor) author = extractedAuthor;
 
                     const extractedStatus = 
