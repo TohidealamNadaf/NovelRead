@@ -608,7 +608,7 @@ class DatabaseService {
         const query = `
 SELECT
 n.*,
-    COUNT(c.id) as totalChapters,
+    COUNT(c.id) as downloadedChapters,
     SUM(CASE WHEN c.isRead = 1 THEN 1 ELSE 0 END) as readChapters
             FROM novels n
             LEFT JOIN chapters c ON n.id = c.novelId
@@ -808,7 +808,7 @@ n.*,
         const query = `
             SELECT 
                 n.*,
-                (SELECT COUNT(*) FROM chapters c WHERE c.novelId = n.id) as totalChapters,
+                (SELECT COUNT(*) FROM chapters c WHERE c.novelId = n.id) as downloadedChapters,
                 (SELECT COUNT(*) FROM chapters c WHERE c.novelId = n.id AND c.isRead = 1) as readChapters
             FROM novels n
             WHERE n.id = ?
@@ -840,7 +840,7 @@ n.*,
         return result.values && result.values.length > 0 ? (result.values[0] as Chapter) : null;
     }
 
-    async updateReadingProgress(novelId: string, chapterId: string) {
+    async updateReadingProgress(novelId: string, chapterId: string, chapterUrl?: string) {
         return this.enqueueWrite(async () => {
             const db = await this.getDB();
             if (!db) return;
@@ -859,7 +859,21 @@ n.*,
                 }
 
                 // Mark chapter as read
-                await db.run('UPDATE chapters SET isRead = 1 WHERE id = ?', [chapterId]);
+                let chRes = await db.run('UPDATE chapters SET isRead = 1 WHERE id = ?', [chapterId]);
+                const chChanges = chRes.changes?.changes || 0;
+
+                // Fallback: id didn't match anything — try the source URL instead
+                if (chChanges === 0 && chapterUrl) {
+                    console.warn(`[DB] isRead update missed by id="${chapterId}", retrying by audioPath`);
+                    chRes = await db.run(
+                        'UPDATE chapters SET isRead = 1 WHERE novelId = ? AND audioPath = ?',
+                        [novelId, chapterUrl]
+                    );
+                    if ((chRes.changes?.changes || 0) === 0) {
+                        console.error(`[DB] Chapter "${chapterId}" / "${chapterUrl}" not found in chapters table at all`);
+                    }
+                }
+                
                 await this.save();
             } catch (e) {
                 console.error("Failed to update reading progress", e);

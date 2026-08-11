@@ -521,9 +521,9 @@ export const ChapterList = () => {
                             const foundChapter = chapters.find(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId);
 
                             // 2. Try to find in LIVE list (match URL or Derived ID)
-                            const foundLive = liveChapters.find((c, idx) =>
+                            const foundLive = liveChapters.find((c) =>
                                 c.url === novel.lastReadChapterId ||
-                                `${novel.id}-ch-${idx}` === novel.lastReadChapterId
+                                `${novel.id}-ch-${c._index}` === novel.lastReadChapterId
                             );
 
                             console.log('[ChapterList] Continue click: lastReadChapterId:', novel.lastReadChapterId, 'foundChapter:', foundChapter?.id, 'foundLive:', foundLive?.url, 'chapters count:', chapters.length, 'liveChapters count:', liveChapters.length);
@@ -591,14 +591,14 @@ export const ChapterList = () => {
                         <BookOpen size={24} className={(
                             novel.lastReadChapterId && (
                                 chapters.some(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId) ||
-                                liveChapters.some((c, idx) => c.url === novel.lastReadChapterId || `${novel.id}-ch-${idx}` === novel.lastReadChapterId)
+                                liveChapters.some(c => c.url === novel.lastReadChapterId || `${novel.id}-ch-${c._index}` === novel.lastReadChapterId)
                             )
                         ) ? "" : "animate-pulse"} />
                         <span className="font-bold text-lg">
                             {(
                                 novel.lastReadChapterId && (
                                     chapters.some(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId) ||
-                                    liveChapters.some((c, idx) => c.url === novel.lastReadChapterId || `${novel.id}-ch-${idx}` === novel.lastReadChapterId)
+                                    liveChapters.some(c => c.url === novel.lastReadChapterId || `${novel.id}-ch-${c._index}` === novel.lastReadChapterId)
                                 )
                             ) ? 'Continue' : 'Start Reading'}
                         </span>

@@ -483,7 +483,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         // Step 1: Fetch page 1 ONCE → get totalPage + pageSize
         let firstChapters: ScrapedChapter[] = [];
         let totalPage = 1;
-        let pageSize = 50;
+        let pageSize = 100;
         for (const proxyUrl of proxyOrder) {
             if (signal?.aborted) break;
             try {

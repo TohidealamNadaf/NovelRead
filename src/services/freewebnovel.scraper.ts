@@ -149,12 +149,14 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         const chapters: ScrapedChapter[] = [];
         const seenLinks = new Set<string>();
 
-        $('.m-newest2 ul li a').each((_, el: any) => {
-            const link = el.attribs?.href || el.attribs?.title || '';
+        // Primary selector should target the full list container, not the "latest" widget.
+        // Usually `.m-newest1` or similar. We use multiple known chapter list classes.
+        $('ul.list-chapter li a, .chapters li a, .chapter-list li a, li a.con').each((_, el: any) => {
+            const link = el.attribs?.href;
             if (!link) return;
 
             const anchor = $(el);
-            const rawTitle = el.attribs?.title?.trim() || anchor.text().trim();
+            const rawTitle = anchor.text().trim() || el.attribs?.title?.trim() || '';
             const cleanTitle = this.cleanChapterTitle(rawTitle);
             const fullUrl = this.resolveUrl(baseUrl, link);
 
@@ -169,30 +171,6 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                 seenLinks.add(fullUrl);
             }
         });
-
-        // Some pages might use `.m-newest1 ul li` or similar
-        if (chapters.length === 0) {
-            $('ul.list-chapter li a, .chapters li a, .chapter-list li a, li a.con').each((_, el: any) => {
-                const link = el.attribs?.href;
-                if (!link) return;
-
-                const anchor = $(el);
-                const rawTitle = anchor.text().trim() || el.attribs?.title?.trim() || '';
-                const cleanTitle = this.cleanChapterTitle(rawTitle);
-                const fullUrl = this.resolveUrl(baseUrl, link);
-
-                let finalTitle = cleanTitle;
-                if (!finalTitle || /^Chapter$/i.test(finalTitle)) {
-                    const urlMatch = fullUrl.match(/chapter[_\-]?(\d+)/i);
-                    if (urlMatch) finalTitle = `Chapter ${urlMatch[1]}`;
-                }
-
-                if (this.isValidChapterTitle(finalTitle) && !seenLinks.has(fullUrl)) {
-                    chapters.push({ title: finalTitle, url: fullUrl });
-                    seenLinks.add(fullUrl);
-                }
-            });
-        }
 
         // Final fallback for AJAX fragments which might just be raw <li> tags without a <ul>
         if (chapters.length === 0) {
@@ -277,7 +255,8 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
     private async scrapeChapterList(url: string, signal?: AbortSignal): Promise<ScrapedChapter[]> {
         const allChapters: ScrapedChapter[] = [];
         const chapterUrlSet = new Set<string>();
-        const pageQueue = [url];
+        const cleanUrlForAjax = url.split('?')[0];
+        const pageQueue = [`${cleanUrlForAjax}?ajax=chapters&page=1&pageSize=40`];
         const visitedUrls = new Set<string>();
         let pageCount = 0;
         let consecutiveFailures = 0;
@@ -429,12 +408,19 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     if (extractedStatus) status = extractedStatus;
 
                     let totalChapters: number | undefined;
+                    let totalPage = 1;
                     const lastOption = $('#indexselect option').last();
                     if (lastOption.length) {
                         const optText = lastOption.text().trim();
                         const rangeMatch = optText.match(/C\.?\s*\d+\s*-\s*C\.?\s*(\d+)/i);
                         if (rangeMatch) totalChapters = parseInt(rangeMatch[1], 10);
                     }
+                    if ($('#indexselect option').length > 0) {
+                        totalPage = $('#indexselect option').length;
+                    }
+                    
+                    // Save totalPage so it's accessible later
+                    (this as any)._tempTotalPage = totalPage;
 
                     onProgress?.([], 0, { title, author, summary, status, coverUrl, totalChapters });
                     workingProxy = proxyUrl;
@@ -472,20 +458,25 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             return [];
         };
 
-        // Step 1: Fetch novel page ONCE, keep the HTML
-        let totalPage = 1;
+        // Step 1: Fetch page 1 ONCE from the AJAX endpoint, same as page 2+
+        let totalPage = (this as any)._tempTotalPage || 1;
         let firstChapters: ScrapedChapter[] = [];
+        const cleanUrlForAjax = url.split('?')[0];
+        
         for (const proxyUrl of proxyOrder) {
             if (signal?.aborted) break;
             try {
-                const rawHtml = await this.fetchHtml(url, proxyUrl, 60000, signal);
+                const rawHtml = await this.fetchHtml(`${cleanUrlForAjax}?ajax=chapters&page=1&pageSize=40`, proxyUrl, 60000, signal);
                 if (!rawHtml) continue;
-                const $ = cheerio.load(rawHtml);
+                let htmlToParse = rawHtml;
+                if (rawHtml.trim().startsWith('{')) {
+                    try {
+                        const data = JSON.parse(rawHtml);
+                        if (data.html) htmlToParse = data.html;
+                    } catch { }
+                }
+                const $ = cheerio.load(htmlToParse);
                 firstChapters = this.extractChapters($, url);
-                const scripts = $('script').map((_, el) => $(el).html()).get().join(' ');
-                const m = scripts.match(/totalPage\s*:\s*(\d+)/);
-                if (m) totalPage = parseInt(m[1], 10);
-                else if ($('#indexselect option').length > 0) totalPage = $('#indexselect option').length;
                 break;
             } catch { }
         }

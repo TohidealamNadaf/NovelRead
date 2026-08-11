@@ -219,18 +219,16 @@ export const Reader = () => {
 
             console.log(`[Reader] loadData: nid=${nid}, cid=${cid}, cData=${!!cData}, nData=${!!nData}, lastRead=${nData?.lastReadChapterId}`);
 
-            // ALWAYS update reading progress if the novel exists in library
+            // ALWAYS update reading progress
             // This must happen regardless of whether cData was found
-            if (nData) {
-                await dbService.updateReadingProgress(nid, cid);
-                console.log(`[Reader] Progress saved: novelId=${nid}, chapterId=${cid}`);
-                setReadChapterIds(prev => {
-                    const next = new Set(prev);
-                    next.add(cid);
-                    if (cData?.audioPath) next.add(cData.audioPath);
-                    return next;
-                });
-            }
+            await dbService.updateReadingProgress(nid, cid, cData?.audioPath);
+            console.log(`[Reader] Progress saved: novelId=${nid}, chapterId=${cid}`);
+            setReadChapterIds(prev => {
+                const next = new Set(prev);
+                next.add(cid);
+                if (cData?.audioPath) next.add(cData.audioPath);
+                return next;
+            });
 
             if (cData) {
                 // AUTO-FETCH: If chapter is empty but has a source URL (stub), fetch it now
@@ -553,7 +551,7 @@ export const Reader = () => {
                 } as Chapter)));
             }
 
-            // 3. Mark as read / update history if novel is in library
+            // 3. Mark as read / update history
             const novelInDB = await dbService.getNovel(stableNovelId);
             if (novelInDB) {
                 // Ensure the chapter record exists in DB (stub without full content if not downloaded)
@@ -568,15 +566,16 @@ export const Reader = () => {
                         audioPath: chapterUrl,
                     } as any);
                 }
-                await dbService.updateReadingProgress(stableNovelId, chapterStableId);
-                setReadChapterIds(prev => {
-                    const next = new Set(prev);
-                    next.add(chapterStableId);
-                    if (chapterUrl) next.add(chapterUrl);
-                    return next;
-                });
-                console.log(`[Reader] Progress updated for library novel: ${stableNovelId}`);
             }
+            
+            await dbService.updateReadingProgress(stableNovelId, chapterStableId, chapterUrl);
+            setReadChapterIds(prev => {
+                const next = new Set(prev);
+                next.add(chapterStableId);
+                if (chapterUrl) next.add(chapterUrl);
+                return next;
+            });
+            console.log(`[Reader] Progress updated: ${stableNovelId}`);
 
             // Sync back to unified state
             setNavChapters(currentLiveChapters);

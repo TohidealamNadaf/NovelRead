@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { dbService, type Novel, type Chapter } from '../services/db.service';
 import { scraperService, type ScraperProgress } from '../services/scraper.service';
+import { chapterListCache } from '../services/chapterListCache';
 
 export type FilterType = 'all' | 'read' | 'unread' | 'downloaded';
 export type SortOrder = 'asc' | 'desc';
@@ -55,7 +56,16 @@ export function useChapterData() {
         let knownChapters: Chapter[] = [];
 
         try {
-            setLoading(true);
+            const cached = chapterListCache.get(novelId);
+            if (cached) {
+                setNovel(cached.novel);
+                setChapters(cached.chapters);
+                setLiveChapters(cached.liveChapters);
+                knownChapters = cached.chapters;
+                setLoading(false);
+            } else {
+                setLoading(true);
+            }
             await dbService.initialize();
 
             // 1. Load from DB
@@ -141,14 +151,15 @@ export function useChapterData() {
             const now = Math.floor(Date.now() / 1000);
             const lastFetched = currentNovel?.lastFetchedAt || 0;
             const isFresh = (now - lastFetched) < 21600; // 6 hours cache
-            const hasChapters = (currentNovel?.totalChapters || 0) > 0;
+            const hasChapters = dbChaptersCount > 0;
 
             // Critical check: Do we actually HAVE the chapters in DB?
             // If totalChapters says 2000 but we only have 5 in DB, we must fetch the list.
             const isCacheComplete = dbChaptersCount >= (currentNovel?.totalChapters || 0) * 0.9; // 90% tolerance for rough matches
 
             // Should we skip fetching? 
-            const shouldSkipFetch = dbNovel && isFresh && hasChapters && isCacheComplete;
+            const hasLiveCache = cached && cached.liveChapters && cached.liveChapters.length > 0 && cached.liveChapters.length >= ((currentNovel?.totalChapters || 0) * 0.9);
+            const shouldSkipFetch = (dbNovel && isFresh && hasChapters && isCacheComplete) || hasLiveCache;
 
             console.log(`[useChapterData] shouldSkipFetch=${shouldSkipFetch} dbCount=${dbChaptersCount} total=${currentNovel?.totalChapters} fresh=${isFresh}`);
 
@@ -245,12 +256,13 @@ export function useChapterData() {
                                 }));
 
                                 await dbService.addChapters(chaptersToSave);
+                                await dbService.repairDuplicateChapters(novelId);
 
                                 // 3. Reload chapters from DB to ensure UI is in sync with DB state
                                 const updatedDbChapters = await dbService.getChapters(novelId);
                                 setChapters(updatedDbChapters);
                                 knownChapters = updatedDbChapters; // keep in sync here too
-                            } catch (error) {
+        } catch (error) {
                                 console.error("Failed to update DB in loadData", error);
                             }
                         } else {
@@ -312,6 +324,16 @@ export function useChapterData() {
             console.log('[useChapterData] unmounted, aborting scrape');
         };
     }, [novelId]);
+
+    useEffect(() => {
+        if (novelId && novel) {
+            chapterListCache.set(novelId, {
+                novel,
+                chapters,
+                liveChapters
+            });
+        }
+    }, [novelId, novel, chapters, liveChapters]);
 
     // Computed filtered chapters
     const filteredChapters = useMemo(() => {
