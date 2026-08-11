@@ -171,6 +171,14 @@ export function useChapterActions({
     const triggerLiveDownloadAll = (undownloaded: any[]) => {
         if (!novel) return;
 
+        if (novel.totalChapters && liveChapters.length < novel.totalChapters) {
+            onShowToast(
+                `Still loading chapters (${liveChapters.length}/${novel.totalChapters}) — wait for the list to finish before downloading.`,
+                'info'
+            );
+            return;
+        }
+
         if (undownloaded.length === 0) {
             onShowToast('All chapters are already downloaded!', 'info');
             return;
@@ -254,6 +262,14 @@ export function useChapterActions({
 
     const handleAddToLibrary = async () => {
         try {
+            if (novel?.totalChapters && liveChapters.length < novel.totalChapters) {
+                onShowToast(
+                    `Still loading chapters (${liveChapters.length}/${novel.totalChapters}) — wait for the list to finish before adding to library.`,
+                    'info'
+                );
+                return;
+            }
+            
             const novelDbId = await ensureLiveNovelInDB();
             
             if (liveChapters && liveChapters.length > 0) {

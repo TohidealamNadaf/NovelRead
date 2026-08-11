@@ -218,9 +218,14 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                         extractedCover = `https://freewebnovel.com${extractedCover.startsWith('/') ? '' : '/'}${extractedCover}`;
                     }
                     coverUrl = extractedCover;
-                    summary = this.cleanSummary($('.inner').text().trim());
+                    let extractedSummary = this.cleanSummary($('.inner').text().trim());
+                    if (!extractedSummary) {
+                        extractedSummary = this.cleanSummary($('meta[property="og:description"]').attr('content') || '');
+                    }
+                    summary = extractedSummary;
 
-                    const extractedAuthor = $('span[title="Author"]').next('.right').text().trim() || $('meta[property="og:novel:author"]').attr('content')?.trim();
+                    const extractedAuthor = $('meta[property="og:novel:author"]').attr('content')?.trim()
+                        || $('span[title="Author"]').next('.right').text().trim();
                     if (extractedAuthor) author = extractedAuthor;
 
                     const extractedStatus = $('span[title="Status"]').next('.right').text().trim() || $('meta[property="og:novel:status"]').attr('content')?.trim();
@@ -399,9 +404,14 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                         extractedCover = `https://freewebnovel.com${extractedCover.startsWith('/') ? '' : '/'}${extractedCover}`;
                     }
                     coverUrl = extractedCover;
-                    summary = this.cleanSummary($('.inner').text().trim());
+                    let extractedSummary = this.cleanSummary($('.inner').text().trim());
+                    if (!extractedSummary) {
+                        extractedSummary = this.cleanSummary($('meta[property="og:description"]').attr('content') || '');
+                    }
+                    summary = extractedSummary;
 
-                    const extractedAuthor = $('span[title="Author"]').next('.right').text().trim() || $('meta[property="og:novel:author"]').attr('content')?.trim();
+                    const extractedAuthor = $('meta[property="og:novel:author"]').attr('content')?.trim()
+                        || $('span[title="Author"]').next('.right').text().trim();
                     if (extractedAuthor) author = extractedAuthor;
 
                     const extractedStatus = $('span[title="Status"]').next('.right').text().trim() || $('meta[property="og:novel:status"]').attr('content')?.trim();
