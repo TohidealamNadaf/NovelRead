@@ -43,7 +43,7 @@ export class MangaFireHtmlScraper {
 
     // ─── SEARCH (HTML-based, no VRF needed) ───
     async searchManga(query: string): Promise<NovelMetadata[]> {
-        const url = `${BASE_URL}/browse?keyword=${encodeURIComponent(query)}&sort=relevance:desc`;
+        const url = `${BASE_URL}/filter?keyword=${encodeURIComponent(query)}`;
         const html = await this.fetchHtml(url, true); // Force Puppeteer to render SPA
         const $ = cheerio.load(html);
         
@@ -83,12 +83,12 @@ export class MangaFireHtmlScraper {
             const html = await this.fetchHtml(`${BASE_URL}/home`);
             const $ = cheerio.load(html);
             
-            const trending = this.parseMangaGrid($, '.swiper-slide .home-section__item');
-            const popular = this.parseMangaGrid($, '.title-grid__item, .title-list-item');
-            const latest = this.parseMangaGrid($, '.home-section__item:not(.swiper-slide)');
+            const trending = this.parseMangaGrid($, '.swiper-slide .unit-item, .swiper-slide .manga-item, .swiper-slide .home-section__item, .swiper-slide .item');
+            const popular = this.parseMangaGrid($, '.title-grid__item, .title-list-item, .unit-item, .item');
+            const latest = this.parseMangaGrid($, '.home-section__item:not(.swiper-slide), .unit-item, .manga-item, .item');
             
             // Fallback: if sections not found, try generic selectors
-            const allItems = this.parseMangaGrid($, '.home-section__item, .title-grid__item, .filter-item');
+            const allItems = this.parseMangaGrid($, '.unit-item, .manga-item, .inner-item, .item, .home-section__item, .title-grid__item, .filter-item');
             
             return {
                 trending: trending.length > 0 ? trending : allItems.slice(0, 10),
@@ -158,7 +158,11 @@ export class MangaFireHtmlScraper {
             const html = await this.fetchHtml(url, true);
             const $ = cheerio.load(html);
             
-            const title = $('h1').first().text().trim();
+            let title = $('h1').first().text().trim();
+            if (!title) {
+                const slugPart = url.split('?')[0].split('#')[0].replace(/\/$/, '').split('/').pop() || '';
+                title = slugPart.replace(/[\.\-][a-zA-Z0-9]+$/, '').replace(/[\-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Manga';
+            }
             
             const cover = $('.poster img, .title-detail__poster img').first().attr('src') || 
                          $('meta[property="og:image"]').attr('content') || '';

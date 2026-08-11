@@ -45,8 +45,9 @@ export class ManhwaScraperService {
             // Direct first for native, then fallbacks
             return [
                 '', // Direct fetch - best on native, no CORS issues
+                'https://api.allorigins.win/raw?url=',
+                'https://corsproxy.org/?',
                 'https://api.codetabs.com/v1/proxy?quest=',
-                'https://corsproxy.io/?url=',
             ];
         }
 
@@ -92,6 +93,10 @@ export class ManhwaScraperService {
                 finalUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
             } else if (proxyUrl.includes('codetabs.com')) {
                 finalUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`;
+            } else if (proxyUrl.includes('allorigins.win')) {
+                finalUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+            } else if (proxyUrl.includes('corsproxy.org')) {
+                finalUrl = `https://corsproxy.org/?${encodeURIComponent(url)}`;
             } else if (proxyUrl.startsWith('/api/proxy')) {
                 // Vite dev proxy - use relative URL
                 finalUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
@@ -124,14 +129,28 @@ export class ManhwaScraperService {
                     return '';
                 }
             } else {
+                const sanitizedHeaders = { ...extraHeaders };
+                if (!finalUrl.startsWith('/api/proxy')) {
+                    delete sanitizedHeaders['x-force-puppeteer'];
+                }
+
                 const options = {
                     url: finalUrl,
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.178 Mobile Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.5',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                        'Accept-Language': 'en-US,en;q=0.9',
                         'Referer': finalUrl.includes('mangafire.to') ? 'https://mangafire.to/' : 'https://google.com',
-                        ...extraHeaders
+                        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+                        'Sec-Ch-Ua-Mobile': '?1',
+                        'Sec-Ch-Ua-Platform': '"Android"',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Sec-Fetch-User': '?1',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Cache-Control': 'no-cache',
+                        ...sanitizedHeaders
                     },
                     connectTimeout: 30000,
                     readTimeout: 30000
@@ -256,7 +275,7 @@ export class ManhwaScraperService {
     async fetchNovelChapters(url: string): Promise<{ title: string; url: string; date: string }[]> {
         const cacheKey = `novelChapters_${url}`;
         const cached = await dbService.getCache(cacheKey);
-        if (cached?.timestamp && Date.now() - cached.timestamp < 15 * 60 * 1000) {
+        if (cached?.timestamp && Date.now() - cached.timestamp < 15 * 60 * 1000 && Array.isArray(cached.data) && cached.data.length > 20) {
             return cached.data;
         }
 
