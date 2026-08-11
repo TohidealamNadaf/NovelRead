@@ -104,8 +104,11 @@ export class ScraperService {
         if (knownChapterCount === 0 && !signal) {
             const cached = this.chapterListCache.get(url);
             if (cached && Date.now() - cached.t < 10 * 60 * 1000) {  // 10min
-                onProgress?.(cached.data.chapters, 1, cached.data);
-                return cached.data;
+                const isComplete = cached.data.author && cached.data.author !== 'Unknown' && !!cached.data.summary;
+                if (isComplete) {
+                    onProgress?.(cached.data.chapters, 1, cached.data);
+                    return cached.data;
+                }
             }
         }
         

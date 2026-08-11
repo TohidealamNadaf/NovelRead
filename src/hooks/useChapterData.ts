@@ -158,8 +158,10 @@ export function useChapterData() {
             const isCacheComplete = dbChaptersCount >= (currentNovel?.totalChapters || 0) * 0.9; // 90% tolerance for rough matches
 
             // Should we skip fetching? 
-            const hasLiveCache = cached && cached.liveChapters && cached.liveChapters.length > 0 && cached.liveChapters.length >= ((currentNovel?.totalChapters || 0) * 0.9);
-            const shouldSkipFetch = (dbNovel && isFresh && hasChapters && isCacheComplete) || hasLiveCache;
+            const isCachedMetadataComplete = cached?.novel?.author && cached.novel.author !== 'Unknown' && !!cached.novel.summary;
+            const hasLiveCache = cached && cached.liveChapters && cached.liveChapters.length > 0 && cached.liveChapters.length >= ((currentNovel?.totalChapters || 0) * 0.9) && isCachedMetadataComplete;
+            const isDbMetadataComplete = dbNovel?.author && dbNovel.author !== 'Unknown' && !!dbNovel.summary;
+            const shouldSkipFetch = (dbNovel && isFresh && hasChapters && isCacheComplete && isDbMetadataComplete) || hasLiveCache;
 
             console.log(`[useChapterData] shouldSkipFetch=${shouldSkipFetch} dbCount=${dbChaptersCount} total=${currentNovel?.totalChapters} fresh=${isFresh}`);
 
