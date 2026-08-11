@@ -339,14 +339,15 @@ export class ScraperService {
 
             await Promise.all(batch.map(async (ch, batchIndex) => {
                 const globalIndex = i + batchIndex;
-                const currentIndex = offset + globalIndex + 1;
+                const currentIndex = offset + globalIndex; // 0-based to match orderIndex
+                const displayIndex = currentIndex + 1;     // 1-based for UI
 
                 const exists = await dbService.isChapterExists(novelId, ch.url);
                 if (exists) {
                     console.log(`[Scraper] Skipping existing chapter: ${ch.title}`);
                     this.currentProgress = {
                         ...this.currentProgress,
-                        current: currentIndex,
+                        current: displayIndex,
                         currentTitle: `Skipping: ${ch.title}`
                     };
                     this.notifyListeners();
@@ -358,7 +359,7 @@ export class ScraperService {
 
                 this.currentProgress = {
                     ...this.currentProgress,
-                    current: currentIndex,
+                    current: displayIndex,
                     currentTitle: ch.title,
                     logs: newLogs
                 };
