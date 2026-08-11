@@ -408,19 +408,12 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     if (extractedStatus) status = extractedStatus;
 
                     let totalChapters: number | undefined;
-                    let totalPage = 1;
                     const lastOption = $('#indexselect option').last();
                     if (lastOption.length) {
                         const optText = lastOption.text().trim();
                         const rangeMatch = optText.match(/C\.?\s*\d+\s*-\s*C\.?\s*(\d+)/i);
                         if (rangeMatch) totalChapters = parseInt(rangeMatch[1], 10);
                     }
-                    if ($('#indexselect option').length > 0) {
-                        totalPage = $('#indexselect option').length;
-                    }
-                    
-                    // Save totalPage so it's accessible later
-                    (this as any)._tempTotalPage = totalPage;
 
                     onProgress?.([], 0, { title, author, summary, status, coverUrl, totalChapters });
                     workingProxy = proxyUrl;
@@ -458,8 +451,11 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             return [];
         };
 
-        // Step 1: Fetch page 1 ONCE from the AJAX endpoint, same as page 2+
-        let totalPage = (this as any)._tempTotalPage || 1;
+        // Step 1: Fetch page 1 from the AJAX endpoint, and derive totalPage from
+        // the SAME response — not from #indexselect, which groups chapters in
+        // ranges of 50 while the AJAX endpoint paginates in chunks of 40. Mixing
+        // the two undercounts totalPage and silently truncates the chapter list.
+        let totalPage = 1;
         let firstChapters: ScrapedChapter[] = [];
         const cleanUrlForAjax = url.split('?')[0];
         
@@ -468,15 +464,32 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             try {
                 const rawHtml = await this.fetchHtml(`${cleanUrlForAjax}?ajax=chapters&page=1&pageSize=40`, proxyUrl, 60000, signal);
                 if (!rawHtml) continue;
+
                 let htmlToParse = rawHtml;
+                let knownTotalPage: number | null = null;
                 if (rawHtml.trim().startsWith('{')) {
                     try {
                         const data = JSON.parse(rawHtml);
                         if (data.html) htmlToParse = data.html;
+                        if (typeof data.totalPage === 'number') knownTotalPage = data.totalPage;
                     } catch { }
                 }
+
                 const $ = cheerio.load(htmlToParse);
                 firstChapters = this.extractChapters($, url);
+
+                if (knownTotalPage) {
+                    totalPage = knownTotalPage;
+                } else {
+                    const scripts = $('script').map((_, el) => $(el).html()).get().join(' ');
+                    const totalPageMatch = scripts.match(/totalPage\s*:\s*(\d+)/);
+                    if (totalPageMatch) {
+                        totalPage = parseInt(totalPageMatch[1], 10);
+                    } else if ($('#indexselect option').length > 0) {
+                        // Last-resort fallback only — known to undercount for pageSize=40
+                        totalPage = $('#indexselect option').length;
+                    }
+                }
                 break;
             } catch { }
         }
