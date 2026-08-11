@@ -298,9 +298,10 @@ export const Reader = () => {
                             if (currentIndex !== -1) {
                                 setNavChapters(webChapters.map((ch, idx) => ({
                                     ...ch,
-                                    id: ch.url,
+                                    id: `${nid}-ch-${idx}`,
                                     novelId: nid,
-                                    orderIndex: idx
+                                    orderIndex: idx,
+                                    audioPath: ch.url
                                 } as any)));
                             } else if (navChapters.length === 0) {
                                 setNavChapters(localChapters);
@@ -592,16 +593,18 @@ export const Reader = () => {
     const handleNextChapter = useCallback(() => {
         if (nextChapter) {
             setNavigationDirection('next');
-            const targetUrl = nextChapter.url || nextChapter.audioPath || nextChapter.id || '';
+            const targetUrl = nextChapter.audioPath || nextChapter.url || '';
+            const targetId = nextChapter.id || `${novelId}-ch-${navIndex + 1}`;
 
-            const route = targetUrl.startsWith('http')
-                ? `/read/live/${encodeURIComponent(targetUrl)}`
-                : `/read/${encodeURIComponent(novelId || '')}/${encodeURIComponent(nextChapter.id)}`;
+            const route = isLiveMode
+                ? `/read/live/${encodeURIComponent(targetUrl || targetId)}`
+                : `/read/${encodeURIComponent(novelId || '')}/${encodeURIComponent(targetId)}`;
 
             navigate(route, {
                 state: {
                     ...location.state,
-                    chapterUrl: targetUrl.startsWith('http') ? targetUrl : '',
+                    liveMode: isLiveMode,
+                    chapterUrl: targetUrl,
                     chapterTitle: nextChapter.title,
                     currentIndex: navIndex + 1,
                     chapters: navChapters
@@ -612,21 +615,23 @@ export const Reader = () => {
         } else {
             setShowComingSoon(true);
         }
-    }, [nextChapter, novelId, navigate, navChapters, navIndex, location.state]);
+    }, [nextChapter, novelId, navigate, navChapters, navIndex, isLiveMode, location.state]);
 
     const handlePrevChapter = useCallback(() => {
         if (prevChapter) {
             setNavigationDirection('prev');
-            const targetUrl = prevChapter.url || prevChapter.audioPath || prevChapter.id || '';
+            const targetUrl = prevChapter.audioPath || prevChapter.url || '';
+            const targetId = prevChapter.id || `${novelId}-ch-${navIndex - 1}`;
 
-            const route = targetUrl.startsWith('http')
-                ? `/read/live/${encodeURIComponent(targetUrl)}`
-                : `/read/${encodeURIComponent(novelId || '')}/${encodeURIComponent(prevChapter.id)}`;
+            const route = isLiveMode
+                ? `/read/live/${encodeURIComponent(targetUrl || targetId)}`
+                : `/read/${encodeURIComponent(novelId || '')}/${encodeURIComponent(targetId)}`;
 
             navigate(route, {
                 state: {
                     ...location.state,
-                    chapterUrl: targetUrl.startsWith('http') ? targetUrl : '',
+                    liveMode: isLiveMode,
+                    chapterUrl: targetUrl,
                     chapterTitle: prevChapter.title,
                     currentIndex: navIndex - 1,
                     chapters: navChapters
@@ -635,7 +640,7 @@ export const Reader = () => {
             });
             setShowSettings(false);
         }
-    }, [prevChapter, novelId, navigate, navChapters, navIndex, location.state]);
+    }, [prevChapter, novelId, navigate, navChapters, navIndex, isLiveMode, location.state]);
 
 
     // Save current live chapter to DB for offline reading

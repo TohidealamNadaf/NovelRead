@@ -272,6 +272,10 @@ export function useChapterData() {
                                 setNovel(prev => prev ? {
                                     ...prev,
                                     title: (data.title && data.title !== 'Unknown Title' && data.title !== 'Unknown') ? data.title : prev.title,
+                                    author: (data.author && data.author !== 'Unknown') ? data.author : prev.author,
+                                    coverUrl: data.coverUrl || prev.coverUrl,
+                                    summary: data.summary || prev.summary,
+                                    status: (data.status && data.status !== 'Unknown' && data.status !== 'Ongoing') ? data.status : (prev.status || data.status),
                                     totalChapters: data.totalChapters ?? Math.max(prev.totalChapters || 0, dbChaptersCount + newChapters.length),
                                     lastFetchedAt: Math.floor(Date.now() / 1000)
                                 } : null);
