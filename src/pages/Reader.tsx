@@ -327,9 +327,9 @@ export const Reader = () => {
     const getStableNovelId = useCallback(() => {
         const sourceUrl = novel?.sourceUrl || location.state?.novel?.sourceUrl || location.state?.novelSourceUrl || '';
         if (!sourceUrl) return 'live';
-        // Create a simple slug from the URL path
-        const path = sourceUrl.replace(/https?:\/\/[^\/]+/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-        return `live-${path}`.slice(0, 80);
+        // Use the sourceUrl directly as the ID — this matches how ChapterList
+        // derives novelId from the route param (which is the encoded sourceUrl).
+        return sourceUrl;
     }, [novel?.sourceUrl, location.state]);
 
     // Live mode: fetch chapter content from web
@@ -522,7 +522,7 @@ export const Reader = () => {
 
             // Build sidebar chapters list with read status from DB
             try {
-                const dbChapters = await dbService.getChapters(stableNovelId);
+                const dbChapters = await dbService.getChapters(stableNovelId!);
                 const readStatusMap = new Set(dbChapters.filter(c => c.isRead).map(c => c.id));
 
                 setAllChapters(currentLiveChapters.map((ch, idx) => {
@@ -552,14 +552,14 @@ export const Reader = () => {
             }
 
             // 3. Mark as read / update history
-            const novelInDB = await dbService.getNovel(stableNovelId);
+            const novelInDB = await dbService.getNovel(stableNovelId!);
             if (novelInDB) {
                 // Ensure the chapter record exists in DB (stub without full content if not downloaded)
-                const existingCh = await dbService.getChapter(stableNovelId, chapterStableId);
+                const existingCh = await dbService.getChapter(stableNovelId!, chapterStableId);
                 if (!existingCh) {
                     await dbService.addChapter({
                         id: chapterStableId,
-                        novelId: stableNovelId,
+                        novelId: stableNovelId!,
                         title: chapterTitle,
                         content: '', // No content stored (not downloaded)
                         orderIndex: currentIdx,
@@ -568,7 +568,7 @@ export const Reader = () => {
                 }
             }
             
-            await dbService.updateReadingProgress(stableNovelId, chapterStableId, chapterUrl);
+            await dbService.updateReadingProgress(stableNovelId!, chapterStableId, chapterUrl);
             setReadChapterIds(prev => {
                 const next = new Set(prev);
                 next.add(chapterStableId);
@@ -644,9 +644,8 @@ export const Reader = () => {
         setIsSavingOffline(true);
         try {
             const novelSourceUrl = novel?.sourceUrl || location.state?.novel?.sourceUrl || '';
-            // Generate stable ID from URL
-            const path = novelSourceUrl.replace(/https?:\/\/[^\/]+/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-            const novelDbId = `live-${path}`.slice(0, 80);
+            // Use sourceUrl directly as the ID — matches ChapterList's route param
+            const novelDbId = novelSourceUrl || getStableNovelId();
 
             await dbService.initialize();
             // Ensure novel exists in DB
@@ -658,7 +657,7 @@ export const Reader = () => {
                 sourceUrl: novelSourceUrl,
                 summary: '',
                 status: 'Ongoing',
-                source: 'NovelFire',
+                source: novelSourceUrl?.includes('freewebnovel') ? 'FreeWebNovel' : 'NovelFire',
                 category: 'Novel',
             } as any);
 

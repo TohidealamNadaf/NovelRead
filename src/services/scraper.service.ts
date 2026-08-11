@@ -238,8 +238,9 @@ export class ScraperService {
 
         let novelId = '';
         if (url) {
-            const path = url.replace(/https?:\/\/[^\/]+/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-            novelId = `live-${path}`.slice(0, 80);
+            // Use sourceUrl directly as the ID — matches how ChapterList
+            // derives novelId from the route param (encodeURIComponent(sourceUrl))
+            novelId = url;
         } else {
             novelId = novel.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').toLowerCase().slice(0, 24) + '-' + Math.random().toString(36).slice(2, 7);
         }
