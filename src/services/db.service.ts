@@ -804,21 +804,27 @@ n.*,
         const db = await this.getDB();
         if (!db) return null;
 
-        // Use JOIN to get dynamic accurate count of read chapters
+        const cleanId = id ? id.replace(/\/$/, '').replace(/\/chapters$/i, '') : '';
+        const decodedId = id && id.includes('%') ? decodeURIComponent(id).replace(/\/$/, '').replace(/\/chapters$/i, '') : cleanId;
+
+        // Use JOIN to get dynamic accurate count of read chapters with URL variant matching
         const query = `
             SELECT 
                 n.*,
                 (SELECT COUNT(*) FROM chapters c WHERE c.novelId = n.id) as downloadedChapters,
                 (SELECT COUNT(*) FROM chapters c WHERE c.novelId = n.id AND c.isRead = 1) as readChapters
             FROM novels n
-            WHERE n.id = ?
+            WHERE n.id = ? OR n.id = ? OR n.id = ? OR n.id = ? OR n.id = ?
+               OR n.sourceUrl = ? OR n.sourceUrl = ? OR n.sourceUrl = ? OR n.sourceUrl = ?
+            LIMIT 1
         `;
 
-        const result = await db.query(query, [id]);
+        const result = await db.query(query, [
+            id, cleanId, decodedId, cleanId + '/', cleanId + '/chapters',
+            id, cleanId, decodedId, cleanId + '/'
+        ]);
         return result.values && result.values.length > 0 ? (result.values[0] as Novel) : null;
     }
-
-
 
     async getNextChapter(novelId: string, currentOrderIndex: number): Promise<Chapter | null> {
         const db = await this.getDB();
@@ -846,24 +852,31 @@ n.*,
             if (!db) return;
 
             try {
-                const cleanNovelId = novelId ? novelId.replace(/\/$/, '') : '';
-                const decodedNovelId = novelId && novelId.includes('%') ? decodeURIComponent(novelId).replace(/\/$/, '') : cleanNovelId;
+                const cleanNovelId = novelId ? novelId.replace(/\/$/, '').replace(/\/chapters$/i, '') : '';
+                const decodedNovelId = novelId && novelId.includes('%') ? decodeURIComponent(novelId).replace(/\/$/, '').replace(/\/chapters$/i, '') : cleanNovelId;
                 const encodedNovelId = cleanNovelId ? encodeURIComponent(cleanNovelId) : cleanNovelId;
 
-                // Update novel's lastReadChapterId and timestamp across all potential ID variants
+                // Update novel's lastReadChapterId and timestamp across all potential ID & sourceUrl variants
                 const res = await db.run(
-                    'UPDATE novels SET lastReadChapterId = ?, lastReadAt = ? WHERE id = ? OR id = ? OR id = ? OR id = ? OR id = ?',
-                    [chapterId, Date.now(), novelId, cleanNovelId, decodedNovelId, encodedNovelId, cleanNovelId + '/']
+                    `UPDATE novels SET lastReadChapterId = ?, lastReadAt = ? 
+                     WHERE id = ? OR id = ? OR id = ? OR id = ? OR id = ? OR id = ?
+                        OR sourceUrl = ? OR sourceUrl = ? OR sourceUrl = ? OR sourceUrl = ?`,
+                    [
+                        chapterId, Date.now(),
+                        novelId, cleanNovelId, decodedNovelId, encodedNovelId, cleanNovelId + '/', cleanNovelId + '/chapters',
+                        novelId, cleanNovelId, decodedNovelId, cleanNovelId + '/'
+                    ]
                 );
 
-                // Fallback for Live novels (not in DB)
                 const changes = res.changes?.changes || 0;
                 console.log(`[DB] updateReadingProgress: novelId=${novelId}, chapterId=${chapterId}, rowsUpdated=${changes}`);
-                if (changes === 0 && typeof localStorage !== 'undefined') {
+
+                // ALWAYS sync to localStorage so SQLite and localStorage remain 100% consistent
+                if (typeof localStorage !== 'undefined') {
                     localStorage.setItem(`lastRead:${novelId}`, chapterId);
                     if (cleanNovelId) localStorage.setItem(`lastRead:${cleanNovelId}`, chapterId);
+                    if (decodedNovelId) localStorage.setItem(`lastRead:${decodedNovelId}`, chapterId);
                     localStorage.setItem(`lastReadAt:${novelId}`, Date.now().toString());
-                    console.log(`[DB] updateReadingProgress: fallback to localStorage for ${novelId}`);
                 }
 
                 // Mark chapter as read

@@ -116,6 +116,19 @@ export function useChapterData() {
                     setLiveChapters(indexedChapters);
                 }
 
+                // Hydrate reading progress from localStorage if missing from DB
+                if (!dbNovel.lastReadChapterId && typeof localStorage !== 'undefined') {
+                    const cleanId = novelId.replace(/\/$/, '').replace(/\/chapters$/i, '');
+                    const savedLastRead = localStorage.getItem(`lastRead:${novelId}`) ||
+                        localStorage.getItem(`lastRead:${cleanId}`) ||
+                        (dbNovel.sourceUrl ? localStorage.getItem(`lastRead:${dbNovel.sourceUrl.replace(/\/$/, '').replace(/\/chapters$/i, '')}`) : null);
+                    const savedLastReadAt = localStorage.getItem(`lastReadAt:${novelId}`) || (dbNovel.sourceUrl ? localStorage.getItem(`lastReadAt:${dbNovel.sourceUrl}`) : null);
+                    if (savedLastRead) {
+                        dbNovel.lastReadChapterId = savedLastRead;
+                        dbNovel.lastReadAt = savedLastReadAt ? parseInt(savedLastReadAt) : Date.now();
+                    }
+                }
+
                 // Update missing sourceUrl from state if available
                 if (!dbNovel.sourceUrl && location.state?.novel?.sourceUrl) {
                     dbNovel.sourceUrl = location.state.novel.sourceUrl;

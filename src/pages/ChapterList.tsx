@@ -520,6 +520,7 @@ export const ChapterList = () => {
                             // 1. Try to find in LOCAL DB (match ID, Audio/URL, or Index)
                             const matchIdx = novel.lastReadChapterId?.match(/-ch-(\d+)$/);
                             const targetIndex = matchIdx ? parseInt(matchIdx[1], 10) : -1;
+                            const cleanNovelId = novel.id ? novel.id.replace(/\/$/, '').replace(/\/chapters$/i, '') : '';
 
                             const foundChapter = chapters.find(c =>
                                 c.id === novel.lastReadChapterId ||
@@ -531,6 +532,7 @@ export const ChapterList = () => {
                             const foundLive = liveChapters.find((c, idx) =>
                                 c.url === novel.lastReadChapterId ||
                                 `${novel.id}-ch-${c._index}` === novel.lastReadChapterId ||
+                                `${cleanNovelId}-ch-${c._index}` === novel.lastReadChapterId ||
                                 (targetIndex !== -1 && (c._index === targetIndex || idx === targetIndex))
                             );
 
