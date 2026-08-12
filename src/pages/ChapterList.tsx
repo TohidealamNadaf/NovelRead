@@ -517,16 +517,24 @@ export const ChapterList = () => {
                 <div className="fixed bottom-6 right-6 z-50" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
                     <button
                         onClick={() => {
-                            // 1. Try to find in LOCAL DB (match ID or Audio/URL)
-                            const foundChapter = chapters.find(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId);
+                            // 1. Try to find in LOCAL DB (match ID, Audio/URL, or Index)
+                            const matchIdx = novel.lastReadChapterId?.match(/-ch-(\d+)$/);
+                            const targetIndex = matchIdx ? parseInt(matchIdx[1], 10) : -1;
 
-                            // 2. Try to find in LIVE list (match URL or Derived ID)
-                            const foundLive = liveChapters.find((c) =>
-                                c.url === novel.lastReadChapterId ||
-                                `${novel.id}-ch-${c._index}` === novel.lastReadChapterId
+                            const foundChapter = chapters.find(c =>
+                                c.id === novel.lastReadChapterId ||
+                                c.audioPath === novel.lastReadChapterId ||
+                                (targetIndex !== -1 && c.orderIndex === targetIndex)
                             );
 
-                            console.log('[ChapterList] Continue click: lastReadChapterId:', novel.lastReadChapterId, 'foundChapter:', foundChapter?.id, 'foundLive:', foundLive?.url, 'chapters count:', chapters.length, 'liveChapters count:', liveChapters.length);
+                            // 2. Try to find in LIVE list (match URL, Derived ID, or Index)
+                            const foundLive = liveChapters.find((c, idx) =>
+                                c.url === novel.lastReadChapterId ||
+                                `${novel.id}-ch-${c._index}` === novel.lastReadChapterId ||
+                                (targetIndex !== -1 && (c._index === targetIndex || idx === targetIndex))
+                            );
+
+                            console.log('[ChapterList] Continue click: lastReadChapterId:', novel.lastReadChapterId, 'targetIndex:', targetIndex, 'foundChapter:', foundChapter?.id, 'foundLive:', foundLive?.url, 'chapters count:', chapters.length, 'liveChapters count:', liveChapters.length);
 
                             const lastReadValid = novel.lastReadChapterId && (!!foundChapter || !!foundLive);
 
@@ -590,15 +598,15 @@ export const ChapterList = () => {
                     >
                         <BookOpen size={24} className={(
                             novel.lastReadChapterId && (
-                                chapters.some(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId) ||
-                                liveChapters.some(c => c.url === novel.lastReadChapterId || `${novel.id}-ch-${c._index}` === novel.lastReadChapterId)
+                                chapters.some(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId || (novel.lastReadChapterId?.match(/-ch-(\d+)$/) && c.orderIndex === parseInt(novel.lastReadChapterId.match(/-ch-(\d+)$/)![1], 10))) ||
+                                liveChapters.some((c, idx) => c.url === novel.lastReadChapterId || `${novel.id}-ch-${c._index}` === novel.lastReadChapterId || (novel.lastReadChapterId?.match(/-ch-(\d+)$/) && (c._index === parseInt(novel.lastReadChapterId.match(/-ch-(\d+)$/)![1], 10) || idx === parseInt(novel.lastReadChapterId.match(/-ch-(\d+)$/)![1], 10))))
                             )
                         ) ? "" : "animate-pulse"} />
                         <span className="font-bold text-lg">
                             {(
                                 novel.lastReadChapterId && (
-                                    chapters.some(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId) ||
-                                    liveChapters.some(c => c.url === novel.lastReadChapterId || `${novel.id}-ch-${c._index}` === novel.lastReadChapterId)
+                                    chapters.some(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId || (novel.lastReadChapterId?.match(/-ch-(\d+)$/) && c.orderIndex === parseInt(novel.lastReadChapterId.match(/-ch-(\d+)$/)![1], 10))) ||
+                                    liveChapters.some((c, idx) => c.url === novel.lastReadChapterId || `${novel.id}-ch-${c._index}` === novel.lastReadChapterId || (novel.lastReadChapterId?.match(/-ch-(\d+)$/) && (c._index === parseInt(novel.lastReadChapterId.match(/-ch-(\d+)$/)![1], 10) || idx === parseInt(novel.lastReadChapterId.match(/-ch-(\d+)$/)![1], 10))))
                                 )
                             ) ? 'Continue' : 'Start Reading'}
                         </span>

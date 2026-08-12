@@ -846,37 +846,42 @@ n.*,
             if (!db) return;
 
             try {
-                // Update novel's lastReadChapterId and timestamp
-                const res = await db.run('UPDATE novels SET lastReadChapterId = ?, lastReadAt = ? WHERE id = ?', [chapterId, Date.now(), novelId]);
+                const cleanNovelId = novelId ? novelId.replace(/\/$/, '') : '';
+                const decodedNovelId = novelId && novelId.includes('%') ? decodeURIComponent(novelId).replace(/\/$/, '') : cleanNovelId;
+                const encodedNovelId = cleanNovelId ? encodeURIComponent(cleanNovelId) : cleanNovelId;
+
+                // Update novel's lastReadChapterId and timestamp across all potential ID variants
+                const res = await db.run(
+                    'UPDATE novels SET lastReadChapterId = ?, lastReadAt = ? WHERE id = ? OR id = ? OR id = ? OR id = ? OR id = ?',
+                    [chapterId, Date.now(), novelId, cleanNovelId, decodedNovelId, encodedNovelId, cleanNovelId + '/']
+                );
 
                 // Fallback for Live novels (not in DB)
                 const changes = res.changes?.changes || 0;
                 console.log(`[DB] updateReadingProgress: novelId=${novelId}, chapterId=${chapterId}, rowsUpdated=${changes}`);
                 if (changes === 0 && typeof localStorage !== 'undefined') {
                     localStorage.setItem(`lastRead:${novelId}`, chapterId);
+                    if (cleanNovelId) localStorage.setItem(`lastRead:${cleanNovelId}`, chapterId);
                     localStorage.setItem(`lastReadAt:${novelId}`, Date.now().toString());
                     console.log(`[DB] updateReadingProgress: fallback to localStorage for ${novelId}`);
                 }
 
                 // Mark chapter as read
-                let chRes = await db.run('UPDATE chapters SET isRead = 1 WHERE id = ?', [chapterId]);
+                let chRes = await db.run('UPDATE chapters SET isRead = 1 WHERE id = ? OR id = ?', [chapterId, `${novelId}-ch-${chapterId}`]);
                 const chChanges = chRes.changes?.changes || 0;
 
                 // Fallback: id didn't match anything — try the source URL instead
                 if (chChanges === 0 && chapterUrl) {
-                    console.warn(`[DB] isRead update missed by id="${chapterId}", retrying by audioPath`);
+                    const cleanUrl = chapterUrl.replace(/\/$/, '');
                     chRes = await db.run(
-                        'UPDATE chapters SET isRead = 1 WHERE novelId = ? AND audioPath = ?',
-                        [novelId, chapterUrl]
+                        'UPDATE chapters SET isRead = 1 WHERE (novelId = ? OR novelId = ? OR novelId = ?) AND (audioPath = ? OR audioPath = ?)',
+                        [novelId, cleanNovelId, decodedNovelId, chapterUrl, cleanUrl]
                     );
-                    if ((chRes.changes?.changes || 0) === 0) {
-                        console.error(`[DB] Chapter "${chapterId}" / "${chapterUrl}" not found in chapters table at all`);
-                    }
                 }
                 
                 await this.save();
-            } catch (e) {
-                console.error("Failed to update reading progress", e);
+            } catch (error) {
+                console.error('[DB] updateReadingProgress error:', error);
             }
         });
     }

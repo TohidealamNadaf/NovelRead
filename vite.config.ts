@@ -165,16 +165,47 @@ export default defineConfig({
                 }
                 
                 // Normal page navigation
-                await page.goto(targetRaw, { waitUntil: 'networkidle2', timeout: 45000 });
+                let capturedMeta: any = null;
+                const capturedChaptersMap = new Map<string, any>();
+
+                if (targetRaw.includes('mangafire.to')) {
+                    page.on('response', async res => {
+                        const resUrl = res.url();
+                        if (resUrl.includes('/api/titles/')) {
+                            try {
+                                const text = await res.text();
+                                const json = JSON.parse(text);
+                                if (json.data && json.data.title && !json.items) {
+                                    capturedMeta = json.data;
+                                }
+                                if (json.items && Array.isArray(json.items)) {
+                                    json.items.forEach((item: any) => {
+                                        const chId = item.id || `num-${item.number}`;
+                                        if (!capturedChaptersMap.has(chId)) {
+                                            capturedChaptersMap.set(chId, {
+                                                id: item.id,
+                                                number: item.number,
+                                                title: item.name ? `Ch. ${item.number} - ${item.name}` : `Chapter ${item.number}`,
+                                                url: item.id ? `https://mangafire.to/read/${item.id}` : '',
+                                                date: item.createdAt ? new Date(item.createdAt * 1000).toLocaleDateString() : ''
+                                            });
+                                        }
+                                    });
+                                }
+                            } catch (e) {}
+                        }
+                    });
+                }
+
+                await page.goto(targetRaw, { waitUntil: 'domcontentloaded', timeout: 45000 });
                 if (targetRaw.includes('mangafire.to')) {
                     if (targetRaw.includes('/chapter/')) {
                         // Reader page: wait for reader to render
                         await page.waitForSelector('.reader-img, .reader, .reader-swiper__img', { timeout: 15000 }).catch(() => {});
-                        // Give extra time for lazy images
                         await new Promise(r => setTimeout(r, 3000));
-                    } else if (targetRaw.includes('/title/')) {
-                        // Title page
-                        await page.waitForSelector('.title-detail__chapters, h1', { timeout: 15000 }).catch(() => {});
+                    } else if (targetRaw.includes('/title/') || targetRaw.includes('/manga/')) {
+                        // Title page: wait for SPA API responses to finish
+                        await new Promise(r => setTimeout(r, 2500));
                     } else {
                         await page.waitForSelector('.title-rows__link, .home-section__item, .unit-item, .manga-item', { timeout: 15000 }).catch(() => {});
                     }
@@ -183,7 +214,15 @@ export default defineConfig({
                 }
                 const cookies = await page.cookies();
                 cookieJar.set(domain, cookies);
-                const html = await page.content();
+                let html = await page.content();
+
+                if (targetRaw.includes('mangafire.to') && capturedChaptersMap.size > 0) {
+                    const chaptersList = Array.from(capturedChaptersMap.values()).sort((a: any, b: any) => (a.number || 0) - (b.number || 0));
+                    const payload = JSON.stringify({ meta: capturedMeta, chapters: chaptersList });
+                    const injectedTag = `<script id="__MANGAFIRE_DATA__" type="application/json">${payload}</script>`;
+                    html = html.replace('</body>', `${injectedTag}</body>`);
+                }
+
                 await page.close();
                 htmlCache.set(targetRaw, { html, t: Date.now() });
                 return html;

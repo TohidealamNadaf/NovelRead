@@ -158,6 +158,45 @@ export class MangaFireHtmlScraper {
             const html = await this.fetchHtml(url, true);
             const $ = cheerio.load(html);
             
+            // Step 1: Check if proxy injected __MANGAFIRE_DATA__ JSON from network interception
+            const injectedJson = $('#__MANGAFIRE_DATA__').html();
+            if (injectedJson) {
+                try {
+                    const parsed = JSON.parse(injectedJson);
+                    const meta = parsed.meta || {};
+                    const rawChapters = parsed.chapters || [];
+                    
+                    if (rawChapters.length > 0) {
+                        const title = meta.title || $('h1').first().text().trim() || 'Manga';
+                        const cover = meta.poster?.medium || meta.poster?.small || $('.poster img').first().attr('src') || '';
+                        const summary = meta.synopsis || $('.description').first().text().trim() || '';
+                        const status = meta.status || 'Ongoing';
+                        const author = (meta.authors && meta.authors.length > 0) ? meta.authors.join(', ') : 'Unknown';
+
+                        const chapters = rawChapters.map((ch: any) => ({
+                            title: ch.title,
+                            url: ch.url || `${BASE_URL}/read/${ch.id}`,
+                            date: ch.date || ''
+                        }));
+
+                        console.log(`[MangaFire] Proxy intercepted ${chapters.length} chapters for "${title}"`);
+
+                        return {
+                            title,
+                            author,
+                            coverUrl: cover.startsWith('http') ? cover : `${BASE_URL}${cover}`,
+                            category: 'Manga',
+                            status,
+                            summary,
+                            sourceUrl: url,
+                            chapters
+                        };
+                    }
+                } catch (e) {
+                    console.warn('[MangaFire] Error parsing injected JSON:', e);
+                }
+            }
+
             let title = $('h1').first().text().trim();
             if (!title) {
                 const slugPart = url.split('?')[0].split('#')[0].replace(/\/$/, '').split('/').pop() || '';
@@ -196,7 +235,6 @@ export class MangaFireHtmlScraper {
                         if (dataId) {
                             chapters.push({
                                 title: chTitle || `Chapter ${dataNumber}`,
-                                // Build the chapter URL using the manga slug and chapter ID
                                 url: `${BASE_URL}/title/${mangaId}-${this.slugify(title)}/chapter/${dataId}`,
                                 date: releaseDate || ''
                             });
