@@ -108,19 +108,9 @@ export function useChapterData() {
                         .filter(Boolean) as string[]
                 );
 
-                // Infer all read chapters up to lastReadChapterId
+                // Add lastReadChapterId to readUrls if present
                 if (dbNovel.lastReadChapterId) {
                     readUrls.add(dbNovel.lastReadChapterId);
-                    const matchLastIdx = dbNovel.lastReadChapterId.match(/-ch-(\d+)$/);
-                    if (matchLastIdx) {
-                        const lastIdx = parseInt(matchLastIdx[1], 10);
-                        dbChapters.forEach(c => {
-                            if (c.orderIndex <= lastIdx) {
-                                if (c.audioPath) readUrls.add(c.audioPath);
-                                if (c.id) readUrls.add(c.id);
-                            }
-                        });
-                    }
                 }
 
                 setDownloadedLiveChapters(savedUrls);
@@ -187,13 +177,14 @@ export function useChapterData() {
             const isFresh = (now - lastFetched) < 21600; // 6 hours cache
             const hasChapters = dbChaptersCount > 0;
 
-            // Critical check: Do we actually HAVE the chapters in DB?
-            // If totalChapters says 2000 but we only have 5 in DB, we must fetch the list.
-            const isCacheComplete = dbChaptersCount >= (currentNovel?.totalChapters || 0) * 0.9; // 90% tolerance for rough matches
+            // Critical check: Do we actually HAVE all the chapters in DB?
+            // If totalChapters is <= 100 (initial page batch) or dbChaptersCount is less than full list, trigger live sync.
+            const totalCount = currentNovel?.totalChapters || 0;
+            const isCacheComplete = totalCount > 100 ? (dbChaptersCount >= totalCount * 0.95) : false;
 
             // Should we skip fetching? 
             const isCachedMetadataComplete = cached?.novel?.author && cached.novel.author !== 'Unknown' && !!cached.novel.summary;
-            const hasLiveCache = cached && cached.liveChapters && cached.liveChapters.length > 0 && cached.liveChapters.length >= ((currentNovel?.totalChapters || 0) * 0.9) && isCachedMetadataComplete;
+            const hasLiveCache = cached && cached.liveChapters && cached.liveChapters.length > 0 && (totalCount > 100 ? cached.liveChapters.length >= (totalCount * 0.95) : false) && isCachedMetadataComplete;
             const isDbMetadataComplete = dbNovel?.author && dbNovel.author !== 'Unknown' && !!dbNovel.summary;
             const shouldSkipFetch = (dbNovel && isFresh && hasChapters && isCacheComplete && isDbMetadataComplete) || hasLiveCache;
 
@@ -267,21 +258,9 @@ export function useChapterData() {
 
                         setLiveChapters(fullLiveList);
 
-                        // Update readLiveChapters with index inferencing
+                        // Update readLiveChapters with lastReadChapterId
                         if (currentNovel?.lastReadChapterId) {
-                            const matchLastIdx = currentNovel.lastReadChapterId.match(/-ch-(\d+)$/);
-                            if (matchLastIdx) {
-                                const lastIdx = parseInt(matchLastIdx[1], 10);
-                                setReadLiveChapters(prev => {
-                                    const next = new Set(prev);
-                                    fullLiveList.forEach(c => {
-                                        if (c._index <= lastIdx) {
-                                            if (c.url) next.add(c.url);
-                                        }
-                                    });
-                                    return next;
-                                });
-                            }
+                            setReadLiveChapters(prev => new Set(prev).add(currentNovel.lastReadChapterId!));
                         }
 
                         // Update State & DB
