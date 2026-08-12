@@ -169,7 +169,7 @@ export default defineConfig({
                 const capturedChaptersMap = new Map<string, any>();
 
                 if (targetRaw.includes('mangafire.to')) {
-                    page.on('response', async res => {
+                    page.on('response', async (res: any) => {
                         const resUrl = res.url();
                         if (resUrl.includes('/api/titles/')) {
                             try {
