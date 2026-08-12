@@ -260,10 +260,7 @@ export const Reader = () => {
                         ]);
                         if (fetchedContent && fetchedContent.length > 50) {
                             cData.content = fetchedContent;
-                            setChapter({ ...cData }); // Update UI immediately
-
-                            // Persist to DB (and Filesystem)
-                            await dbService.updateChapterContent(nid, cid, fetchedContent);
+                            setChapter({ ...cData }); // Update UI immediately for reading (do not store text to disk)
                         }
                     } catch (fetchErr) {
                         console.warn("[Reader] Auto-fetch failed", fetchErr);
