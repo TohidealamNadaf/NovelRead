@@ -1,6 +1,7 @@
 import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { chapterListCache } from './chapterListCache';
 
 
 export interface Novel {
@@ -555,33 +556,70 @@ class DatabaseService {
             if (!db) return;
 
             try {
-                // Delete cover image if it's local
-                const novel = await this.getNovel(id);
-                if (novel && novel.coverUrl && !novel.coverUrl.startsWith('http')) {
+                const cleanId = id ? id.replace(/\/$/, '').replace(/\/chapters$/i, '') : '';
+                const decodedId = id && id.includes('%') ? decodeURIComponent(id).replace(/\/$/, '').replace(/\/chapters$/i, '') : cleanId;
+                const encodedId = cleanId ? encodeURIComponent(cleanId) : cleanId;
+
+                // 1. Find all matching novel rows to gather all ID and sourceUrl variants
+                const existingResult = await db.query(
+                    `SELECT id, sourceUrl FROM novels 
+                     WHERE id = ? OR id = ? OR id = ? OR id = ? OR id = ? OR id = ?
+                        OR sourceUrl = ? OR sourceUrl = ? OR sourceUrl = ? OR sourceUrl = ?`,
+                    [
+                        id, cleanId, decodedId, encodedId, cleanId + '/', cleanId + '/chapters',
+                        id, cleanId, decodedId, cleanId + '/'
+                    ]
+                );
+
+                const idsToDelete = new Set<string>([
+                    id, cleanId, decodedId, encodedId,
+                    cleanId + '/', cleanId + '/chapters',
+                    `live-${cleanId}`
+                ]);
+
+                if (existingResult.values) {
+                    for (const row of existingResult.values) {
+                        if (row.id) idsToDelete.add(row.id);
+                        if (row.sourceUrl) {
+                            idsToDelete.add(row.sourceUrl);
+                            idsToDelete.add(row.sourceUrl.replace(/\/$/, ''));
+                            idsToDelete.add(encodeURIComponent(row.sourceUrl));
+                        }
+                    }
+                }
+
+                // 2. Delete filesystem directories, memory cache, and localStorage for all variants
+                for (const targetId of idsToDelete) {
                     try {
-                        // Assuming cover is stored in cache directory, but paths might vary.
-                        // For now strict filesystem cleanup is complex, rely on explicit paths if known.
+                        const dir = await this.getNovelDir(targetId);
+                        await Filesystem.rmdir({
+                            path: dir,
+                            directory: Directory.Data,
+                            recursive: true
+                        });
                     } catch (e) { }
+
+                    // Clear in-memory cache
+                    chapterListCache.delete(targetId);
+
+                    // Clear localStorage tracking
+                    if (typeof localStorage !== 'undefined') {
+                        localStorage.removeItem(`lastRead:${targetId}`);
+                        localStorage.removeItem(`lastReadAt:${targetId}`);
+                        localStorage.removeItem(`scroll-${targetId}`);
+                    }
                 }
 
-                // Delete all chapter content files
-                try {
-                    const dir = await this.getNovelDir(id);
-                    await Filesystem.rmdir({
-                        path: dir,
-                        directory: Directory.Data,
-                        recursive: true
-                    });
-                } catch (e) {
-                    // Ignore if directory doesn't exist
+                // 3. Delete from DB tables (both novels and chapters for all target IDs/sourceUrls)
+                for (const targetId of idsToDelete) {
+                    await db.run('DELETE FROM chapters WHERE novelId = ?', [targetId]);
+                    await db.run('DELETE FROM novels WHERE id = ? OR sourceUrl = ?', [targetId, targetId]);
                 }
 
-                await db.run('DELETE FROM novels WHERE id = ?', [id]);
-                // Cascase delete handled by DB schema for chapters
                 await this.save();
-                console.log(`Deleted novel ${id}`);
+                console.log(`[dbService] Successfully deleted novel ${id} and all related DB/Cache/FS records.`);
             } catch (e) {
-                console.error(`Failed to delete novel ${id}`, e);
+                console.error(`[dbService] Failed to delete novel ${id}`, e);
             }
         });
     }

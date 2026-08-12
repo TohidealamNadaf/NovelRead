@@ -7,5 +7,11 @@ export const chapterListCache = {
     },
     set(novelId: string, entry: Omit<CacheEntry, 'ts'>) {
         cache.set(novelId, { ...entry, ts: Date.now() });
+    },
+    delete(novelId: string) {
+        cache.delete(novelId);
+    },
+    clear() {
+        cache.clear();
     }
 };

@@ -529,8 +529,8 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         }
         onProgress?.(allChapters, 1, { title, author, summary, status, coverUrl });
 
-        // Step 3: Parallel-fetch remaining pages (batches of 3, NO 600ms delay)
-        const CONCURRENCY = 3;
+        // Step 3: Fetch remaining pages sequentially (1 page per batch with 200ms pacing) to prevent proxy 429/522 rate limits
+        const CONCURRENCY = 1;
         const cleanUrl = url.split('?')[0];
         
         // Skip fetching if DB has all chapters
@@ -549,6 +549,8 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                 }
             }
             onProgress?.(allChapters, Math.min(start + CONCURRENCY - 1, totalPage), { title, author, summary, status, coverUrl });
+            // Smooth request pacing to prevent hitting CORS proxy / host 429 Rate Limits
+            await new Promise(r => setTimeout(r, 200));
         }
 
         if (!title && allChapters.length === 0) throw new Error('Failed to fetch novel metadata and chapters from FreeWebNovel.');

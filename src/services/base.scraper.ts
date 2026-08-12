@@ -2,27 +2,21 @@ import { CapacitorHttp } from '@capacitor/core';
 
 export abstract class BaseScraper {
     private PROXIES = [
-        'https://api.codetabs.com/v1/proxy?quest=',
         'https://corsproxy.io/?',
         'https://api.allorigins.win/raw?url='
     ];
 
-    // Retry configuration for Cloudflare-blocked requests is handled externally or not used anymore
+    private static proxyCooldowns = new Map<string, number>();
 
-    public getProxies(url?: string): string[] {
-        // Return an empty string first to try direct connection, then fallbacks
-        // The vite proxy in dev server handles CORS natively when no prefix is used.
-        if (url) {
-            // We use the default proxy list for all hosts now to ensure native (Capacitor) direct connections are attempted first.
-        }
-        return ['', ...this.PROXIES];
+    public getProxies(_url?: string): string[] {
+        const now = Date.now();
+        const availableProxies = this.PROXIES.filter(p => {
+            const cooldownUntil = BaseScraper.proxyCooldowns.get(p) || 0;
+            return now >= cooldownUntil;
+        });
+        return ['', ...availableProxies];
     }
 
-    /**
-     * Races all proxies (including direct connection) simultaneously.
-     * Reduces the overall timeout to 5000ms.
-     * Resolves with the first successful HTML response, or throws if all fail.
-     */
     public async fetchHtmlWithProxies(url: string): Promise<string> {
         if (!url) throw new Error("Invalid URL");
 
@@ -33,7 +27,9 @@ export abstract class BaseScraper {
                 const html = await this.fetchHtml(url, proxyPrefix, 8000);
                 if (html) return html;
             } catch (error) {
-                console.warn(`[BaseScraper] Proxy attempt failed for ${url} via ${proxyPrefix || 'direct'}`, error);
+                if ((error as any)?.name !== 'AbortError') {
+                    console.warn(`[BaseScraper] Proxy attempt failed for ${url} via ${proxyPrefix || 'direct'}`, error);
+                }
             }
         }
 
@@ -42,10 +38,10 @@ export abstract class BaseScraper {
 
     public async fetchHtml(url: string, proxyPrefix: string = '', timeoutMs: number = 10000, signal?: AbortSignal): Promise<string | null> {
         if (!url) return null;
+        if (signal?.aborted) return null;
 
         try {
             const separator = url.includes('?') ? '&' : '?';
-            // Only cache-bust the direct connection. Proxies should use their own cache layer.
             const bustedUrl = proxyPrefix === '' ? `${url}${separator}_t=${Date.now()}` : url;
             const finalUrl = proxyPrefix ? `${proxyPrefix}${encodeURIComponent(bustedUrl)}` : bustedUrl;
 
@@ -66,6 +62,11 @@ export abstract class BaseScraper {
                     readTimeout: timeoutMs
                 });
 
+                if (response.status === 429 && proxyPrefix) {
+                    BaseScraper.proxyCooldowns.set(proxyPrefix, Date.now() + 30000);
+                    return null;
+                }
+
                 if (response.status >= 200 && response.status < 300) {
                     return typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
                 }
@@ -80,25 +81,39 @@ export abstract class BaseScraper {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
                 
-                // Merge external abort
                 if (signal) {
-                    if (signal.aborted) controller.abort();
-                    else signal.addEventListener('abort', () => controller.abort(), { once: true });
+                    if (signal.aborted) {
+                        clearTimeout(timeoutId);
+                        return null;
+                    }
+                    signal.addEventListener('abort', () => controller.abort(), { once: true });
                 }
 
                 try {
-                    const response = await fetch(fetchUrl, {
-                        cache: 'no-cache',
-                        headers: {
+                    const fetchHeaders: Record<string, string> = isLocalProxy
+                        ? {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
                             'Accept': 'text/html',
                             'Cache-Control': 'no-cache',
                             'Pragma': 'no-cache'
-                        },
+                        }
+                        : {};
+
+                    const response = await fetch(fetchUrl, {
+                        cache: 'no-cache',
+                        headers: fetchHeaders,
                         signal: controller.signal
                     });
 
                     clearTimeout(timeoutId);
+
+                    if (response.status === 429) {
+                        if (proxyPrefix) {
+                            BaseScraper.proxyCooldowns.set(proxyPrefix, Date.now() + 30000);
+                        }
+                        await new Promise(r => setTimeout(r, 1000));
+                        return null;
+                    }
 
                     if (response.ok) {
                         const html = await response.text();
@@ -107,16 +122,16 @@ export abstract class BaseScraper {
                     }
                 } catch (fetchErr) {
                     clearTimeout(timeoutId);
-                    if ((fetchErr as any).name === 'AbortError') {
-                        if (isLocalProxy && signal?.aborted) {
-                            throw fetchErr;
-                        }
-                        if (!isLocalProxy) throw fetchErr;
+                    if ((fetchErr as any)?.name === 'AbortError' || signal?.aborted) {
+                        return null; // Silent cancellation
                     }
                 }
             }
             return null;
         } catch (error) {
+            if ((error as any)?.name === 'AbortError' || signal?.aborted) {
+                return null; // Silent cancellation
+            }
             console.warn(`[BaseScraper] fetchHtml failed for ${url} via ${proxyPrefix || 'direct'}`, error);
             return null;
         }
