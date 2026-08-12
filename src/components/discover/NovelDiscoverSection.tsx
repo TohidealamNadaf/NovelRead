@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { BookOpen, Search, X, Loader2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { generateSlug } from '../../utils/slugUtils';
 import type { NovelMetadata } from '../../services/scraper.service';
 
@@ -24,9 +24,9 @@ export const NovelDiscoverSection = memo(({
     source
 }: NovelDiscoverSectionProps) => {
     const navigate = useNavigate();
+    const location = useLocation();
 
     const goToNovel = (novel: any) => {
-        // sourceUrl may come from the scraper as sourceUrl directly.
         // Ensure it is always explicitly set on the novel passed in state
         // so useChapterData can find location.state?.novel?.sourceUrl
         // and trigger the live chapter fetch. Without this, the chapter
@@ -37,17 +37,19 @@ export const NovelDiscoverSection = memo(({
             sourceUrl,
         };
 
+        const fromPath = location.pathname + location.search;
+
         if (sourceUrl.startsWith('http')) {
             // Navigate using the sourceUrl as the novelId so the route
             // is stable and useChapterData can derive a consistent DB key
             navigate(`/novel/${encodeURIComponent(sourceUrl)}`, {
-                state: { liveMode: true, novel: novelWithSource }
+                state: { liveMode: true, novel: novelWithSource, from: fromPath }
             });
         } else {
             // Fallback for novels without a sourceUrl (shouldn't happen
             // for FreeWebNovel but safe to handle)
             navigate(`/novel/live-${generateSlug(novel.title || 'novel')}`, {
-                state: { liveMode: true, novel: novelWithSource }
+                state: { liveMode: true, novel: novelWithSource, from: fromPath }
             });
         }
     };

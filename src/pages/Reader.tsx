@@ -733,11 +733,16 @@ export const Reader = () => {
     });
 
     const handleBackToIndex = () => {
-        if (isLiveMode) {
-            navigate(-1);
-        } else {
-            navigate(`/novel/${encodeURIComponent(novelId || '')}`);
-        }
+        const fromPath = location.state?.from || '/';
+        const targetPath = (novel?.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(novelId || '')}` : `/novel/${encodeURIComponent(novelId || '')}`);
+        navigate(targetPath, {
+            state: {
+                novel,
+                liveMode: isLiveMode,
+                from: fromPath
+            },
+            replace: true
+        });
     };
 
     // Resync chapter content handler

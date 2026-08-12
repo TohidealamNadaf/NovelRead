@@ -170,10 +170,15 @@ export const DiscoverList = () => {
     const filteredItems = items.filter(n => n.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const handleItemClick = (item: any) => {
+        const fromPath = location.pathname + location.search;
         if (mode === 'manhwa' || mode === 'mangafire') {
-            navigate(`/manhwa/${encodeURIComponent(item.sourceUrl)}`);
+            navigate(`/manhwa/${encodeURIComponent(item.sourceUrl)}`, {
+                state: { liveMode: true, novel: item, from: fromPath }
+            });
         } else {
-            navigate(`/novel/live-${encodeURIComponent(item.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`, { state: { liveMode: true, novel: item } });
+            const sourceUrl = item.sourceUrl || item.url || '';
+            const targetRoute = sourceUrl ? `/novel/${encodeURIComponent(sourceUrl)}` : `/novel/live-${encodeURIComponent(item.title || 'novel').replace(/%20/g, '-').slice(0, 60)}`;
+            navigate(targetRoute, { state: { liveMode: true, novel: item, from: fromPath } });
         }
     };
 

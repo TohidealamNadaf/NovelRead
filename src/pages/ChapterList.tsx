@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -48,6 +48,18 @@ export const ChapterList = () => {
         // loadData, // Unused in this component (handled in hook)
         setChapters
     } = useChapterData();
+
+    const originFromPath = useMemo(() => {
+        const from = location.state?.from;
+        if (from && from !== location.pathname && !from.startsWith('/read')) {
+            return from;
+        }
+        return isLiveMode ? '/discover' : '/';
+    }, [location.state, location.pathname, isLiveMode]);
+
+    const handleHeaderBack = useCallback(() => {
+        navigate(originFromPath);
+    }, [navigate, originFromPath]);
 
     // Debounce search
     useEffect(() => {
@@ -166,7 +178,8 @@ export const ChapterList = () => {
                     novelCoverUrl: novel?.coverUrl,
                     novelSourceUrl: novel?.sourceUrl,
                     currentIndex: realIndex !== -1 ? realIndex : 0,
-                    chapters: [...liveChapters]
+                    chapters: [...liveChapters],
+                    from: originFromPath
                 }
             });
         } else {
@@ -176,11 +189,12 @@ export const ChapterList = () => {
                     novel,
                     liveMode: false,
                     currentIndex: realIndex !== -1 ? realIndex : 0,
-                    chapters: [...chapters]
+                    chapters: [...chapters],
+                    from: originFromPath
                 }
             });
         }
-    }, [isLiveMode, navigate, novel, liveChapters, chapters]);
+    }, [isLiveMode, navigate, novel, liveChapters, chapters, originFromPath]);
 
 
     // --- Render Helpers ---
@@ -201,6 +215,7 @@ export const ChapterList = () => {
                 title={novel?.title || 'Chapter Index'}
                 subtitle={novel?.author}
                 showBack={true}
+                onBack={handleHeaderBack}
                 className="bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-md z-50 shrink-0"
                 withBorder
                 rightActions={
@@ -446,9 +461,10 @@ export const ChapterList = () => {
                         if (!chapter) return null;
 
                         const isDownloaded = isLiveMode ? downloadedLiveChapters.has(chapter.url) : (chapter.content || chapter.contentPath);
+                        const cleanNovelId = novel?.id ? novel.id.replace(/\/$/, '').replace(/\/chapters$/i, '') : '';
                         const isRead = isLiveMode
-                            ? (readLiveChapters.has(chapter.url) || readLiveChapters.has(chapter.id) || novel?.lastReadChapterId === chapter.id || novel?.lastReadChapterId === chapter.url)
-                            : (Boolean(chapter.isRead) || novel?.lastReadChapterId === chapter.id || novel?.lastReadChapterId === chapter.url);
+                            ? (readLiveChapters.has(chapter.url) || readLiveChapters.has(chapter.id) || novel?.lastReadChapterId === chapter.id || novel?.lastReadChapterId === chapter.url || novel?.lastReadChapterId === `${novel?.id}-ch-${chapter._index}` || novel?.lastReadChapterId === `${cleanNovelId}-ch-${chapter._index}`)
+                            : (Boolean(chapter.isRead) || novel?.lastReadChapterId === chapter.id || novel?.lastReadChapterId === chapter.url || novel?.lastReadChapterId === `${novel?.id}-ch-${chapter.orderIndex}` || novel?.lastReadChapterId === `${cleanNovelId}-ch-${chapter.orderIndex}`);
                         const isDownloadingItem = isLiveMode ? downloadingLive.has(chapter.url) : downloading.has(chapter.id);
                         const displayIndex = sortOrder === 'asc'
                             ? (isLiveMode ? (chapter._index + 1) : (chapter.orderIndex + 1))

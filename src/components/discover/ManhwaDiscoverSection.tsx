@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { BookOpen, RefreshCcw } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 interface ManhwaDiscoverSectionProps {
     manhwaData: any;
@@ -26,10 +26,14 @@ export const ManhwaDiscoverSection = memo(({
     mode = 'manhwa'
 }: ManhwaDiscoverSectionProps) => {
     const navigate = useNavigate();
+    const location = useLocation();
 
     const handleManhwaClick = (manga: any) => {
         if (manga.sourceUrl) {
-            navigate(`/manhwa/${encodeURIComponent(manga.sourceUrl)}`);
+            const fromPath = location.pathname + location.search;
+            navigate(`/manhwa/${encodeURIComponent(manga.sourceUrl)}`, {
+                state: { liveMode: true, novel: manga, from: fromPath }
+            });
         }
     };
 

@@ -219,8 +219,19 @@ class DatabaseService {
     }
 
     // --- Filesystem Helpers ---
+    private sanitizePathSegment(str: string): string {
+        if (!str) return 'unknown';
+        return str
+            .replace(/^https?:\/\//i, '')
+            .replace(/[^a-zA-Z0-9_-]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_|_$/g, '')
+            .slice(0, 150);
+    }
+
     private async getNovelDir(novelId: string): Promise<string> {
-        return `NOVEL_DATA/${novelId}`;
+        const safeDir = this.sanitizePathSegment(novelId);
+        return `NOVEL_DATA/${safeDir}`;
     }
 
     async saveChapterContent(novelId: string, chapterId: string, content: string): Promise<string> {
@@ -240,8 +251,8 @@ class DatabaseService {
                 }
             }
 
-            const fileName = `${chapterId}.txt`;
-            const filePath = `${dir}/${fileName}`;
+            const safeFileName = `${this.sanitizePathSegment(chapterId)}.txt`;
+            const filePath = `${dir}/${safeFileName}`;
 
             await Filesystem.writeFile({
                 path: filePath,
@@ -253,7 +264,6 @@ class DatabaseService {
             return filePath;
         } catch (e) {
             console.error(`[FS] Failed to save chapter content: ${e}`);
-            // Fallback: return empty string or throw? For now throw to handle upstream
             throw e;
         }
     }
@@ -556,8 +566,9 @@ class DatabaseService {
 
                 // Delete all chapter content files
                 try {
+                    const dir = await this.getNovelDir(id);
                     await Filesystem.rmdir({
-                        path: `novels/${id}`,
+                        path: dir,
                         directory: Directory.Data,
                         recursive: true
                     });

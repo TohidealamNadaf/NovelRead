@@ -73,6 +73,7 @@ const NovelGridBase: React.FC<NovelGridProps> = ({
                         >
                             <Link
                                 to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(novel.id)}` : `/novel/${encodeURIComponent(novel.id)}`)}
+                                state={{ from: '/' }}
                                 className={`flex flex-col gap-2 group relative w-full select-none touch-manipulation ${editMode ? 'cursor-default' : 'cursor-pointer'}`}
                                 style={{ WebkitTapHighlightColor: 'transparent' }}
                                 onTouchStart={handlePointerDown}

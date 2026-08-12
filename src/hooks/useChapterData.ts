@@ -154,11 +154,15 @@ export function useChapterData() {
 
                 // Hydrate reading progress from localStorage if available (for Live novels)
                 if (typeof localStorage !== 'undefined') {
-                    const savedLastRead = localStorage.getItem(`lastRead:${novelId}`);
-                    const savedLastReadAt = localStorage.getItem(`lastReadAt:${novelId}`);
+                    const cleanId = novelId.replace(/\/$/, '').replace(/\/chapters$/i, '');
+                    const savedLastRead = localStorage.getItem(`lastRead:${novelId}`) ||
+                        localStorage.getItem(`lastRead:${cleanId}`) ||
+                        (currentNovel.sourceUrl ? localStorage.getItem(`lastRead:${currentNovel.sourceUrl.replace(/\/$/, '').replace(/\/chapters$/i, '')}`) : null);
+                    const savedLastReadAt = localStorage.getItem(`lastReadAt:${novelId}`) || (currentNovel.sourceUrl ? localStorage.getItem(`lastReadAt:${currentNovel.sourceUrl}`) : null);
                     if (savedLastRead) {
                         currentNovel.lastReadChapterId = savedLastRead;
-                        currentNovel.lastReadAt = savedLastReadAt ? parseInt(savedLastReadAt) : Date.now();
+                        currentNovel.lastReadAt = savedLastReadAt ? parseInt(savedLastReadAt, 10) : Date.now();
+                        setReadLiveChapters(prev => new Set(prev).add(savedLastRead));
                     }
                 }
 
@@ -259,8 +263,9 @@ export function useChapterData() {
                         setLiveChapters(fullLiveList);
 
                         // Update readLiveChapters with lastReadChapterId
-                        if (currentNovel?.lastReadChapterId) {
-                            setReadLiveChapters(prev => new Set(prev).add(currentNovel.lastReadChapterId!));
+                        const lastReadId = currentNovel?.lastReadChapterId;
+                        if (lastReadId) {
+                            setReadLiveChapters(prev => new Set(prev).add(lastReadId));
                         }
 
                         // Update State & DB

@@ -432,6 +432,7 @@ export const Home = () => {
                             </h3>
                             <Link
                                 to={heroNovel.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(heroNovel.id)}` : `/novel/${encodeURIComponent(heroNovel.id)}`}
+                                state={{ from: '/' }}
                                 className="relative flex w-full rounded-3xl overflow-hidden shadow-2xl shadow-primary/10 active:scale-[0.98] transition-transform duration-300 group min-h-[160px]"
                             >
                                 {/* Blurred Background Cover */}
@@ -487,6 +488,7 @@ export const Home = () => {
                                     <Link
                                         key={'recent-' + novel.id}
                                         to={novel.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(novel.id)}` : `/novel/${encodeURIComponent(novel.id)}`}
+                                        state={{ from: '/' }}
                                         className="snap-start shrink-0 w-[100px] sm:w-[120px] flex flex-col gap-2 group active:scale-95 transition-transform"
                                     >
                                         <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-md ring-1 ring-black/5 dark:ring-white/10 group-hover:shadow-lg transition-shadow">
