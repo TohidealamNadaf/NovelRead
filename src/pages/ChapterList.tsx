@@ -445,8 +445,13 @@ export const ChapterList = () => {
                         const chapter = filteredChapters[virtualRow.index];
                         if (!chapter) return null;
 
+                        const lastReadMatch = novel?.lastReadChapterId?.match(/-ch-(\d+)$/);
+                        const lastReadIdx = lastReadMatch ? parseInt(lastReadMatch[1], 10) : -1;
+
                         const isDownloaded = isLiveMode ? downloadedLiveChapters.has(chapter.url) : (chapter.content || chapter.contentPath);
-                        const isRead = isLiveMode ? readLiveChapters.has(chapter.url) : (chapter.isRead || false);
+                        const isRead = isLiveMode
+                            ? (readLiveChapters.has(chapter.url) || readLiveChapters.has(chapter.id) || (lastReadIdx !== -1 && chapter._index !== undefined && chapter._index <= lastReadIdx))
+                            : (Boolean(chapter.isRead) || (lastReadIdx !== -1 && chapter.orderIndex !== undefined && chapter.orderIndex <= lastReadIdx));
                         const isDownloadingItem = isLiveMode ? downloadingLive.has(chapter.url) : downloading.has(chapter.id);
                         const displayIndex = sortOrder === 'asc'
                             ? (isLiveMode ? (chapter._index + 1) : (chapter.orderIndex + 1))

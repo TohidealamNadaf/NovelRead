@@ -117,23 +117,32 @@ const NovelGridBase: React.FC<NovelGridProps> = ({
                                         </div>
                                     )}
 
-                                    {/* Embedded Info & Progress */}
-                                    <div className="absolute inset-x-0 bottom-0 p-2 sm:p-3 flex flex-col justify-end">
-                                        <div className="h-1 bg-white/30 rounded-full overflow-hidden backdrop-blur-sm w-full shadow-inner mb-1.5">
-                                            <div
-                                                className="h-full bg-primary shadow-[0_0_8px_rgba(var(--color-primary),0.8)]"
-                                                style={{ width: `${Math.min(100, ((novel.readChapters || 0) / (novel.totalChapters || 1)) * 100)}%` }}
-                                            />
-                                        </div>
-                                        <div className="flex justify-between items-end gap-2">
-                                            <p className="text-[10px] sm:text-xs text-white/90 truncate font-medium">
-                                                Ch {novel.readChapters || 0}
-                                            </p>
-                                            <p className="text-[9px] text-white/60 font-semibold bg-white/10 px-1.5 py-0.5 rounded backdrop-blur-md">
-                                                {Math.round(((novel.readChapters || 0) / (novel.totalChapters || 1)) * 100)}%
-                                            </p>
-                                        </div>
-                                    </div>
+                                    {(() => {
+                                        const matchIdx = novel.lastReadChapterId?.match(/-ch-(\d+)$/);
+                                        const lastReadCount = matchIdx ? parseInt(matchIdx[1], 10) + 1 : 0;
+                                        const effectiveRead = Math.max(novel.readChapters || 0, lastReadCount);
+                                        const totalCount = Math.max(novel.totalChapters || 1, effectiveRead);
+                                        const percent = Math.min(100, Math.round((effectiveRead / totalCount) * 100));
+
+                                        return (
+                                            <div className="absolute inset-x-0 bottom-0 p-2 sm:p-3 flex flex-col justify-end">
+                                                <div className="h-1 bg-white/30 rounded-full overflow-hidden backdrop-blur-sm w-full shadow-inner mb-1.5">
+                                                    <div
+                                                        className="h-full bg-primary shadow-[0_0_8px_rgba(var(--color-primary),0.8)]"
+                                                        style={{ width: `${percent}%` }}
+                                                    />
+                                                </div>
+                                                <div className="flex justify-between items-end gap-2">
+                                                    <p className="text-[10px] sm:text-xs text-white/90 truncate font-medium">
+                                                        Ch {effectiveRead}
+                                                    </p>
+                                                    <p className="text-[9px] text-white/60 font-semibold bg-white/10 px-1.5 py-0.5 rounded backdrop-blur-md">
+                                                        {percent}%
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
 
                                 <div className="flex flex-col px-1">

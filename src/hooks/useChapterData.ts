@@ -101,7 +101,28 @@ export function useChapterData() {
                         .map(c => c.audioPath)
                         .filter(Boolean) as string[]
                 );
-                const readUrls = new Set(dbChapters.filter(c => c.isRead).map(c => c.audioPath).filter(Boolean) as string[]);
+                const readUrls = new Set(
+                    dbChapters
+                        .filter(c => c.isRead)
+                        .flatMap(c => [c.audioPath, c.id])
+                        .filter(Boolean) as string[]
+                );
+
+                // Infer all read chapters up to lastReadChapterId
+                if (dbNovel.lastReadChapterId) {
+                    readUrls.add(dbNovel.lastReadChapterId);
+                    const matchLastIdx = dbNovel.lastReadChapterId.match(/-ch-(\d+)$/);
+                    if (matchLastIdx) {
+                        const lastIdx = parseInt(matchLastIdx[1], 10);
+                        dbChapters.forEach(c => {
+                            if (c.orderIndex <= lastIdx) {
+                                if (c.audioPath) readUrls.add(c.audioPath);
+                                if (c.id) readUrls.add(c.id);
+                            }
+                        });
+                    }
+                }
+
                 setDownloadedLiveChapters(savedUrls);
                 setReadLiveChapters(readUrls);
 
@@ -237,12 +258,31 @@ export function useChapterData() {
                         const newChapters = data.chapters.filter(ch => !existingUrls.has(ch.url));
 
                         const indexedChapters = newChapters.map((ch, idx) => ({ ...ch, _index: knownChapters.length + idx }));
-                        setLiveChapters([...knownChapters.map(ch => ({
-                                    title: ch.title,
-                                    url: ch.audioPath || '',
-                                    _index: ch.orderIndex,
-                                    date: ch.date
-                        })), ...indexedChapters]);
+                        const fullLiveList = [...knownChapters.map(ch => ({
+                            title: ch.title,
+                            url: ch.audioPath || '',
+                            _index: ch.orderIndex,
+                            date: ch.date
+                        })), ...indexedChapters];
+
+                        setLiveChapters(fullLiveList);
+
+                        // Update readLiveChapters with index inferencing
+                        if (currentNovel?.lastReadChapterId) {
+                            const matchLastIdx = currentNovel.lastReadChapterId.match(/-ch-(\d+)$/);
+                            if (matchLastIdx) {
+                                const lastIdx = parseInt(matchLastIdx[1], 10);
+                                setReadLiveChapters(prev => {
+                                    const next = new Set(prev);
+                                    fullLiveList.forEach(c => {
+                                        if (c._index <= lastIdx) {
+                                            if (c.url) next.add(c.url);
+                                        }
+                                    });
+                                    return next;
+                                });
+                            }
+                        }
 
                         // Update State & DB
                         if (dbNovel) {

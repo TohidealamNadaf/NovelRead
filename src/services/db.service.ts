@@ -478,7 +478,7 @@ class DatabaseService {
                 const set = updatedChapters.map(chapter => ({
                     statement: `
                         INSERT OR REPLACE INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT isRead FROM chapters WHERE id = ?), 0), ?);
+                        VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT MAX(isRead) FROM chapters WHERE id = ? OR audioPath = ?), 0), ?);
                     `,
                     values: [
                         chapter.id,
@@ -488,7 +488,8 @@ class DatabaseService {
                         chapter.contentPath || null,
                         chapter.orderIndex,
                         chapter.audioPath || null,
-                        chapter.id, // for COALESCE subquery
+                        chapter.id, // for COALESCE subquery (by ID)
+                        chapter.audioPath || chapter.id, // for COALESCE subquery (by audioPath)
                         chapter.date || null
                     ]
                 }));
@@ -603,21 +604,40 @@ class DatabaseService {
 
         console.log("Fetching novels from DB...");
 
-        // Query to get novels with chapter counts
-        // We use a LEFT JOIN on chapters to count
+        // Query to get novels with chapter counts across all novelId variants
         const query = `
-SELECT
-n.*,
-    COUNT(c.id) as downloadedChapters,
-    SUM(CASE WHEN c.isRead = 1 THEN 1 ELSE 0 END) as readChapters
+            SELECT
+                n.*,
+                COUNT(c.id) as downloadedChapters,
+                SUM(CASE WHEN c.isRead = 1 THEN 1 ELSE 0 END) as readChapters
             FROM novels n
-            LEFT JOIN chapters c ON n.id = c.novelId
+            LEFT JOIN chapters c ON (
+                c.novelId = n.id 
+                OR c.novelId = REPLACE(n.id, '/chapters', '') 
+                OR c.novelId = RTRIM(n.id, '/')
+                OR (n.sourceUrl IS NOT NULL AND n.sourceUrl != '' AND c.novelId IS NOT NULL AND INSTR(n.sourceUrl, c.novelId) > 0)
+            )
             GROUP BY n.id
             ORDER BY COALESCE(n.lastReadAt, n.createdAt * 1000) DESC;
-`;
+        `;
 
         const result = await db.query(query);
-        return (result.values as Novel[]) || [];
+        const novels = (result.values as Novel[]) || [];
+
+        return novels.map(n => {
+            let readCount = n.readChapters || 0;
+            if (n.lastReadChapterId) {
+                const match = n.lastReadChapterId.match(/-ch-(\d+)$/);
+                if (match) {
+                    const idxCount = parseInt(match[1], 10) + 1;
+                    readCount = Math.max(readCount, idxCount);
+                }
+            }
+            return {
+                ...n,
+                readChapters: readCount
+            };
+        });
     }
 
     async getChapter(novelId: string, chapterId: string): Promise<Chapter | null> {
@@ -645,8 +665,16 @@ n.*,
         const db = await this.getDB();
         if (!db) return [];
 
-        let query = 'SELECT id, novelId, title, orderIndex, audioPath, isRead, date, contentPath FROM chapters WHERE novelId = ? ORDER BY orderIndex ASC';
-        const params: any[] = [novelId];
+        const cleanId = novelId ? novelId.replace(/\/$/, '').replace(/\/chapters$/i, '') : '';
+        const decodedId = novelId && novelId.includes('%') ? decodeURIComponent(novelId).replace(/\/$/, '').replace(/\/chapters$/i, '') : cleanId;
+
+        let query = `
+            SELECT id, novelId, title, orderIndex, audioPath, isRead, date, contentPath 
+            FROM chapters 
+            WHERE novelId = ? OR novelId = ? OR novelId = ? OR novelId = ? OR novelId = ?
+            ORDER BY orderIndex ASC
+        `;
+        const params: any[] = [novelId, cleanId, decodedId, cleanId + '/', cleanId + '/chapters'];
 
         if (limit !== undefined && offset !== undefined) {
             query += ' LIMIT ? OFFSET ?';
@@ -879,19 +907,32 @@ n.*,
                     localStorage.setItem(`lastReadAt:${novelId}`, Date.now().toString());
                 }
 
-                // Mark chapter as read
-                let chRes = await db.run('UPDATE chapters SET isRead = 1 WHERE id = ? OR id = ?', [chapterId, `${novelId}-ch-${chapterId}`]);
-                const chChanges = chRes.changes?.changes || 0;
+                // Mark chapter as read (and ensure stub exists in DB for live chapters)
+                let orderIdx = 0;
+                const matchIdx = chapterId.match(/-ch-(\d+)$/);
+                if (matchIdx) orderIdx = parseInt(matchIdx[1], 10);
 
-                // Fallback: id didn't match anything — try the source URL instead
-                if (chChanges === 0 && chapterUrl) {
-                    const cleanUrl = chapterUrl.replace(/\/$/, '');
-                    chRes = await db.run(
-                        'UPDATE chapters SET isRead = 1 WHERE (novelId = ? OR novelId = ? OR novelId = ?) AND (audioPath = ? OR audioPath = ?)',
-                        [novelId, cleanNovelId, decodedNovelId, chapterUrl, cleanUrl]
-                    );
+                const targetNovelId = cleanNovelId || novelId;
+
+                await db.run(`
+                    INSERT INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
+                    VALUES (?, ?, 'Chapter', NULL, NULL, ?, ?, 1, NULL)
+                    ON CONFLICT(id) DO UPDATE SET isRead = 1, audioPath = COALESCE(excluded.audioPath, audioPath);
+                `, [chapterId, targetNovelId, orderIdx, chapterUrl || chapterId]);
+
+                if (chapterUrl && chapterUrl !== chapterId) {
+                    await db.run(`
+                        INSERT INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
+                        VALUES (?, ?, 'Chapter', NULL, NULL, ?, ?, 1, NULL)
+                        ON CONFLICT(id) DO UPDATE SET isRead = 1;
+                    `, [chapterUrl, targetNovelId, orderIdx, chapterUrl]);
                 }
-                
+
+                await db.run(
+                    'UPDATE chapters SET isRead = 1 WHERE (novelId = ? OR novelId = ? OR novelId = ?) AND (id = ? OR id = ? OR audioPath = ?)',
+                    [novelId, cleanNovelId, decodedNovelId, chapterId, `${novelId}-ch-${chapterId}`, chapterUrl || chapterId]
+                );
+
                 await this.save();
             } catch (error) {
                 console.error('[DB] updateReadingProgress error:', error);

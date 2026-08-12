@@ -249,6 +249,21 @@ export const Home = () => {
     // Continue Reading 
     const continueReading = useMemo(() => {
         return novels
+            .map(n => {
+                if (!n.lastReadChapterId && typeof localStorage !== 'undefined') {
+                    const cleanId = n.id ? n.id.replace(/\/$/, '').replace(/\/chapters$/i, '') : '';
+                    const saved = localStorage.getItem(`lastRead:${n.id}`) ||
+                        localStorage.getItem(`lastRead:${cleanId}`) ||
+                        (n.sourceUrl ? localStorage.getItem(`lastRead:${n.sourceUrl.replace(/\/$/, '').replace(/\/chapters$/i, '')}`) : null);
+                    const savedAt = localStorage.getItem(`lastReadAt:${n.id}`) ||
+                        localStorage.getItem(`lastReadAt:${cleanId}`) ||
+                        (n.sourceUrl ? localStorage.getItem(`lastReadAt:${n.sourceUrl.replace(/\/$/, '').replace(/\/chapters$/i, '')}`) : null);
+                    if (saved) {
+                        return { ...n, lastReadChapterId: saved, lastReadAt: savedAt ? parseInt(savedAt, 10) : Date.now() };
+                    }
+                }
+                return n;
+            })
             .filter(n => n.lastReadChapterId && n.lastReadAt)
             .sort((a, b) => (b.lastReadAt || 0) - (a.lastReadAt || 0));
     }, [novels]);

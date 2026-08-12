@@ -37,15 +37,12 @@ export function useChapterActions({
 
     // Helpers
     const getLiveNovelId = () => {
-        // Use the same ID as the route / useChapterData to avoid mismatches.
-        // novel.id comes from useParams().novelId which is the encoded sourceUrl.
-        if (novel?.id) return novel.id;
-        // Fallback to sourceUrl directly (matches how NovelDiscoverSection
-        // navigates: /novel/${encodeURIComponent(sourceUrl)})
-        const sourceUrl = novel?.sourceUrl || locationState?.novel?.sourceUrl || '';
-        if (sourceUrl) return sourceUrl;
+        let id = novel?.id || novel?.sourceUrl || locationState?.novel?.sourceUrl || '';
+        if (id) {
+            return id.replace(/\/$/, '').replace(/\/chapters$/i, '');
+        }
         // Last resort slug-based fallback
-        const path = sourceUrl.replace(/https?:\/\/[^\/]+/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+        const path = id.replace(/https?:\/\/[^\/]+/, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
         return `live-${path}`.slice(0, 80);
     };
 
