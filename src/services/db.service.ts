@@ -604,19 +604,14 @@ class DatabaseService {
 
         console.log("Fetching novels from DB...");
 
-        // Query to get novels with chapter counts across all novelId variants
+        // Optimized fast indexed query
         const query = `
             SELECT
                 n.*,
                 COUNT(c.id) as downloadedChapters,
                 SUM(CASE WHEN c.isRead = 1 THEN 1 ELSE 0 END) as readChapters
             FROM novels n
-            LEFT JOIN chapters c ON (
-                c.novelId = n.id 
-                OR c.novelId = REPLACE(n.id, '/chapters', '') 
-                OR c.novelId = RTRIM(n.id, '/')
-                OR (n.sourceUrl IS NOT NULL AND n.sourceUrl != '' AND c.novelId IS NOT NULL AND INSTR(n.sourceUrl, c.novelId) > 0)
-            )
+            LEFT JOIN chapters c ON c.novelId = n.id
             GROUP BY n.id
             ORDER BY COALESCE(n.lastReadAt, n.createdAt * 1000) DESC;
         `;
