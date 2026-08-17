@@ -7,11 +7,10 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
     public getProxies(_url?: string): string[] {
         const isNative = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
         if (isNative) {
-            return ['', 'https://api.codetabs.com/v1/proxy?quest=', 'https://corsproxy.io/?'];
+            return ['', 'https://corsproxy.io/?'];
         }
         return [
             '/api/proxy?url=',
-            'https://api.codetabs.com/v1/proxy?quest=',
             'https://corsproxy.io/?',
             'https://api.allorigins.win/raw?url='
         ];

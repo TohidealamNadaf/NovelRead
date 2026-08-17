@@ -16,8 +16,9 @@ export class MangaFireHtmlScraper {
      * Sends proper XHR headers so the server returns JSON (not an HTML challenge).
      * Skips HTML validation since the response is JSON, not a web page.
      */
-    private async fetchAjax(ajaxPath: string): Promise<any> {
+    private async fetchAjax(ajaxPath: string, refererUrl?: string): Promise<any> {
         const url = `${BASE_URL}${ajaxPath}`;
+        const referer = refererUrl || `${BASE_URL}/`;
         
         // Proper AJAX/XHR headers — without these, MangaFire returns
         // an HTML page or Cloudflare challenge instead of JSON.
@@ -25,7 +26,7 @@ export class MangaFireHtmlScraper {
             'x-force-puppeteer': 'true',
             'X-Requested-With': 'XMLHttpRequest',
             'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'Referer': `${BASE_URL}/`,
+            'Referer': referer,
         }, true); // skipValidation = true → JSON isn't HTML, skip isValidHtml
         
         if (!text || text.length < 2) {
@@ -44,12 +45,11 @@ export class MangaFireHtmlScraper {
     // ─── SEARCH (HTML-based, no VRF needed) ───
     async searchManga(query: string): Promise<NovelMetadata[]> {
         const url = `${BASE_URL}/filter?keyword=${encodeURIComponent(query)}`;
-        const html = await this.fetchHtml(url, true); // Force Puppeteer to render SPA
+        const html = await this.fetchHtml(url, true); // Force Puppeteer if available
         const $ = cheerio.load(html);
         
         const results: NovelMetadata[] = [];
         
-        // MangaFire uses specific classes for items in the new UI
         $('.unit-item, .manga-item, .inner-item, .item, .title-grid__item, .title-list-item, .filter-item, .home-section__item, .title-rows__link').each((_, el) => {
             const $el = $(el);
             const $a = $el.is('a') ? $el : $el.find('a[href*="/title/"], a[href*="/manga/"]').first();
@@ -77,18 +77,52 @@ export class MangaFireHtmlScraper {
         return results;
     }
 
-    // ─── DISCOVERY (HTML-based) ───
+    private mapApiItem(item: any): NovelMetadata {
+        const slug = item.slug || '';
+        const hid = item.hid || item.id || '';
+        const sourceUrl = slug ? `${BASE_URL}/manga/${slug}.${hid}` : `${BASE_URL}/title/${hid}`;
+        const cover = item.poster?.medium || item.poster?.small || item.poster?.large || '';
+        return {
+            title: item.title || 'Unknown Title',
+            author: 'MangaFire',
+            coverUrl: cover.startsWith('http') ? cover : `${BASE_URL}${cover}`,
+            category: item.type ? (item.type.charAt(0).toUpperCase() + item.type.slice(1)) : 'Manga',
+            status: item.status === 'releasing' ? 'Ongoing' : 'Completed',
+            sourceUrl,
+            chapters: []
+        };
+    }
+
+    // ─── DISCOVERY (Official REST API + HTML Fallback) ───
     async getDiscoverManga(): Promise<{ trending: NovelMetadata[], popular: NovelMetadata[], latest: NovelMetadata[] }> {
         try {
-            const html = await this.fetchHtml(`${BASE_URL}/home`);
+            const [tRes, pRes, lRes] = await Promise.all([
+                this.fetchAjax('/api/top-titles?type=trending&days=1&limit=30').catch(() => null),
+                this.fetchAjax('/api/top-titles?type=trending&days=7&limit=30').catch(() => null),
+                this.fetchAjax('/api/top-titles?type=trending&days=365&limit=30').catch(() => null),
+            ]);
+
+            const trending = (tRes?.items || []).map((item: any) => this.mapApiItem(item));
+            const popular = (pRes?.items || []).map((item: any) => this.mapApiItem(item));
+            const latest = (lRes?.items || []).map((item: any) => this.mapApiItem(item));
+
+            if (trending.length > 0 || popular.length > 0 || latest.length > 0) {
+                console.log(`[MangaFire] Loaded discovery API items directly: trending=${trending.length}, popular=${popular.length}, latest=${latest.length}`);
+                return { trending, popular, latest };
+            }
+        } catch (e) {
+            console.warn('[MangaFire] API discovery failed, trying HTML parsing:', e);
+        }
+
+        try {
+            const html = await this.fetchHtml(`${BASE_URL}`);
             const $ = cheerio.load(html);
             
             const trending = this.parseMangaGrid($, '.swiper-slide .unit-item, .swiper-slide .manga-item, .swiper-slide .home-section__item, .swiper-slide .item');
             const popular = this.parseMangaGrid($, '.title-grid__item, .title-list-item, .unit-item, .item');
             const latest = this.parseMangaGrid($, '.home-section__item:not(.swiper-slide), .unit-item, .manga-item, .item');
             
-            // Fallback: if sections not found, try generic selectors
-            const allItems = this.parseMangaGrid($, '.unit-item, .manga-item, .inner-item, .item, .home-section__item, .title-grid__item, .filter-item');
+            const allItems = this.parseMangaGrid($, '.unit-item, .manga-item, .inner-item, .item, .home-section__item, .title-grid__item, .filter-item, a[href*="/title/"], a[href*="/manga/"]');
             
             return {
                 trending: trending.length > 0 ? trending : allItems.slice(0, 10),
@@ -99,6 +133,26 @@ export class MangaFireHtmlScraper {
             console.error('[MangaFire] Discovery error:', e);
             return { trending: [], popular: [], latest: [] };
         }
+    }
+
+    async fetchSeriesList(page: number): Promise<NovelMetadata[]> {
+        try {
+            const data = await this.fetchAjax(`/api/top-titles?type=trending&days=365&limit=30&page=${page}`);
+            if (data?.items && data.items.length > 0) {
+                return data.items.map((item: any) => this.mapApiItem(item));
+            }
+        } catch (e) {}
+        return [];
+    }
+
+    async fetchLatestUpdates(page: number): Promise<NovelMetadata[]> {
+        try {
+            const data = await this.fetchAjax(`/api/top-titles?type=trending&days=1&limit=30&page=${page}`);
+            if (data?.items && data.items.length > 0) {
+                return data.items.map((item: any) => this.mapApiItem(item));
+            }
+        } catch (e) {}
+        return [];
     }
 
     private parseMangaGrid($: cheerio.CheerioAPI, selector: string): NovelMetadata[] {
@@ -220,7 +274,7 @@ export class MangaFireHtmlScraper {
             
             if (mangaId) {
                 // Try the AJAX endpoint — returns all chapters in one response (no pagination!)
-                const ajaxData = await this.fetchAjax(`/ajax/read/${mangaId}/chapter/en`);
+                const ajaxData = await this.fetchAjax(`/ajax/read/${mangaId}/chapter/en`, url);
                 
                 if (ajaxData?.result?.html) {
                     const $ch = cheerio.load(ajaxData.result.html);
@@ -414,32 +468,6 @@ export class MangaFireHtmlScraper {
             url: ch.url,
             date: ch.date || ''
         }));
-    }
-
-    async fetchSeriesList(page: number): Promise<NovelMetadata[]> {
-        try {
-            const url = `${BASE_URL}/browse?sort=trending&page=${page}`;
-            const html = await this.fetchHtml(url, true);
-            const $ = cheerio.load(html);
-            
-            return this.parseMangaGrid($, '.unit-item, .manga-item, .title-rows__link');
-        } catch (e) {
-            console.error('[MangaFire] fetchSeriesList error:', e);
-            return [];
-        }
-    }
-
-    async fetchLatestUpdates(page: number): Promise<NovelMetadata[]> {
-        try {
-            const url = `${BASE_URL}/browse?sort=recently_updated&page=${page}`;
-            const html = await this.fetchHtml(url, true);
-            const $ = cheerio.load(html);
-            
-            return this.parseMangaGrid($, '.unit-item, .manga-item, .title-rows__link');
-        } catch (e) {
-            console.error('[MangaFire] fetchLatestUpdates error:', e);
-            return [];
-        }
     }
 }
 

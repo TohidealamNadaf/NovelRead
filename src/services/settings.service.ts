@@ -5,6 +5,8 @@ const SETTINGS_KEY = 'app_settings';
 
 export type Listener = (settings: AppSettings) => void;
 
+export type AIProviderId = 'groq' | 'mistral' | 'openrouter' | 'gemini';
+
 export interface AppSettings {
     theme: 'light' | 'dark' | 'sepia' | 'oled';
     language: 'en' | 'es' | 'fr' | 'zh';
@@ -22,6 +24,7 @@ export interface AppSettings {
     groqApiKey: string | null;
     mistralApiKey: string | null;
     openRouterApiKey: string | null;
+    providerPriority: AIProviderId[];
     cloudSync: boolean;
 
     // AI Audio
@@ -49,6 +52,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     groqApiKey: null,
     mistralApiKey: null,
     openRouterApiKey: null,
+    providerPriority: ['groq', 'mistral', 'openrouter', 'gemini'],
     cloudSync: true,
     ttsVoice: null,
     ttsRate: 1.0,

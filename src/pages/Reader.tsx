@@ -10,7 +10,7 @@ import { WordHighlighter } from '../components/WordHighlighter';
 import { scraperService } from '../services/scraper.service';
 import { CompletionModal } from '../components/CompletionModal';
 import { SummaryModal } from '../components/SummaryModal';
-import { summarizerService } from '../services/summarizer.service';
+import { summarizerService, isValidSummary } from '../services/summarizer.service';
 import { Header } from '../components/Header';
 import { useChapterPullNavigation } from '../hooks/useChapterPullNavigation';
 import { ChapterSidebar } from '../components/ChapterSidebar';
@@ -880,13 +880,25 @@ export const Reader = () => {
                 div.innerHTML = chapter.content;
                 const textContent = div.textContent || div.innerText || '';
 
-                const result = await summarizerService.generateSummary(chapter.title, textContent, settings.summarizerApiKey || '', settings.groqApiKey, settings.mistralApiKey, settings.openRouterApiKey);
+                const result = await summarizerService.generateSummary(
+                    chapter.title,
+                    textContent,
+                    settings.summarizerApiKey || '',
+                    settings.groqApiKey,
+                    settings.mistralApiKey,
+                    settings.openRouterApiKey,
+                    settings.providerPriority
+                );
                 setSummaryData(result);
 
-                // 3. Save to DB sequentially only if it actually generated something
-                if (result.events.length > 0 && !result.extractive.includes("Failed to generate")) {
+                // 3. Save to DB only if result passes the same error-pattern
+                //    detection the summarizer uses internally. This prevents
+                //    garbage from a silently-broken model from being cached.
+                if (isValidSummary(result, textContent.length)) {
                     await dbService.saveSummary(chapter.id, 'extractive', result.extractive);
                     await dbService.saveSummary(chapter.id, 'events', JSON.stringify(result.events));
+                } else {
+                    console.warn('[Reader] Summary failed validation — not caching to DB:', result.extractive.substring(0, 100));
                 }
             }
         } catch (error) {

@@ -47,7 +47,6 @@ export class ManhwaScraperService {
                 '', // Direct fetch - best on native, no CORS issues
                 'https://api.allorigins.win/raw?url=',
                 'https://corsproxy.org/?',
-                'https://api.codetabs.com/v1/proxy?quest=',
             ];
         }
 
@@ -169,6 +168,17 @@ export class ManhwaScraperService {
                     return '';
                 }
             }
+            // Check for client-side meta redirects (e.g. 302 fallback html containing <meta http-equiv="refresh" ...>)
+            if (html && (html.includes('http-equiv="refresh"') || html.includes('Redirecting to'))) {
+                const metaMatch = html.match(/url=['"]?([^'"]+)['"]?/i);
+                if (metaMatch && metaMatch[1] && !url.endsWith(metaMatch[1])) {
+                    const redirectedTarget = metaMatch[1].startsWith('http') 
+                        ? metaMatch[1] 
+                        : `https://mangafire.to${metaMatch[1].startsWith('/') ? '' : '/'}${metaMatch[1]}`;
+                    console.log(`[ManhwaScraper] Following meta redirect to: ${redirectedTarget}`);
+                    return await this.fetchHtml(redirectedTarget, proxyUrl, extraHeaders, skipValidation);
+                }
+            }
 
             // Validate the response is real content, not a challenge page
             // skipValidation=true is used for JSON/AJAX endpoints that aren't HTML
@@ -221,7 +231,6 @@ export class ManhwaScraperService {
         if (source === 'mangafire') {
             return await mangafireScraperService.fetchLatestUpdates(page);
         }
-        // Asura has no dedicated "latest" API; /browse?page=N is the closest paginated feed
         return await asuraScraperService.fetchSeriesList(page);
     }
 
@@ -244,9 +253,6 @@ export class ManhwaScraperService {
             const full = await mangafireScraperService.fetchMetadata(url);
             if (!full) return null;
 
-            // Split chapters out and cache separately (same pattern as Asura)
-            // so fetchNovelChapters() hits cache instead of doing a redundant
-            // second network call that may fail and fall back to DOM (only 20).
             const { chapters, ...metaOnly } = full;
             await dbService.setCache(cacheKey, { data: { ...metaOnly, chapters: [] }, timestamp: Date.now() });
             if (chapters && chapters.length > 0) {
@@ -275,7 +281,7 @@ export class ManhwaScraperService {
     async fetchNovelChapters(url: string): Promise<{ title: string; url: string; date: string }[]> {
         const cacheKey = `novelChapters_${url}`;
         const cached = await dbService.getCache(cacheKey);
-        if (cached?.timestamp && Date.now() - cached.timestamp < 15 * 60 * 1000 && Array.isArray(cached.data) && cached.data.length > 20) {
+        if (cached?.timestamp && Date.now() - cached.timestamp < 15 * 60 * 1000 && Array.isArray(cached.data) && cached.data.length > 0) {
             return cached.data;
         }
 
@@ -302,7 +308,7 @@ export class ManhwaScraperService {
             return cached.data;
         }
 
-        let result: NovelMetadata;
+        let result: NovelMetadata | null = null;
         if (url.includes('mangafire.to')) {
             result = (await mangafireScraperService.fetchMangaDetails(url)) || await this.fetchGenericNovel(url);
         } else if (url.includes('asuracomic.net') || url.includes('asuratoon.com') || url.includes('asurascans.com')) {
@@ -311,10 +317,10 @@ export class ManhwaScraperService {
             result = await this.fetchGenericNovel(url);
         }
 
-        if (result?.chapters?.length > 0) {
+        if (result && result.chapters?.length > 0) {
             await dbService.setCache(cacheKey, { data: result, timestamp: Date.now() });
         }
-        return result;
+        return result || { title: 'Unknown', author: 'Unknown', coverUrl: '', category: 'Manga', status: 'Ongoing', sourceUrl: url, chapters: [] };
     }
 
     private async fetchGenericNovel(url: string): Promise<NovelMetadata> {

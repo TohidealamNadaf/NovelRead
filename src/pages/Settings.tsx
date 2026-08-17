@@ -8,7 +8,7 @@ import { settingsService } from '../services/settings.service';
 import { updateService } from '../services/update.service';
 import type { UpdateState } from '../services/update.service';
 import { cacheService } from '../services/cache.service';
-import { ChevronRight, Palette, Globe, MoveVertical, BookOpen, Trash2, FolderOpen, Shield, Cloud, RefreshCw, Download, CheckCircle2, AlertTriangle, RotateCcw, BrainCircuit } from 'lucide-react';
+import { ChevronRight, Palette, Globe, MoveVertical, BookOpen, Trash2, FolderOpen, Shield, Cloud, RefreshCw, Download, CheckCircle2, AlertTriangle, RotateCcw, BrainCircuit, ChevronUp, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import { Preferences } from '@capacitor/preferences';
 
@@ -113,6 +113,25 @@ export const Settings = () => {
         }
     };
 
+    const moveProvider = (index: number, direction: 'up' | 'down') => {
+        const currentOrder = [...(settings.providerPriority || ['groq', 'mistral', 'openrouter', 'gemini'])];
+        const targetIndex = direction === 'up' ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= currentOrder.length) return;
+
+        const temp = currentOrder[index];
+        currentOrder[index] = currentOrder[targetIndex];
+        currentOrder[targetIndex] = temp;
+
+        settingsService.updateSettings({ providerPriority: currentOrder });
+    };
+
+    const PROVIDER_INFO: Record<string, { name: string; color: string; desc: string }> = {
+        groq: { name: 'Groq', color: 'bg-green-500 text-green-500', desc: 'Fast & free (Llama 3.1 8B Instant)' },
+        mistral: { name: 'Mistral', color: 'bg-orange-500 text-orange-500', desc: 'Mistral Small Latest' },
+        openrouter: { name: 'OpenRouter', color: 'bg-purple-500 text-purple-500', desc: 'Auto Free Meta-Router + Fallbacks' },
+        gemini: { name: 'Gemini', color: 'bg-blue-500 text-blue-500', desc: 'Google AI Studio (Gemini 1.5 Flash)' },
+    };
+
     return (
         <div className="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white h-screen flex flex-col overflow-hidden font-display">
             {/* Sticky Header */}
@@ -199,6 +218,62 @@ export const Settings = () => {
 
                     <h2 className="ios-section-title">Advanced</h2>
                     <div className="bg-white dark:bg-[#1c1c1e] border-y border-slate-200 dark:border-white/5">
+                        {/* AI Fallback Priority Control */}
+                        <div className="p-4 border-b border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20">
+                            <h3 className="text-[14px] font-medium text-slate-900 dark:text-white flex items-center gap-2">
+                                <MoveVertical size={16} className="text-primary" />
+                                AI Provider Priority & Fallback Order
+                            </h3>
+                            <p className="text-[11px] text-slate-500 mt-1 mb-3">
+                                Customize which AI provider to try first. Use arrows to change priority order.
+                            </p>
+                            <div className="space-y-2">
+                                {(settings.providerPriority || ['groq', 'mistral', 'openrouter', 'gemini']).map((providerKey, index) => {
+                                    const info = PROVIDER_INFO[providerKey] || { name: providerKey, color: 'bg-slate-500 text-slate-500', desc: '' };
+                                    const hasKey = providerKey === 'groq' ? Boolean(settings.groqApiKey)
+                                        : providerKey === 'mistral' ? Boolean(settings.mistralApiKey)
+                                        : providerKey === 'openrouter' ? Boolean(settings.openRouterApiKey)
+                                        : Boolean(settings.summarizerApiKey);
+
+                                    return (
+                                        <div key={providerKey} className="flex items-center gap-3 p-2.5 bg-white dark:bg-[#2c2c2e] rounded-xl border border-slate-200 dark:border-white/10 shadow-sm">
+                                            <div className="flex size-6 items-center justify-center rounded-full bg-slate-100 dark:bg-black/40 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                                #{index + 1}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[13px] font-semibold text-slate-900 dark:text-white capitalize">{info.name}</span>
+                                                    {hasKey ? (
+                                                        <span className="text-[10px] bg-green-500/15 text-green-500 font-bold px-1.5 py-0.5 rounded-md">KEY SET</span>
+                                                    ) : (
+                                                        <span className="text-[10px] bg-slate-500/15 text-slate-400 font-medium px-1.5 py-0.5 rounded-md">NO KEY</span>
+                                                    )}
+                                                </div>
+                                                <p className="text-[10px] text-slate-500 truncate">{info.desc}</p>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => moveProvider(index, 'up')}
+                                                    disabled={index === 0}
+                                                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-slate-600 dark:text-slate-300 transition-all"
+                                                    title="Move Up"
+                                                >
+                                                    <ChevronUp size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={() => moveProvider(index, 'down')}
+                                                    disabled={index === (settings.providerPriority?.length || 4) - 1}
+                                                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-slate-600 dark:text-slate-300 transition-all"
+                                                    title="Move Down"
+                                                >
+                                                    <ChevronDown size={16} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                         {/* Groq API Key (Primary - Recommended) */}
                         <div className="p-4 border-b border-slate-200 dark:border-white/5">
                             <div className="flex items-center gap-3 mb-2">
