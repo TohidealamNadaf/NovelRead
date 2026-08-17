@@ -78,7 +78,11 @@ class SettingsService {
         try {
             const { value } = await Preferences.get({ key: SETTINGS_KEY });
             if (value) {
-                this.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(value) };
+                const parsed = JSON.parse(value);
+                this.settings = { ...DEFAULT_SETTINGS, ...parsed };
+            }
+            if (!Array.isArray(this.settings.providerPriority) || this.settings.providerPriority.length === 0) {
+                this.settings.providerPriority = ['groq', 'mistral', 'openrouter', 'gemini'];
             }
             this.notify();
             this.loaded = true;
