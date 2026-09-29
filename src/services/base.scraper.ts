@@ -1,4 +1,5 @@
 import { CapacitorHttp } from '@capacitor/core';
+import type * as cheerio from 'cheerio';
 
 export abstract class BaseScraper {
     private PROXIES = [
@@ -295,5 +296,60 @@ export abstract class BaseScraper {
             console.warn(`[BaseScraper] fetchHtmlPost failed for ${url}`, error);
             return null;
         }
+    }
+
+    /**
+     * Finds the first matching selector in a Cheerio document and extracts its trimmed text
+     */
+    public extractFirstText($: cheerio.CheerioAPI, selectors: string[]): string {
+        for (const selector of selectors) {
+            const el = $(selector);
+            if (el.length > 0) {
+                const text = el.first().text().trim();
+                if (text) return text;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Finds the first matching selector and extracts the specified attribute
+     */
+    public extractFirstAttr($: cheerio.CheerioAPI, selectors: string[], attrName: string): string {
+        for (const selector of selectors) {
+            const el = $(selector);
+            if (el.length > 0) {
+                const val = el.first().attr(attrName)?.trim();
+                if (val) return val;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Extracts chapter content with selector fallbacks, removes unwanted elements, and validates minimum length
+     */
+    public extractContentHtml(
+        $: cheerio.CheerioAPI,
+        contentSelectors: string[],
+        unwantedSelectors: string[] = [],
+        minContentLength: number = 80
+    ): string | null {
+        for (const selector of contentSelectors) {
+            const el = $(selector);
+            if (el.length > 0) {
+                const target = el.first().clone();
+                for (const unwanted of unwantedSelectors) {
+                    target.find(unwanted).remove();
+                }
+                const html = target.html() || '';
+                // Sanity check: verify text length meets threshold
+                const plainText = target.text().trim();
+                if (plainText.length >= minContentLength) {
+                    return this.enhanceContent(html);
+                }
+            }
+        }
+        return null;
     }
 }

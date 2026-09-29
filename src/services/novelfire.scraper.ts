@@ -1,6 +1,7 @@
 import type { INovelScraper } from './scraper.interface';
 import { BaseScraper } from './base.scraper';
 import type { HomeData, NovelMetadata, ScrapedChapter } from './scraper.service';
+import { NOVELFIRE_SELECTORS } from './scraper.config';
 import * as cheerio from 'cheerio';
 
 export class NovelFireScraper extends BaseScraper implements INovelScraper {
@@ -276,17 +277,13 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
 
                 const $ = cheerio.load(html);
 
-                title = (
-                    $('h1[itemprop="name"]').text().trim() ||
-                    $('h1.novel-title').text().trim() ||
-                    $('h1').first().text().trim() ||
-                    $('meta[property="og:title"]').attr('content') || ''
-                ).split(' Novel - Read')[0].split(' - Novel Fire')[0].trim();
+                const rawTitle = this.extractFirstText($, NOVELFIRE_SELECTORS.titleSelectors);
+                title = rawTitle.split(' Novel - Read')[0].split(' - Novel Fire')[0].trim();
 
                 if (title) {
-                    author = $('span[itemprop="author"]').first().text().trim() || $('.author a').first().text().trim() || $('.author').text().replace('Author:', '').trim() || 'Unknown';
+                    author = this.extractFirstText($, NOVELFIRE_SELECTORS.authorSelectors).replace(/^Author:\s*/i, '').trim() || 'Unknown';
 
-                    let extractedSummary = $('.summary .content').text().trim() || $('.summary').text().replace(/^Summary\s*/i, '').trim() || $('.description').text().trim();
+                    let extractedSummary = this.extractFirstText($, NOVELFIRE_SELECTORS.summarySelectors);
                     if (!extractedSummary) {
                         const metaDesc = $('meta[name="description"]').attr('content') || '';
                         if (!metaDesc.toLowerCase().includes('novel online free')) {
@@ -295,7 +292,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                     }
                     summary = this.cleanSummary(extractedSummary);
 
-                    status = $('strong.ongoing').first().text().trim() || $('strong.status').first().text().trim() || 'Ongoing';
+                    status = this.extractFirstText($, NOVELFIRE_SELECTORS.statusSelectors || []) || 'Ongoing';
 
                     let extractedCover = $('meta[property="og:image"]').attr('content') || '';
                     if (!extractedCover || extractedCover.startsWith('data:image/')) {
@@ -541,20 +538,15 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         try {
             const html = await this.fetchHtmlWithProxies(url);
             const $ = cheerio.load(html);
-            const contentSelectors = ['#content', '#chapter-container', '#chapter-content', '.chapter-content', '.txt'];
-            let contentHtml = '';
+            const content = this.extractContentHtml(
+                $,
+                NOVELFIRE_SELECTORS.contentSelectors,
+                NOVELFIRE_SELECTORS.unwantedSelectors,
+                NOVELFIRE_SELECTORS.minContentLength
+            );
 
-            for (const selector of contentSelectors) {
-                const el = $(selector);
-                if (el.length > 0) {
-                    el.find('.ads, .advertisement, script, style').remove();
-                    contentHtml = el.html() || '';
-                    break;
-                }
-            }
-
-            if (contentHtml && contentHtml.length > 100) {
-                return this.enhanceContent(contentHtml);
+            if (content) {
+                return content;
             }
         } catch (error) {
             console.warn(`[NovelFire] Failed to fetch chapter content`, error);

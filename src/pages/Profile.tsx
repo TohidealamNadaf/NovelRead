@@ -26,25 +26,27 @@ export const Profile = () => {
     const profileImage = useProfileImage(); // ← single source of truth
     const [loading, setLoading] = useState(true);
 
-    const loadProfile = async () => {
-        const { value: savedName } = await Preferences.get({ key: 'profileName' });
-        if (savedName) setProfileName(savedName);
-    };
-
-    const loadStats = async () => {
-        try { setStats(await dbService.getReadingStats()); }
-        catch (e) { console.error(e); }
-    };
-
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        await Promise.all([loadStats(), loadProfile()]);
-        setLoading(false);
-    }, []);
-
     useEffect(() => { 
-        loadData(); 
-    }, [loadData]);
+        let isMounted = true;
+        const fetchData = async () => {
+            try {
+                const [savedName, readStats] = await Promise.all([
+                    Preferences.get({ key: 'profileName' }),
+                    dbService.getReadingStats().catch(() => null)
+                ]);
+                if (isMounted) {
+                    if (savedName?.value) setProfileName(savedName.value);
+                    if (readStats) setStats(readStats);
+                    setLoading(false);
+                }
+            } catch (err) {
+                console.error('Failed to load profile data', err);
+                if (isMounted) setLoading(false);
+            }
+        };
+        fetchData();
+        return () => { isMounted = false; };
+    }, []);
 
     const saveProfile = async (name: string, image: string) => {
         if (!name.trim()) return;
@@ -53,11 +55,6 @@ export const Profile = () => {
         localStorage.setItem('profileImage', image);
         localStorage.setItem('profileName', name);
         window.dispatchEvent(new CustomEvent('profile-updated', { detail: image }));
-    };
-
-    const loadStats = async () => {
-        try { setStats(await dbService.getReadingStats()); }
-        catch (e) { console.error(e); }
     };
 
     const handleCamera = async () => {

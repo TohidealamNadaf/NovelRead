@@ -1,6 +1,7 @@
 import type { INovelScraper } from './scraper.interface';
 import { BaseScraper } from './base.scraper';
 import type { HomeData, NovelMetadata, ScrapedChapter } from './scraper.service';
+import { FREEWEBNOVEL_SELECTORS } from './scraper.config';
 import * as cheerio from 'cheerio';
 
 export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
@@ -215,7 +216,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                 if (!html) continue;
 
                 const $ = cheerio.load(html);
-                title = $('h1.tit').text().trim() || $('meta[property="og:title"]').attr('content')?.trim() || '';
+                title = this.extractFirstText($, FREEWEBNOVEL_SELECTORS.titleSelectors) || $('meta[property="og:title"]').attr('content')?.trim() || '';
 
                 if (title) {
                     let extractedCover = $('.m-book1 .pic img').first().attr('src') || $('meta[property="og:image"]').attr('content') || $('.pic img').first().attr('src') || '';
@@ -411,7 +412,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                 if (!html) continue;
 
                 const $ = cheerio.load(html);
-                title = $('h1.tit').text().trim() || $('meta[property="og:title"]').attr('content')?.trim() || '';
+                title = this.extractFirstText($, FREEWEBNOVEL_SELECTORS.titleSelectors) || $('meta[property="og:title"]').attr('content')?.trim() || '';
 
                 if (title) {
                     let extractedCover = $('.m-book1 .pic img').first().attr('src') || $('meta[property="og:image"]').attr('content') || $('.pic img').first().attr('src') || '';
@@ -566,10 +567,15 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         try {
             const html = await this.fetchHtmlWithProxies(url);
             const $ = cheerio.load(html);
-            const contentHtml = $('.txt').html();
+            const content = this.extractContentHtml(
+                $,
+                FREEWEBNOVEL_SELECTORS.contentSelectors,
+                FREEWEBNOVEL_SELECTORS.unwantedSelectors,
+                FREEWEBNOVEL_SELECTORS.minContentLength
+            );
 
-            if (contentHtml && contentHtml.length > 100) {
-                return this.enhanceContent(contentHtml);
+            if (content) {
+                return content;
             }
         } catch (error) {
             console.warn(`[FreeWebNovel] Failed to fetch chapter content`, error);
