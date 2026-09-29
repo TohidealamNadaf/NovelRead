@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, ChevronRight, Search, Plus, X } from 'lucide-react';
+import { BookOpen, ChevronRight, Search, Plus, X, Folder } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Novel } from '../services/db.service';
 
@@ -14,6 +14,7 @@ interface NovelGridProps {
     handlePointerUpOrMove: () => void;
     preventLinkIfEdit: (e: React.MouseEvent) => void;
     handleDeleteNovel: (novelId: string, e: React.MouseEvent) => Promise<void>;
+    onManageCollections?: (novel: Novel, e: React.MouseEvent) => void;
 }
 
 const jiggleVariants: any = {
@@ -33,7 +34,8 @@ const NovelGridBase: React.FC<NovelGridProps> = ({
     handlePointerDown,
     handlePointerUpOrMove,
     preventLinkIfEdit,
-    handleDeleteNovel
+    handleDeleteNovel,
+    onManageCollections,
 }: NovelGridProps) => {
     return (
         <div className="px-4">
@@ -85,18 +87,37 @@ const NovelGridBase: React.FC<NovelGridProps> = ({
                                 onContextMenu={(e) => { e.preventDefault(); }}
                                 onClick={preventLinkIfEdit}
                             >
-                                {/* Edit Mode Delete Button */}
+                                {/* Edit Mode Action Buttons */}
                                 <AnimatePresence>
                                     {editMode && (
-                                        <motion.button
-                                            initial={{ scale: 0, opacity: 0 }}
-                                            animate={{ scale: 1, opacity: 1 }}
-                                            exit={{ scale: 0, opacity: 0 }}
-                                            onClick={(e) => handleDeleteNovel(novel.id, e)}
-                                            className="absolute -top-2 -right-2 z-20 size-8 bg-red-500/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl ring-2 ring-white dark:ring-[#0f111a] hover:bg-red-600 transition-colors"
-                                        >
-                                            <X size={16} className="text-white" strokeWidth={3} />
-                                        </motion.button>
+                                        <>
+                                            {onManageCollections && (
+                                                <motion.button
+                                                    initial={{ scale: 0, opacity: 0 }}
+                                                    animate={{ scale: 1, opacity: 1 }}
+                                                    exit={{ scale: 0, opacity: 0 }}
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        onManageCollections(novel, e);
+                                                    }}
+                                                    className="absolute -top-2 -left-2 z-20 size-8 bg-primary/95 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl ring-2 ring-white dark:ring-[#0f111a] hover:bg-primary transition-colors"
+                                                    title="Assign to Collection"
+                                                >
+                                                    <Folder size={14} className="text-white" strokeWidth={2.5} />
+                                                </motion.button>
+                                            )}
+                                            <motion.button
+                                                initial={{ scale: 0, opacity: 0 }}
+                                                animate={{ scale: 1, opacity: 1 }}
+                                                exit={{ scale: 0, opacity: 0 }}
+                                                onClick={(e) => handleDeleteNovel(novel.id, e)}
+                                                className="absolute -top-2 -right-2 z-20 size-8 bg-red-500/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl ring-2 ring-white dark:ring-[#0f111a] hover:bg-red-600 transition-colors"
+                                                title="Remove Novel"
+                                            >
+                                                <X size={16} className="text-white" strokeWidth={3} />
+                                            </motion.button>
+                                        </>
                                     )}
                                 </AnimatePresence>
 

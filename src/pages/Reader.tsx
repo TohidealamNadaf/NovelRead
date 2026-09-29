@@ -209,6 +209,29 @@ export const Reader = () => {
         };
     }, [novelId, chapterId, location.state]);
 
+    // Active reading duration session tracking
+    useEffect(() => {
+        if (!novelId || !chapterId) return;
+
+        let lastFlush = Date.now();
+
+        const flushTime = () => {
+            const now = Date.now();
+            const elapsedSeconds = Math.round((now - lastFlush) / 1000);
+            if (elapsedSeconds >= 5) {
+                dbService.recordReadingTime(novelId, chapterId, elapsedSeconds);
+                lastFlush = now;
+            }
+        };
+
+        const intervalId = setInterval(flushTime, 30000); // Record every 30s
+
+        return () => {
+            clearInterval(intervalId);
+            flushTime();
+        };
+    }, [novelId, chapterId]);
+
     // TTS highlighting is handled inside WordHighlighter via imperative classList toggle.
     // No useEffect needed here — word boundary updates flow through wordBoundary state.
 

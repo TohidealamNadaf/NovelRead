@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, Headphones, History, Settings, Shield, Edit, Check, Camera, Loader2 } from 'lucide-react';
+import { History, Settings, Shield, Edit, Check, Camera } from 'lucide-react';
 import { FooterNavigation } from '../components/FooterNavigation';
 import { Header } from '../components/Header';
-import { dbService } from '../services/db.service';
+import { dbService, type ReadingStatistics } from '../services/db.service';
 import { useNavigate } from 'react-router-dom';
 import { Camera as CapCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Preferences } from '@capacitor/preferences';
@@ -10,27 +10,41 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import { useProfileImage } from '../hooks/useProfileImage';
 import { DEFAULT_AVATAR } from '../utils/profileImage.util';
+import { ReadingStatsCard } from '../components/profile';
 
 export const Profile = () => {
     const navigate = useNavigate();
-    const [stats, setStats] = useState({ chaptersRead: 0, novelsCount: 0 });
+    const [stats, setStats] = useState<ReadingStatistics>({
+        chaptersRead: 0,
+        novelsCount: 0,
+        totalReadingTimeMinutes: 0,
+        currentStreakDays: 0,
+        last7Days: []
+    });
     const [isEditing, setIsEditing] = useState(false);
     const [profileName, setProfileName] = useState('Reader');
     const profileImage = useProfileImage(); // ← single source of truth
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => { loadData(); }, []);
-
-    const loadData = async () => {
-        setLoading(true);
-        await Promise.all([loadStats(), loadProfile()]);
-        setLoading(false);
-    };
-
     const loadProfile = async () => {
         const { value: savedName } = await Preferences.get({ key: 'profileName' });
         if (savedName) setProfileName(savedName);
     };
+
+    const loadStats = async () => {
+        try { setStats(await dbService.getReadingStats()); }
+        catch (e) { console.error(e); }
+    };
+
+    const loadData = useCallback(async () => {
+        setLoading(true);
+        await Promise.all([loadStats(), loadProfile()]);
+        setLoading(false);
+    }, []);
+
+    useEffect(() => { 
+        loadData(); 
+    }, [loadData]);
 
     const saveProfile = async (name: string, image: string) => {
         if (!name.trim()) return;
@@ -42,7 +56,7 @@ export const Profile = () => {
     };
 
     const loadStats = async () => {
-        try { setStats(await dbService.getStats()); }
+        try { setStats(await dbService.getReadingStats()); }
         catch (e) { console.error(e); }
     };
 
@@ -134,25 +148,8 @@ export const Profile = () => {
                     )}
                 </div>
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-2 gap-4 px-4 pb-6">
-                    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-white/5 bg-[#121118] p-5">
-                        <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><BookOpen size={24} /></div>
-                        <div className="text-center">
-                            {loading ? <Loader2 className="animate-spin size-6 text-slate-500 mx-auto" />
-                                : <p className="text-xl font-bold">{stats.chaptersRead}</p>}
-                            <p className="text-slate-400 text-[11px] uppercase tracking-wider mt-1">Chapters Read</p>
-                        </div>
-                    </div>
-                    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-white/5 bg-[#121118] p-5">
-                        <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><Headphones size={24} /></div>
-                        <div className="text-center">
-                            {loading ? <Loader2 className="animate-spin size-6 text-slate-500 mx-auto" />
-                                : <p className="text-xl font-bold">{stats.novelsCount}</p>}
-                            <p className="text-slate-400 text-[11px] uppercase tracking-wider mt-1">Novels Added</p>
-                        </div>
-                    </div>
-                </div>
+                {/* Reading Stats & Streak */}
+                <ReadingStatsCard stats={stats} loading={loading} />
 
                 {/* Settings List */}
                 <div className="px-4 flex flex-col gap-3 pb-8">

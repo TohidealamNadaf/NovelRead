@@ -20,6 +20,33 @@ export interface Novel {
     totalChapters?: number;
     readChapters?: number;
     lastFetchedAt?: number; // Timestamp of last successful chapter fetch
+    collectionIds?: string[]; // IDs of collections this novel belongs to
+}
+
+export interface Collection {
+    id: string;
+    name: string;
+    color?: string;
+    icon?: string;
+    createdAt?: number;
+    novelCount?: number;
+}
+
+export interface ReadingSession {
+    id: string;
+    novelId: string;
+    chapterId?: string;
+    durationSeconds: number;
+    sessionDate: string; // YYYY-MM-DD
+    createdAt?: number;
+}
+
+export interface ReadingStatistics {
+    chaptersRead: number;
+    novelsCount: number;
+    totalReadingTimeMinutes: number;
+    currentStreakDays: number;
+    last7Days: { date: string; dayName: string; minutes: number }[];
 }
 
 export interface Chapter {
@@ -143,6 +170,55 @@ class DatabaseService {
                 );
             `;
             await this.db.execute(cacheTableSchema);
+
+            // Migration: Ensure collections and reading_sessions tables exist
+            const libraryTablesSchema = `
+                CREATE TABLE IF NOT EXISTS collections (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    color TEXT DEFAULT '#6366f1',
+                    icon TEXT DEFAULT 'bookmark',
+                    createdAt INTEGER DEFAULT (strftime('%s', 'now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS novel_collections (
+                    novelId TEXT NOT NULL,
+                    collectionId TEXT NOT NULL,
+                    addedAt INTEGER DEFAULT (strftime('%s', 'now')),
+                    PRIMARY KEY (novelId, collectionId),
+                    FOREIGN KEY(novelId) REFERENCES novels(id) ON DELETE CASCADE,
+                    FOREIGN KEY(collectionId) REFERENCES collections(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS reading_sessions (
+                    id TEXT PRIMARY KEY,
+                    novelId TEXT NOT NULL,
+                    chapterId TEXT,
+                    durationSeconds INTEGER NOT NULL,
+                    sessionDate TEXT NOT NULL,
+                    createdAt INTEGER DEFAULT (strftime('%s', 'now'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_reading_sessions_date ON reading_sessions(sessionDate);
+            `;
+            await this.db.execute(libraryTablesSchema);
+
+            // Seed default collections if table is empty
+            try {
+                const countRes = await this.db.query('SELECT COUNT(*) as c FROM collections');
+                if (countRes.values && countRes.values[0]?.c === 0) {
+                    const defaultCols = [
+                        ['col-reading', 'Reading', '#3b82f6', 'book-open'],
+                        ['col-plan-to-read', 'Plan to Read', '#f59e0b', 'clock'],
+                        ['col-favorites', 'Favorites', '#ec4899', 'heart'],
+                        ['col-completed', 'Completed', '#10b981', 'check-circle'],
+                    ];
+                    for (const [id, name, color, icon] of defaultCols) {
+                        await this.db.run('INSERT INTO collections (id, name, color, icon) VALUES (?, ?, ?, ?)', [id, name, color, icon]);
+                    }
+                }
+            } catch (seedErr) {
+                console.warn('[DB] Seeding collections skipped or failed', seedErr);
+            }
 
             // Migration: Ensure new columns exist
             const columnsToAdd = [
@@ -627,21 +703,174 @@ class DatabaseService {
 
 
     async getStats(): Promise<{ chaptersRead: number, novelsCount: number }> {
+        const stats = await this.getReadingStats();
+        return {
+            chaptersRead: stats.chaptersRead,
+            novelsCount: stats.novelsCount
+        };
+    }
+
+    async getReadingStats(): Promise<ReadingStatistics> {
         const db = await this.getDB();
-        if (!db) return { chaptersRead: 0, novelsCount: 0 };
+        const fallback: ReadingStatistics = {
+            chaptersRead: 0,
+            novelsCount: 0,
+            totalReadingTimeMinutes: 0,
+            currentStreakDays: 0,
+            last7Days: []
+        };
+        if (!db) return fallback;
 
         try {
             const chaptersResult = await db.query('SELECT COUNT(*) as count FROM chapters WHERE isRead = 1');
             const novelsResult = await db.query('SELECT COUNT(*) as count FROM novels');
+            const timeResult = await db.query('SELECT SUM(durationSeconds) as totalSecs FROM reading_sessions');
+
+            const chaptersRead = chaptersResult.values?.[0]?.count || 0;
+            const novelsCount = novelsResult.values?.[0]?.count || 0;
+            const totalSecs = timeResult.values?.[0]?.totalSecs || 0;
+            const totalReadingTimeMinutes = Math.round(totalSecs / 60);
+
+            // Last 7 days history
+            const now = new Date();
+            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const dateMap = new Map<string, number>();
+
+            const sessionsResult = await db.query(
+                'SELECT sessionDate, SUM(durationSeconds) as secs FROM reading_sessions GROUP BY sessionDate ORDER BY sessionDate DESC LIMIT 30'
+            );
+            if (sessionsResult.values) {
+                for (const row of sessionsResult.values) {
+                    dateMap.set(row.sessionDate, Math.round((row.secs || 0) / 60));
+                }
+            }
+
+            const last7Days: { date: string; dayName: string; minutes: number }[] = [];
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(now);
+                d.setDate(d.getDate() - i);
+                const iso = d.toISOString().split('T')[0];
+                last7Days.push({
+                    date: iso,
+                    dayName: dayNames[d.getDay()],
+                    minutes: dateMap.get(iso) || 0
+                });
+            }
+
+            // Streak calculation
+            let streak = 0;
+            const checkDate = new Date(now);
+            const todayStr = checkDate.toISOString().split('T')[0];
+            const hasReadToday = (dateMap.get(todayStr) || 0) > 0;
+
+            if (hasReadToday) {
+                streak++;
+                checkDate.setDate(checkDate.getDate() - 1);
+            } else {
+                checkDate.setDate(checkDate.getDate() - 1);
+                const yesterdayStr = checkDate.toISOString().split('T')[0];
+                if ((dateMap.get(yesterdayStr) || 0) === 0) {
+                    return {
+                        chaptersRead,
+                        novelsCount,
+                        totalReadingTimeMinutes,
+                        currentStreakDays: 0,
+                        last7Days
+                    };
+                }
+            }
+
+            while (true) {
+                const iso = checkDate.toISOString().split('T')[0];
+                if ((dateMap.get(iso) || 0) > 0) {
+                    streak++;
+                    checkDate.setDate(checkDate.getDate() - 1);
+                } else {
+                    break;
+                }
+            }
 
             return {
-                chaptersRead: chaptersResult.values && chaptersResult.values.length > 0 ? chaptersResult.values[0].count : 0,
-                novelsCount: novelsResult.values && novelsResult.values.length > 0 ? novelsResult.values[0].count : 0
+                chaptersRead,
+                novelsCount,
+                totalReadingTimeMinutes,
+                currentStreakDays: streak,
+                last7Days
             };
         } catch (e) {
-            console.error("Failed to get stats", e);
-            return { chaptersRead: 0, novelsCount: 0 };
+            console.error("Failed to get reading stats", e);
+            return fallback;
         }
+    }
+
+    async recordReadingTime(novelId: string, chapterId: string, durationSeconds: number): Promise<void> {
+        const db = await this.getDB();
+        if (!db || durationSeconds <= 0) return;
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            const sessionId = `rs-${today}-${novelId}-${Math.random().toString(36).slice(2, 7)}`;
+            await this.enqueueWrite(async () => {
+                await db.run(
+                    'INSERT INTO reading_sessions (id, novelId, chapterId, durationSeconds, sessionDate) VALUES (?, ?, ?, ?, ?)',
+                    [sessionId, novelId, chapterId, durationSeconds, today]
+                );
+            });
+        } catch (e) {
+            console.warn('[DB] Failed to record reading session', e);
+        }
+    }
+
+    async getCollections(): Promise<Collection[]> {
+        const db = await this.getDB();
+        if (!db) return [];
+        try {
+            const query = `
+                SELECT c.*, COUNT(nc.novelId) as novelCount
+                FROM collections c
+                LEFT JOIN novel_collections nc ON nc.collectionId = c.id
+                GROUP BY c.id
+                ORDER BY c.createdAt ASC;
+            `;
+            const res = await db.query(query);
+            return (res.values as Collection[]) || [];
+        } catch (e) {
+            console.warn('[DB] Failed to get collections', e);
+            return [];
+        }
+    }
+
+    async createCollection(name: string, color: string = '#6366f1', icon: string = 'bookmark'): Promise<Collection | null> {
+        const db = await this.getDB();
+        if (!db || !name.trim()) return null;
+        const id = `col-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const collection: Collection = { id, name: name.trim(), color, icon, createdAt: Math.floor(Date.now() / 1000), novelCount: 0 };
+        await this.enqueueWrite(async () => {
+            await db.run(
+                'INSERT INTO collections (id, name, color, icon, createdAt) VALUES (?, ?, ?, ?, ?)',
+                [id, collection.name, color, icon, collection.createdAt]
+            );
+        });
+        return collection;
+    }
+
+    async deleteCollection(id: string): Promise<void> {
+        const db = await this.getDB();
+        if (!db) return;
+        await this.enqueueWrite(async () => {
+            await db.run('DELETE FROM novel_collections WHERE collectionId = ?', [id]);
+            await db.run('DELETE FROM collections WHERE id = ?', [id]);
+        });
+    }
+
+    async setNovelCollections(novelId: string, collectionIds: string[]): Promise<void> {
+        const db = await this.getDB();
+        if (!db) return;
+        await this.enqueueWrite(async () => {
+            await db.run('DELETE FROM novel_collections WHERE novelId = ?', [novelId]);
+            for (const colId of collectionIds) {
+                await db.run('INSERT INTO novel_collections (novelId, collectionId) VALUES (?, ?)', [novelId, colId]);
+            }
+        });
     }
 
     async getNovels(): Promise<Novel[]> {
@@ -653,20 +882,22 @@ class DatabaseService {
 
         console.log("Fetching novels from DB...");
 
-        // Optimized fast indexed query
+        // Optimized query with collections join
         const query = `
             SELECT
                 n.*,
-                COUNT(c.id) as downloadedChapters,
-                SUM(CASE WHEN c.isRead = 1 THEN 1 ELSE 0 END) as readChapters
+                COUNT(DISTINCT c.id) as downloadedChapters,
+                SUM(CASE WHEN c.isRead = 1 THEN 1 ELSE 0 END) as readChapters,
+                GROUP_CONCAT(DISTINCT nc.collectionId) as collectionIdsStr
             FROM novels n
             LEFT JOIN chapters c ON c.novelId = n.id
+            LEFT JOIN novel_collections nc ON nc.novelId = n.id
             GROUP BY n.id
             ORDER BY COALESCE(n.lastReadAt, n.createdAt * 1000) DESC;
         `;
 
         const result = await db.query(query);
-        const novels = (result.values as Novel[]) || [];
+        const novels = (result.values as (Novel & { collectionIdsStr?: string })[]) || [];
 
         return novels.map(n => {
             let readCount = n.readChapters || 0;
@@ -677,9 +908,14 @@ class DatabaseService {
                     readCount = Math.max(readCount, idxCount);
                 }
             }
+            const collectionIds = n.collectionIdsStr
+                ? n.collectionIdsStr.split(',').filter(Boolean)
+                : [];
+
             return {
                 ...n,
-                readChapters: readCount
+                readChapters: readCount,
+                collectionIds
             };
         });
     }

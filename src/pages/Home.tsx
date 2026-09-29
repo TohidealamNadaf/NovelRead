@@ -1,13 +1,14 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { FooterNavigation } from '../components/FooterNavigation';
 import { Header } from '../components/Header';
-import { dbService, type Novel } from '../services/db.service';
+import { dbService, type Novel, type Collection } from '../services/db.service';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Bell, X, Clock, Play, ArrowUp } from 'lucide-react';
+import { Search, Bell, X, Clock, Play, ArrowUp, Plus } from 'lucide-react';
 import { notificationService } from '../services/notification.service';
 import { useProfileImage } from '../hooks/useProfileImage';
 import { motion, AnimatePresence } from 'framer-motion';
 import { NovelGrid } from '../components/NovelGrid';
+import { CollectionManagerModal } from '../components/collections';
 
 // Custom hook for responsive grid columns
 function useResponsiveColumns() {
@@ -31,6 +32,9 @@ function useResponsiveColumns() {
 
 export const Home = () => {
     const [novels, setNovels] = useState<Novel[]>([]);
+    const [collections, setCollections] = useState<Collection[]>([]);
+    const [collectionModalOpen, setCollectionModalOpen] = useState(false);
+    const [novelForCollection, setNovelForCollection] = useState<Novel | null>(null);
     const [unreadCount, setUnreadCount] = useState(0);
     const [editMode, setEditMode] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -189,12 +193,17 @@ export const Home = () => {
     const loadLibrary = async () => {
         try {
             await dbService.initialize();
-            const data = await dbService.getNovels();
+            const [data, cols] = await Promise.all([
+                dbService.getNovels(),
+                dbService.getCollections()
+            ]);
             setNovels(data);
+            setCollections(cols);
         } catch (error) {
             console.error("Failed to load library", error);
             notificationService.addNotification({ title: 'Error', body: 'Failed to load library data', type: 'system' });
             setNovels([]);
+            setCollections([]);
         }
     };
 
@@ -235,15 +244,25 @@ export const Home = () => {
         return novels.filter(novel => {
             const matchesSearch = novel.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 (novel.author && novel.author.toLowerCase().includes(searchQuery.toLowerCase()));
-            const matchesCategory = selectedCategory === 'All' || novel.category === selectedCategory;
+
+            let matchesCategory = false;
+            if (selectedCategory === 'All') {
+                matchesCategory = true;
+            } else if (selectedCategory.startsWith('col:')) {
+                const colId = selectedCategory.slice(4);
+                matchesCategory = Boolean(novel.collectionIds?.includes(colId));
+            } else {
+                matchesCategory = novel.category === selectedCategory;
+            }
+
             return matchesSearch && matchesCategory;
         });
     }, [novels, searchQuery, selectedCategory]);
 
-    // Categories
-    const categories = useMemo(() => {
-        const cats = new Set(novels.map(n => n.category || 'Unknown'));
-        return ['All', ...Array.from(cats).sort()];
+    // Media Categories (e.g. Manhwa, Novel)
+    const mediaCategories = useMemo(() => {
+        const cats = new Set(novels.map(n => n.category || 'Unknown').filter(c => c !== 'All' && c !== 'Unknown'));
+        return Array.from(cats).sort();
     }, [novels]);
 
     // Continue Reading 
@@ -395,12 +414,40 @@ export const Home = () => {
                             </div>
 
                             {/* Categories */}
-                            <div className="flex gap-2 px-4 pb-3 overflow-x-auto hide-scrollbar">
-                                {categories.map((cat) => (
+                            <div className="flex gap-2 px-4 pb-3 overflow-x-auto hide-scrollbar items-center">
+                                <button
+                                    onClick={() => setSelectedCategory('All')}
+                                    className={`flex h-9 shrink-0 items-center justify-center rounded-full px-5 text-sm font-semibold transition-all active:scale-95 ${selectedCategory === 'All'
+                                        ? 'bg-primary text-white shadow-lg shadow-primary/30 scale-105'
+                                        : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'
+                                        }`}
+                                >
+                                    All
+                                </button>
+                                {collections.map((col) => {
+                                    const isSelected = selectedCategory === `col:${col.id}`;
+                                    return (
+                                        <button
+                                            key={col.id}
+                                            onClick={() => setSelectedCategory(`col:${col.id}`)}
+                                            className={`flex h-9 shrink-0 items-center gap-2 justify-center rounded-full px-4 text-sm font-semibold transition-all active:scale-95 ${isSelected
+                                                ? 'bg-primary text-white shadow-lg shadow-primary/30 scale-105'
+                                                : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'
+                                                }`}
+                                        >
+                                            <span 
+                                                className="size-2 rounded-full shrink-0" 
+                                                style={{ backgroundColor: col.color || '#3b82f6' }} 
+                                            />
+                                            <span>{col.name}</span>
+                                        </button>
+                                    );
+                                })}
+                                {mediaCategories.map((cat) => (
                                     <button
                                         key={cat}
                                         onClick={() => setSelectedCategory(cat)}
-                                        className={`flex h-9 shrink-0 items-center justify-center rounded-full px-5 text-sm font-semibold transition-all active:scale-95 ${selectedCategory === cat
+                                        className={`flex h-9 shrink-0 items-center justify-center rounded-full px-4 text-sm font-semibold transition-all active:scale-95 ${selectedCategory === cat
                                             ? 'bg-primary text-white shadow-lg shadow-primary/30 scale-105'
                                             : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'
                                             }`}
@@ -408,6 +455,17 @@ export const Home = () => {
                                         {cat}
                                     </button>
                                 ))}
+                                <button
+                                    onClick={() => {
+                                        setNovelForCollection(null);
+                                        setCollectionModalOpen(true);
+                                    }}
+                                    className="flex h-9 shrink-0 items-center gap-1.5 justify-center rounded-full px-3.5 text-xs font-semibold bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:text-primary hover:bg-primary/10 transition-all border border-dashed border-slate-300 dark:border-white/20 active:scale-95"
+                                    title="Manage Shelves"
+                                >
+                                    <Plus size={14} />
+                                    <span>Shelves</span>
+                                </button>
                             </div>
                         </motion.div>
                     </div>
@@ -526,9 +584,22 @@ export const Home = () => {
                         handlePointerUpOrMove={handlePointerUpOrMove}
                         preventLinkIfEdit={preventLinkIfEdit}
                         handleDeleteNovel={handleDeleteNovel}
+                        onManageCollections={(novel, e) => {
+                            e.stopPropagation();
+                            setNovelForCollection(novel);
+                            setCollectionModalOpen(true);
+                        }}
                     />
                 </motion.div>
             </div>
+
+            {/* Collection Manager Modal */}
+            <CollectionManagerModal
+                isOpen={collectionModalOpen}
+                onClose={() => setCollectionModalOpen(false)}
+                novel={novelForCollection}
+                onUpdated={loadLibrary}
+            />
 
             {/* Scroll to Top Button */}
             <AnimatePresence>
