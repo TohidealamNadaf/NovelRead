@@ -2,8 +2,9 @@ import { CapacitorHttp } from '@capacitor/core';
 
 export abstract class BaseScraper {
     private PROXIES = [
-        'https://corsproxy.io/?',
-        'https://api.allorigins.win/raw?url='
+        'https://api.allorigins.win/raw?url=',
+        'https://corsproxy.org/?',
+        'https://corsproxy.io/?'
     ];
 
     private static proxyCooldowns = new Map<string, number>();

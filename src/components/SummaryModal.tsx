@@ -10,6 +10,7 @@ interface SummaryModalProps {
         extractive: string;
         events: string[];
         structuredOverview?: { header: string; intro: string; bullets: string[] }[];
+        providerUsed?: string;
     } | null;
     isLoading: boolean;
     onReload?: () => void;
@@ -89,35 +90,43 @@ export const SummaryModal = ({ isOpen, onClose, summary, isLoading, onReload }: 
                 </motion.div>
 
                 {/* Header */}
-                <div className="flex items-center justify-between pt-1 px-4 pb-4 border-b border-gray-100 dark:border-white/5">
-                    <div className="flex items-center gap-2 text-primary">
-                        <Sparkles size={18} />
-                        <h3 className="font-bold text-lg">Quick Chapter Overview</h3>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        {onReload && (
+                <div className="flex flex-col pt-1 px-4 pb-3 border-b border-gray-100 dark:border-white/5 gap-1.5">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-primary">
+                            <Sparkles size={18} />
+                            <h3 className="font-bold text-lg">Quick Chapter Overview</h3>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            {onReload && (
+                                <button
+                                    onClick={onReload}
+                                    disabled={isLoading}
+                                    className={clsx(
+                                        "p-2 rounded-full transition-colors",
+                                        isLoading ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-100 dark:hover:bg-white/5"
+                                    )}
+                                    title="Regenerate Summary"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={clsx("text-gray-500", isLoading && "animate-spin")}>
+                                        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                                        <path d="M21 3v5h-5" />
+                                    </svg>
+                                </button>
+                            )}
                             <button
-                                onClick={onReload}
-                                disabled={isLoading}
-                                className={clsx(
-                                    "p-2 rounded-full transition-colors",
-                                    isLoading ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-100 dark:hover:bg-white/5"
-                                )}
-                                title="Regenerate Summary"
+                                onClick={onClose}
+                                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={clsx("text-gray-500", isLoading && "animate-spin")}>
-                                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-                                    <path d="M21 3v5h-5" />
-                                </svg>
+                                <X size={20} className="text-gray-500" />
                             </button>
-                        )}
-                        <button
-                            onClick={onClose}
-                            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
-                        >
-                            <X size={20} className="text-gray-500" />
-                        </button>
+                        </div>
                     </div>
+                    {summary?.providerUsed && (
+                        <div className="self-start flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[11px] font-medium border border-emerald-500/20">
+                            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span>Generated via {summary.providerUsed}</span>
+                        </div>
+                    )}
                 </div>
 
 

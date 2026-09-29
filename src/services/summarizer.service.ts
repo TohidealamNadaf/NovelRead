@@ -1,7 +1,8 @@
-interface SummaryResult {
+export interface SummaryResult {
     extractive: string;
     events: string[];
     structuredOverview?: { header: string; intro: string; bullets: string[] }[];
+    providerUsed?: string;
 }
 
 /**
@@ -103,6 +104,9 @@ ${safeText}`;
     private repairTruncatedJson(jsonString: string): string {
         let str = jsonString.trim();
 
+        // Remove trailing commas before closing brackets/braces (e.g. ", ]" -> "]", ", }" -> "}")
+        str = str.replace(/,\s*([\}\]])/g, '$1');
+
         let inString = false;
         let isEscaped = false;
         for (let i = 0; i < str.length; i++) {
@@ -151,7 +155,7 @@ ${safeText}`;
             else if (open === '[') str += ']';
         }
 
-        return str;
+        return str.replace(/,\s*([\}\]])/g, '$1');
     }
 
     /**
@@ -253,7 +257,9 @@ ${safeText}`;
                     lastErr = new Error(`Empty response from Groq model ${model}`);
                     continue;
                 }
-                return this.parseResponse(text);
+                const res = this.parseResponse(text);
+                res.providerUsed = `Groq (${model})`;
+                return res;
             } catch (e: any) {
                 if (e?.isAuthError) throw e;
                 lastErr = e;
@@ -331,6 +337,7 @@ ${safeText}`;
                         lastError = new Error(`OpenRouter ${model} returned invalid summary content`);
                         continue;
                     }
+                    result.providerUsed = `OpenRouter (${model})`;
                     console.log(`[Summarizer] OpenRouter model ${model} succeeded!`);
                     return result;
                 } catch (parseErr) {
@@ -403,7 +410,9 @@ ${safeText}`;
                     lastErr = new Error(`Empty response from Gemini API (${model})`);
                     continue;
                 }
-                return this.parseResponse(text);
+                const res = this.parseResponse(text);
+                res.providerUsed = `Gemini (${model})`;
+                return res;
             } catch (e: any) {
                 if (e?.isAuthError) throw e;
                 lastErr = e;
@@ -460,7 +469,9 @@ ${safeText}`;
                     lastErr = new Error(`Empty response from Mistral model ${model}`);
                     continue;
                 }
-                return this.parseResponse(text);
+                const res = this.parseResponse(text);
+                res.providerUsed = `Mistral (${model})`;
+                return res;
             } catch (e: any) {
                 if (e?.isAuthError) throw e;
                 lastErr = e;

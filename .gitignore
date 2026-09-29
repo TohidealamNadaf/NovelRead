@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Scraping & Diagnostic dumps
+scripts/debug/dumps/
+*.debug.html
+*_debug*.html
+inspect_results*.txt
+debug_*.txt
+debug_output.json

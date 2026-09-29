@@ -7,12 +7,18 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
     public getProxies(_url?: string): string[] {
         const isNative = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
         if (isNative) {
-            return ['', 'https://corsproxy.io/?'];
+            return [
+                '',
+                'https://api.allorigins.win/raw?url=',
+                'https://corsproxy.org/?',
+                'https://corsproxy.io/?'
+            ];
         }
         return [
             '/api/proxy?url=',
-            'https://corsproxy.io/?',
-            'https://api.allorigins.win/raw?url='
+            'https://api.allorigins.win/raw?url=',
+            'https://corsproxy.org/?',
+            'https://corsproxy.io/?'
         ];
     }
     private parseFreeWebNovelsList($: cheerio.CheerioAPI, selector: string): (NovelMetadata & { sourceUrl: string })[] {

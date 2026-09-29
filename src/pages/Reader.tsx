@@ -10,7 +10,7 @@ import { WordHighlighter } from '../components/WordHighlighter';
 import { scraperService } from '../services/scraper.service';
 import { CompletionModal } from '../components/CompletionModal';
 import { SummaryModal } from '../components/SummaryModal';
-import { summarizerService, isValidSummary } from '../services/summarizer.service';
+import { summarizerService, isValidSummary, type SummaryResult } from '../services/summarizer.service';
 import { Header } from '../components/Header';
 import { useChapterPullNavigation } from '../hooks/useChapterPullNavigation';
 import { ChapterSidebar } from '../components/ChapterSidebar';
@@ -132,7 +132,7 @@ export const Reader = () => {
 
     // Summary State
     const [showSummary, setShowSummary] = useState(false);
-    const [summaryData, setSummaryData] = useState<{ extractive: string; events: string[] } | null>(null);
+    const [summaryData, setSummaryData] = useState<SummaryResult | null>(null);
     const [isSummarizing, setIsSummarizing] = useState(false);
 
     // Rewrite State
@@ -853,14 +853,17 @@ export const Reader = () => {
             if (!forceReload) {
                 cachedExtractive = await dbService.getSummary(chapter.id, 'extractive');
                 cachedEventsStr = await dbService.getSummary(chapter.id, 'events');
+                const cachedProvider = await dbService.getSummary(chapter.id, 'providerUsed');
+                if (cachedExtractive && cachedEventsStr) {
+                    setSummaryData({
+                        extractive: cachedExtractive,
+                        events: JSON.parse(cachedEventsStr),
+                        providerUsed: cachedProvider || undefined
+                    });
+                }
             }
 
-            if (cachedExtractive && cachedEventsStr) {
-                setSummaryData({
-                    extractive: cachedExtractive,
-                    events: JSON.parse(cachedEventsStr)
-                });
-            } else {
+            if (!cachedExtractive || !cachedEventsStr) {
                 // Check for API Key
                 if (!settings.summarizerApiKey && !settings.groqApiKey && !settings.openRouterApiKey && !settings.mistralApiKey) {
                     setSummaryData({
@@ -897,6 +900,9 @@ export const Reader = () => {
                 if (isValidSummary(result, textContent.length)) {
                     await dbService.saveSummary(chapter.id, 'extractive', result.extractive);
                     await dbService.saveSummary(chapter.id, 'events', JSON.stringify(result.events));
+                    if (result.providerUsed) {
+                        await dbService.saveSummary(chapter.id, 'providerUsed', result.providerUsed);
+                    }
                 } else {
                     console.warn('[Reader] Summary failed validation — not caching to DB:', result.extractive.substring(0, 100));
                 }

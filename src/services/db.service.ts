@@ -1004,7 +1004,7 @@ class DatabaseService {
         });
     }
 
-    async getSummary(chapterId: string, type: 'extractive' | 'events'): Promise<string | null> {
+    async getSummary(chapterId: string, type: 'extractive' | 'events' | 'providerUsed'): Promise<string | null> {
         const db = await this.getDB();
         if (!db) return null;
         try {
@@ -1019,7 +1019,7 @@ class DatabaseService {
         }
     }
 
-    async saveSummary(chapterId: string, type: 'extractive' | 'events', text: string) {
+    async saveSummary(chapterId: string, type: 'extractive' | 'events' | 'providerUsed', text: string) {
         return this.enqueueWrite(async () => {
             const db = await this.getDB();
             if (!db) return;

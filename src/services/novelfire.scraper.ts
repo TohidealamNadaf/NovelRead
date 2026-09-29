@@ -8,7 +8,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
     async searchNovels(query: string): Promise<NovelMetadata[]> {
         const url = `https://novelfire.net/search?keyword=${encodeURIComponent(query)}`;
         console.log(`[NovelFire] Searching: ${url}`);
-        
+
         for (const proxyUrl of this.getProxies(url)) {
             try {
                 const html = await this.fetchHtml(url, proxyUrl);
@@ -19,7 +19,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
 
                 $('.novel-item, .list-novel .row').each((_, el) => {
                     const $el = $(el);
-                    
+
                     let novelUrl = $el.find('a').first().attr('href') || '';
                     let title = $el.find('.novel-title').first().text().trim() || $el.find('h3').first().text().trim() || $el.find('a').first().attr('title')?.trim() || '';
                     if (!title) return;
@@ -88,7 +88,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
     async fetchRanking(type: string | number = 'overall', page?: number): Promise<NovelMetadata[]> {
         let pageNum = typeof type === 'number' ? type : (page || 1);
         let typeStr = typeof type === 'string' ? type : 'overall';
-        
+
         let url = 'https://novelfire.net/ranking';
         if (typeStr === 'ratings') url += '/ratings';
         else if (typeStr === 'most-read') url += '/most-read';
@@ -275,7 +275,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                 if (!html) continue;
 
                 const $ = cheerio.load(html);
-                
+
                 title = (
                     $('h1[itemprop="name"]').text().trim() ||
                     $('h1.novel-title').text().trim() ||
@@ -285,7 +285,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
 
                 if (title) {
                     author = $('span[itemprop="author"]').first().text().trim() || $('.author a').first().text().trim() || $('.author').text().replace('Author:', '').trim() || 'Unknown';
-                    
+
                     let extractedSummary = $('.summary .content').text().trim() || $('.summary').text().replace(/^Summary\s*/i, '').trim() || $('.description').text().trim();
                     if (!extractedSummary) {
                         const metaDesc = $('meta[name="description"]').attr('content') || '';
@@ -294,7 +294,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                         }
                     }
                     summary = this.cleanSummary(extractedSummary);
-                    
+
                     status = $('strong.ongoing').first().text().trim() || $('strong.status').first().text().trim() || 'Ongoing';
 
                     let extractedCover = $('meta[property="og:image"]').attr('content') || '';
