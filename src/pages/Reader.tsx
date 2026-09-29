@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MoreHorizontal, Pause, Play, ChevronDown, ChevronUp, RefreshCw, Sparkles, List, Loader2, Download, ChevronsDown, Minus, Plus, WandSparkles, Rewind, FastForward, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -11,30 +10,21 @@ import { scraperService } from '../services/scraper.service';
 import { CompletionModal } from '../components/CompletionModal';
 import { SummaryModal } from '../components/SummaryModal';
 import { summarizerService, isValidSummary, type SummaryResult } from '../services/summarizer.service';
-import { Header } from '../components/Header';
 import { useChapterPullNavigation } from '../hooks/useChapterPullNavigation';
 import { ChapterSidebar } from '../components/ChapterSidebar';
 import { ReaderScroller } from '../components/ReaderScroller';
 import { AudioPlayer } from '../components/AudioPlayer';
 import { useAutoScroll } from '../hooks/useAutoScroll';
 import { rewriterService } from '../services/rewriter.service';
-
-export function deriveNovelSourceUrl(rawUrl: string): string {
-    if (!rawUrl) return '';
-    let url = rawUrl;
-    try {
-        if (url.includes('%')) url = decodeURIComponent(url);
-    } catch {}
-
-    if (url.includes('freewebnovel.com')) {
-        url = url.replace(/\/chapter[_\-]?\d+.*\.html$/i, '.html').replace(/\/chapter[_\-]?\d+.*$/i, '');
-    } else if (url.includes('novelfire.net')) {
-        url = url.replace(/\/chapter[_\-]?\d+.*$/i, '').replace(/\/chapters\/?$/i, '');
-    } else {
-        url = url.replace(/\/chapter[_\-]?\d+.*$/i, '').replace(/\/ch[_\-]?\d+.*$/i, '');
-    }
-    return url.replace(/\/$/, '');
-}
+import {
+    ReaderHeader,
+    ReaderPullDownIndicator,
+    ReaderPullUpIndicator,
+    ReaderNavigationHints,
+    ReaderSettingsMenu,
+    ReaderFloatingAutoScroll,
+} from '../components/reader';
+import { deriveNovelSourceUrl } from '../utils/urlUtils';
 
 export const Reader = () => {
     const navigate = useNavigate();
@@ -49,7 +39,7 @@ export const Reader = () => {
     const [allChapters, setAllChapters] = useState<Chapter[]>([]);
 
     // Live browsing mode indicators
-    const isLiveMode = !!location.state?.liveMode || novelId?.startsWith('live-');
+    const isLiveMode = Boolean(location.state?.liveMode || novelId?.startsWith('live-'));
 
     // Unified Navigation State (Hybrid/Live/Offline)
     const [navChapters, setNavChapters] = useState<(Chapter | any)[]>(
@@ -138,9 +128,6 @@ export const Reader = () => {
     // Rewrite State
     const [isRewriting, setIsRewriting] = useState(false);
     const [rewriteProgress, setRewriteProgress] = useState('');
-
-    // Copy State
-    const [isCopied, setIsCopied] = useState(false);
 
     // Auto-Scroll
     const {
@@ -971,13 +958,6 @@ export const Reader = () => {
         setIsEdgeSwiping(false);
     };
 
-    const fontSizes = [
-        { label: '14', value: 0.875 },
-        { label: '16', value: 1 },
-        { label: '18', value: 1.125 },
-        { label: '22', value: 1.375 },
-    ];
-
     if (loading) {
         return (
             <div className="flex h-screen w-full items-center justify-center bg-background-light dark:bg-background-dark text-primary">
@@ -1010,20 +990,13 @@ export const Reader = () => {
         <div
             className={`relative flex h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-hidden ${getThemeClass()}`}
         >
-            {/* Top App Bar using Global Header */}
-            <Header
-                title={chapter.title}
-                subtitle={navChapters.length > 0 ? `Chapter ${navIndex + 1}` : `Chapter ${chapter.orderIndex + 1}`}
-                showBack={true}
+            {/* Top App Bar using ReaderHeader */}
+            <ReaderHeader
+                chapter={chapter}
+                navIndex={navIndex}
+                hasNavChapters={navChapters.length > 0}
                 onBack={handleBackToIndex}
-                transparent
-                withBorder
-                className="bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md"
-                rightActions={
-                    <button onClick={() => setShowSettings(!showSettings)} className="flex items-center justify-center size-10 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
-                        <MoreHorizontal />
-                    </button>
-                }
+                onToggleSettings={() => setShowSettings(!showSettings)}
             />
 
             {/* Fast Scroller Custom Handle */}
@@ -1074,29 +1047,11 @@ export const Reader = () => {
                     }}
                 >
                     {/* Pull to Previous Indicator */}
-                    <motion.div
-                        style={{
-                            position: 'absolute',
-                            left: 0,
-                            right: 0,
-                            top: `-${pullDistance}px`,
-                            height: pullDistance,
-                            opacity: Math.min(pullDistance / PULL_THRESHOLD, 1)
-                        }}
-                        className="flex flex-col items-center justify-end pb-4 overflow-hidden pointer-events-none"
-                    >
-                        <motion.div
-                            animate={{ y: pullDistance > PULL_THRESHOLD ? [0, -4, 0] : 0 }}
-                            className="flex flex-col items-center gap-1.5"
-                        >
-                            <ChevronDown className={clsx("transition-all duration-300", pullDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
-                            <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pullDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
-                                {pullDistance > PULL_THRESHOLD
-                                    ? (prevChapter ? "Release" : "At Start")
-                                    : (prevChapter ? "Pull for Prev" : "First Chapter")}
-                            </p>
-                        </motion.div>
-                    </motion.div>
+                    <ReaderPullDownIndicator
+                        pullDistance={pullDistance}
+                        threshold={PULL_THRESHOLD}
+                        hasPrev={!!prevChapter}
+                    />
 
                     <AnimatePresence mode="wait" initial={false} custom={navigationDirection}>
                         <motion.div
@@ -1128,59 +1083,20 @@ export const Reader = () => {
                                 htmlContent={chapter.content || ''}
                             />
 
-                            {/* End of Chapter - Next Chapter Hint */}
-                            {nextChapter && (
-                                <div
-                                    className="mt-12 mb-8 flex flex-col items-center gap-3 pt-8 border-t border-dashed border-slate-300 dark:border-slate-700 cursor-pointer active:opacity-70 transition-opacity"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleNextChapter();
-                                    }}
-                                >
-                                    <p className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-widest font-semibold">Tap or swipe up for next chapter</p>
-                                    <div className="flex flex-col items-center animate-bounce">
-                                        <ChevronDown size={24} className="text-primary" />
-                                    </div>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400 text-center max-w-xs line-clamp-1 font-medium">
-                                        {nextChapter.title}
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* End of Novel Indicator */}
-                            {!nextChapter && (
-                                <div className="mt-12 mb-8 flex flex-col items-center gap-3 pt-8 border-t border-dashed border-slate-300 dark:border-slate-700">
-                                    <p className="text-sm text-slate-500 dark:text-slate-400 font-semibold">🎉 You've reached the end!</p>
-                                    <p className="text-xs text-slate-400 dark:text-slate-500">No more chapters available</p>
-                                </div>
-                            )}
+                            {/* End of Chapter / End of Novel Hints */}
+                            <ReaderNavigationHints
+                                nextChapter={nextChapter}
+                                onNextChapter={handleNextChapter}
+                            />
                         </motion.div>
                     </AnimatePresence>
 
                     {/* Pull Up to Next Indicator */}
-                    <motion.div
-                        style={{
-                            position: 'absolute',
-                            left: 0,
-                            right: 0,
-                            bottom: `-${pushDistance}px`,
-                            height: pushDistance,
-                            opacity: Math.min(pushDistance / PULL_THRESHOLD, 1)
-                        }}
-                        className="flex flex-col items-center justify-start pt-4 overflow-hidden pointer-events-none"
-                    >
-                        <motion.div
-                            animate={{ y: pushDistance > PULL_THRESHOLD ? [0, 4, 0] : 0 }}
-                            className="flex flex-col items-center gap-1.5"
-                        >
-                            <p className={clsx("text-[10px] font-black uppercase tracking-[0.2em] bg-background-light dark:bg-background-dark px-4 py-1.5 rounded-full border shadow-sm transition-colors", pushDistance > PULL_THRESHOLD ? "text-primary border-primary/40 shadow-primary/10" : "text-gray-500 border-gray-100 dark:border-gray-800")}>
-                                {pushDistance > PULL_THRESHOLD
-                                    ? (nextChapter ? "Release" : "At End")
-                                    : (nextChapter ? "Pull for Next" : "End of Story")}
-                            </p>
-                            <ChevronUp className={clsx("transition-all duration-300", pushDistance > PULL_THRESHOLD ? "text-primary scale-125 rotate-180" : "text-gray-400")} />
-                        </motion.div>
-                    </motion.div>
+                    <ReaderPullUpIndicator
+                        pushDistance={pushDistance}
+                        threshold={PULL_THRESHOLD}
+                        hasNext={!!nextChapter}
+                    />
                 </div>
 
                 {/* Extra Padding Removed */}
@@ -1189,279 +1105,40 @@ export const Reader = () => {
 
 
             {/* Customization Overlay */}
-            <AnimatePresence>
-                {showSettings && (
-                    <>
-                        {/* Backdrop to close settings on click outside */}
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="fixed inset-0 z-10 bg-black/20 backdrop-blur-sm"
-                            onClick={() => setShowSettings(false)}
-                        />
-
-                        <motion.div
-                            initial={{ y: "100%" }}
-                            animate={{ y: 0 }}
-                            exit={{ y: "100%" }}
-                            transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                            className="settings-menu absolute bottom-0 left-0 w-full bg-white dark:bg-[#1a182b] rounded-t-3xl shadow-2xl border-t border-white/10 z-20 overflow-hidden"
-                        >
-                            {/* Grab Handle */}
-                            <div className="flex justify-center py-3" onClick={() => setShowSettings(false)}>
-                                <div className="w-10 h-1 bg-gray-300 dark:bg-gray-700 rounded-full"></div>
-                            </div>
-                            <div className="px-5 pb-8 space-y-5">
-                                {/* TTS & Chapter Navigation (Historic Design) */}
-                                <div className="flex items-center gap-2.5">
-                                    <button
-                                        onClick={() => {
-                                            if (chapter?.content) {
-                                                const doc = new DOMParser().parseFromString(chapter.content, 'text/html');
-                                                navigator.clipboard.writeText(doc.body.textContent || '');
-                                                setIsCopied(true);
-                                                setTimeout(() => setIsCopied(false), 2000);
-                                            }
-                                        }}
-                                        className="w-12 shrink-0 flex items-center justify-center h-12 bg-gray-100 dark:bg-gray-800 rounded-xl active:scale-95 transition-transform text-gray-700 dark:text-gray-300"
-                                        title="Copy Chapter"
-                                    >
-                                        {isCopied ? <Check size={18} className="text-green-500" /> : <Copy size={18} />}
-                                    </button>
-
-                                    <button
-                                        onClick={handlePrevChapter}
-                                        disabled={!prevChapter}
-                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-12 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm active:scale-95", !prevChapter && "opacity-30")}
-                                    >
-                                        <Rewind size={16} />
-                                        Prev
-                                    </button>
-
-                                    <button
-                                        onClick={() => {
-                                            if (isSpeaking) {
-                                                audioService.stopSpeaking(true);
-                                            } else {
-                                                handleStartAudio();
-                                            }
-                                        }}
-                                        disabled={!chapter?.content && !isSpeaking}
-                                        className="size-14 shrink-0 flex items-center justify-center bg-primary rounded-full shadow-lg shadow-primary/30 active:scale-95 transition-transform disabled:opacity-50"
-                                    >
-                                        {isSpeaking ? <Pause className="text-white fill-white" size={28} /> : <Play className="text-white fill-white ml-0.5" size={28} />}
-                                    </button>
-
-                                    <button
-                                        onClick={handleNextChapter}
-                                        disabled={!nextChapter}
-                                        className={clsx("flex-1 flex items-center justify-center gap-1.5 h-12 rounded-xl font-semibold transition-all bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm active:scale-95", !nextChapter && "opacity-30")}
-                                    >
-                                        Next
-                                        <FastForward size={16} />
-                                    </button>
-                                </div>
-
-                                {/* Quick Actions Grid */}
-                                <div className="grid grid-cols-4 gap-2.5">
-                                    <button
-                                        onClick={() => {
-                                            setShowSettings(false);
-                                            setShowChapterSidebar(true);
-                                        }}
-                                        className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold transition-colors active:scale-95"
-                                    >
-                                        <List size={20} />
-                                        <span className="text-[11px]">Contents</span>
-                                    </button>
-                                    <button
-                                        onClick={() => handleShowSummary()}
-                                        className="flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 font-semibold border border-indigo-200 dark:border-indigo-800 transition-colors active:scale-95"
-                                    >
-                                        <Sparkles size={20} />
-                                        <span className="text-[11px]">Summary</span>
-                                    </button>
-                                    <button
-                                        onClick={handleRewrite}
-                                        disabled={isRewriting || !chapter?.content}
-                                        className={clsx(
-                                            "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-semibold transition-colors active:scale-95",
-                                            isRewriting || rewriteProgress
-                                                ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
-                                                : "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800",
-                                            (!chapter?.content) && "opacity-30"
-                                        )}
-                                    >
-                                        {isRewriting ? <Loader2 size={20} className="animate-spin" /> : <WandSparkles size={20} />}
-                                        <span className="text-[11px] truncate w-full text-center px-1">{rewriteProgress || (isRewriting ? 'Rewriting...' : 'Rewrite')}</span>
-                                    </button>
-                                    {!isLiveMode && (
-                                        <button
-                                            onClick={handleResyncChapter}
-                                            disabled={isResyncing || !chapter?.audioPath}
-                                            className={clsx(
-                                                "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-semibold transition-colors active:scale-95",
-                                                isResyncing
-                                                    ? "bg-primary/20 text-primary border border-primary/50"
-                                                    : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200",
-                                                !chapter?.audioPath && "opacity-30"
-                                            )}
-                                        >
-                                            <RefreshCw size={20} className={isResyncing ? "animate-spin" : ""} />
-                                            <span className="text-[11px]">{isResyncing ? 'Syncing...' : 'Resync'}</span>
-                                        </button>
-                                    )}
-                                    {isLiveMode && (
-                                        <button
-                                            onClick={handleSaveOffline}
-                                            disabled={isSavingOffline || isChapterSaved}
-                                            className={clsx(
-                                                "flex flex-col items-center justify-center gap-1.5 h-16 rounded-xl font-semibold transition-colors active:scale-95",
-                                                isChapterSaved
-                                                    ? "bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800"
-                                                    : isSavingOffline
-                                                        ? "bg-primary/20 text-primary border border-primary/50"
-                                                        : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
-                                            )}
-                                        >
-                                            {isSavingOffline ? (
-                                                <Loader2 size={20} className="animate-spin" />
-                                            ) : (
-                                                <Download size={20} />
-                                            )}
-                                            <span className="text-[11px]">{isChapterSaved ? 'Saved' : isSavingOffline ? 'Saving...' : 'Save'}</span>
-                                        </button>
-                                    )}
-                                </div>
-
-                                {/* Auto-Scroll Controls */}
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Auto Scroll</p>
-                                        <button
-                                            onClick={toggleAutoScroll}
-                                            className={clsx(
-                                                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95",
-                                                isAutoScrolling
-                                                    ? "bg-primary/20 text-primary border border-primary/40"
-                                                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
-                                            )}
-                                        >
-                                            <ChevronsDown size={14} className={isAutoScrolling ? "animate-bounce" : ""} />
-                                            {isAutoScrolling ? 'Scrolling...' : 'Start'}
-                                        </button>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <button
-                                            onClick={() => setAutoScrollSpeed(Math.max(1, autoScrollSpeed - 1))}
-                                            disabled={autoScrollSpeed <= 1}
-                                            className={clsx("size-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 transition-colors active:scale-90", autoScrollSpeed <= 1 && "opacity-30")}
-                                        >
-                                            <Minus size={14} />
-                                        </button>
-                                        <div className="flex-1 relative">
-                                            <input
-                                                type="range"
-                                                min={1}
-                                                max={10}
-                                                step={1}
-                                                value={autoScrollSpeed}
-                                                onChange={(e) => setAutoScrollSpeed(Number(e.target.value))}
-                                                className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-slate-200 dark:bg-slate-700 accent-primary"
-                                            />
-                                            <div className="flex justify-between mt-1">
-                                                <span className="text-[9px] text-slate-400">Slow</span>
-                                                <span className="text-[11px] font-bold text-primary">{autoScrollSpeed}x</span>
-                                                <span className="text-[9px] text-slate-400">Fast</span>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => setAutoScrollSpeed(Math.min(10, autoScrollSpeed + 1))}
-                                            disabled={autoScrollSpeed >= 10}
-                                            className={clsx("size-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 transition-colors active:scale-90", autoScrollSpeed >= 10 && "opacity-30")}
-                                        >
-                                            <Plus size={14} />
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Font & Size */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="space-y-1.5">
-                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Font</p>
-                                        <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-                                            <button
-                                                onClick={() => settingsService.updateSettings({ fontFamily: 'serif' })}
-                                                className={clsx("flex-1 py-2 text-xs font-bold rounded-md transition-colors", font === 'serif' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500")}
-                                            >
-                                                Serif
-                                            </button>
-                                            <button
-                                                onClick={() => settingsService.updateSettings({ fontFamily: 'sans' })}
-                                                className={clsx("flex-1 py-2 text-xs font-bold rounded-md transition-colors", font === 'sans' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500")}
-                                            >
-                                                Sans
-                                            </button>
-                                            <button
-                                                onClick={() => settingsService.updateSettings({ fontFamily: 'comfortable' })}
-                                                className={clsx("flex-1 py-2 text-xs font-bold rounded-md transition-colors", font === 'comfortable' ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-500")}
-                                            >
-                                                Soft
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Size</p>
-                                        <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-                                            {fontSizes.map((size) => (
-                                                <button
-                                                    key={size.label}
-                                                    onClick={() => settingsService.updateSettings({ fontSize: size.value })}
-                                                    className={clsx("size-9 text-[10px] font-black rounded-lg transition-all", fontSize === size.value ? "bg-primary text-white shadow-md shadow-primary/30 scale-105" : "text-gray-400 hover:text-gray-600")}
-                                                >
-                                                    {size.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Theme Selection */}
-                                <div className="space-y-2">
-                                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Theme</p>
-                                    <div className="grid grid-cols-4 gap-3">
-                                        {[
-                                            { id: 'light', color: 'bg-white', label: 'Paper' },
-                                            { id: 'sepia', color: 'bg-[#f4ecd8]', label: 'Sepia' },
-                                            { id: 'dark', color: 'bg-[#1e1e1e]', label: 'Eclipse' },
-                                            { id: 'oled', color: 'bg-black', label: 'OLED' },
-                                        ].map((t) => (
-                                            <button
-                                                key={t.id}
-                                                onClick={() => settingsService.updateSettings({ theme: t.id as any })}
-                                                className={clsx(
-                                                    "group flex flex-col items-center gap-1.5",
-                                                    theme === t.id ? "scale-105" : "opacity-60 grayscale-[0.5]"
-                                                )}
-                                            >
-                                                <div className={clsx(
-                                                    "size-11 rounded-xl border-2 transition-all",
-                                                    t.color,
-                                                    theme === t.id ? "border-primary shadow-md shadow-primary/20" : "border-transparent"
-                                                )} />
-                                                <span className={clsx("text-[10px] font-bold uppercase tracking-tight transition-colors", theme === t.id ? "text-primary" : "text-gray-500")}>
-                                                    {t.label}
-                                                </span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        </motion.div>
-                    </>
-                )}
-            </AnimatePresence>
+            <ReaderSettingsMenu
+                isOpen={showSettings}
+                onClose={() => setShowSettings(false)}
+                chapter={chapter}
+                prevChapter={prevChapter}
+                nextChapter={nextChapter}
+                isSpeaking={isSpeaking}
+                isLiveMode={isLiveMode}
+                isResyncing={isResyncing}
+                isSavingOffline={isSavingOffline}
+                isChapterSaved={isChapterSaved}
+                isRewriting={isRewriting}
+                rewriteProgress={rewriteProgress}
+                isAutoScrolling={isAutoScrolling}
+                autoScrollSpeed={autoScrollSpeed}
+                settings={settings}
+                onPrevChapter={handlePrevChapter}
+                onNextChapter={handleNextChapter}
+                onToggleAudio={() => {
+                    if (isSpeaking) {
+                        audioService.stopSpeaking(true);
+                    } else {
+                        handleStartAudio();
+                    }
+                }}
+                onOpenSidebar={() => setShowChapterSidebar(true)}
+                onShowSummary={() => handleShowSummary()}
+                onRewrite={handleRewrite}
+                onResyncChapter={handleResyncChapter}
+                onSaveOffline={handleSaveOffline}
+                onToggleAutoScroll={toggleAutoScroll}
+                onChangeAutoScrollSpeed={setAutoScrollSpeed}
+                onUpdateSettings={(newSettings) => settingsService.updateSettings(newSettings)}
+            />
 
             <CompletionModal
                 isOpen={showComingSoon}
@@ -1542,39 +1219,13 @@ export const Reader = () => {
             />
 
             {/* Auto-Scroll Floating Mini-Controller */}
-            <AnimatePresence>
-                {isAutoScrolling && !showSettings && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 20 }}
-                        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-white/90 dark:bg-[#1a182b]/90 backdrop-blur-xl rounded-full shadow-2xl border border-slate-200 dark:border-white/10 px-3 py-2"
-                    >
-                        <ChevronsDown size={16} className="text-primary animate-bounce shrink-0" />
-                        <button
-                            onClick={() => setAutoScrollSpeed(Math.max(1, autoScrollSpeed - 1))}
-                            disabled={autoScrollSpeed <= 1}
-                            className={clsx("size-7 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 transition-all active:scale-90", autoScrollSpeed <= 1 && "opacity-30")}
-                        >
-                            <Minus size={12} />
-                        </button>
-                        <span className="text-sm font-bold text-primary min-w-[28px] text-center">{autoScrollSpeed}x</span>
-                        <button
-                            onClick={() => setAutoScrollSpeed(Math.min(10, autoScrollSpeed + 1))}
-                            disabled={autoScrollSpeed >= 10}
-                            className={clsx("size-7 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 transition-all active:scale-90", autoScrollSpeed >= 10 && "opacity-30")}
-                        >
-                            <Plus size={12} />
-                        </button>
-                        <button
-                            onClick={stopAutoScroll}
-                            className="size-7 flex items-center justify-center rounded-full bg-red-500/10 text-red-500 transition-all active:scale-90"
-                        >
-                            <Pause size={12} className="fill-red-500" />
-                        </button>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            <ReaderFloatingAutoScroll
+                isVisible={isAutoScrolling && !showSettings}
+                autoScrollSpeed={autoScrollSpeed}
+                onDecreaseSpeed={() => setAutoScrollSpeed(Math.max(1, autoScrollSpeed - 1))}
+                onIncreaseSpeed={() => setAutoScrollSpeed(Math.min(10, autoScrollSpeed + 1))}
+                onStopAutoScroll={stopAutoScroll}
+            />
         </div >
     );
 };
