@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { BookOpen, ChevronRight, Search, Plus, X, Folder } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Novel } from '../services/db.service';
+import { NovelCover } from './common';
 
 interface NovelGridProps {
     filteredNovels: Novel[];
@@ -72,12 +73,21 @@ const NovelGridBase: React.FC<NovelGridProps> = ({
                             key={novel.id}
                             variants={editMode ? jiggleVariants : {}}
                             animate={editMode ? "jiggle" : "idle"}
+                            draggable={false}
+                            onDragStart={(e) => e.preventDefault()}
                         >
                             <Link
                                 to={editMode ? '#' : (novel.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(novel.id)}` : `/novel/${encodeURIComponent(novel.id)}`)}
                                 state={{ from: '/' }}
-                                className={`flex flex-col gap-2 group relative w-full select-none touch-manipulation ${editMode ? 'cursor-default' : 'cursor-pointer'}`}
-                                style={{ WebkitTapHighlightColor: 'transparent' }}
+                                draggable={false}
+                                onDragStart={(e) => e.preventDefault()}
+                                className={`flex flex-col gap-2 group relative w-full select-none touch-manipulation no-drag ${editMode ? 'cursor-default' : 'cursor-pointer'}`}
+                                style={{ 
+                                    WebkitTapHighlightColor: 'transparent',
+                                    WebkitTouchCallout: 'none',
+                                    WebkitUserDrag: 'none',
+                                    userSelect: 'none'
+                                } as React.CSSProperties}
                                 onTouchStart={handlePointerDown}
                                 onTouchEnd={handlePointerUpOrMove}
                                 onTouchMove={handlePointerUpOrMove}
@@ -122,15 +132,14 @@ const NovelGridBase: React.FC<NovelGridProps> = ({
                                 </AnimatePresence>
 
                                 <div className={`relative aspect-[2/3] w-full rounded-2xl overflow-hidden shadow-sm bg-slate-100 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 ${editMode ? 'ring-2 ring-red-500/50 shadow-red-500/20' : 'group-active:scale-[0.97] transition-all duration-200'}`}>
-                                    <img
-                                        src={novel.coverUrl || '/placeholder-cover.jpg'}
-                                        alt={novel.title}
-                                        className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                        loading="lazy"
+                                    <NovelCover
+                                        src={novel.coverUrl}
+                                        title={novel.title}
+                                        category={novel.category}
                                     />
                                     
                                     {/* Smooth Gradient Overlay */}
-                                    <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-80" />
+                                    <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-80 pointer-events-none" />
 
                                     {/* Type Badge */}
                                     {novel.category && novel.category !== 'Unknown' && (

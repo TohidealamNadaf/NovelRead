@@ -29,6 +29,12 @@
     user-select: text;
     -webkit-user-select: text;
   }
+
+  img,
+  a {
+    -webkit-user-drag: none;
+    -webkit-touch-callout: none;
+  }
 }
 
 /* Global Scrollbar Hiding */

@@ -10,6 +10,7 @@ import { Header } from '../components/Header';
 import { Toast } from '../components/Toast';
 import { ActionModal } from '../components/ActionModal';
 import { ChapterRow } from '../components/ChapterRow';
+import { NovelCover } from '../components/common';
 import { useChapterData } from '../hooks/useChapterData';
 import { useChapterActions } from '../hooks/useChapterActions';
 import { useOfflineStatus } from '../hooks/useOfflineStatus';
@@ -312,11 +313,13 @@ export const ChapterList = () => {
                 <div ref={headerRef} className="p-4 bg-background-light dark:bg-background-dark">
                     <div className="flex gap-5">
                         {/* Cover Image */}
-                        <div className="relative shrink-0">
-                            <div className="bg-center bg-no-repeat aspect-[2/3] bg-cover rounded-lg shadow-xl w-28 bg-slate-800 border border-white/10"
-                                style={{ backgroundImage: `url("${novel.coverUrl}")` }}>
-                            </div>
-                            <div className="absolute bottom-1 right-1 bg-primary text-[10px] text-white px-1.5 py-0.5 rounded font-sans uppercase tracking-wider font-bold">
+                        <div className="relative shrink-0 w-28 aspect-[2/3] rounded-lg overflow-hidden shadow-xl ring-1 ring-white/10">
+                            <NovelCover
+                                src={novel.coverUrl}
+                                title={novel.title}
+                                category={novel.category}
+                            />
+                            <div className="absolute bottom-1 right-1 bg-primary text-[10px] text-white px-1.5 py-0.5 rounded font-sans uppercase tracking-wider font-bold z-10 pointer-events-none">
                                 {novel.source || 'WEB'}
                             </div>
                         </div>

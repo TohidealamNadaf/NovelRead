@@ -1,8 +1,9 @@
 import { memo } from 'react';
-import { BookOpen, Search, X, Loader2 } from 'lucide-react';
+import { Search, X, Loader2 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { generateSlug } from '../../utils/slugUtils';
 import type { NovelMetadata } from '../../services/scraper.service';
+import { NovelCover } from '../common';
 
 interface NovelDiscoverSectionProps {
     homeData: any;
@@ -92,19 +93,11 @@ export const NovelDiscoverSection = memo(({
                                     onClick={() => goToNovel(novel)}
                                 >
                                     <div className="w-16 h-22 shrink-0 rounded-lg overflow-hidden shadow-md">
-                                        {novel.coverUrl ? (
-                                            <img
-                                                src={novel.coverUrl}
-                                                className="w-full h-full object-cover"
-                                                alt={novel.title}
-                                                loading={idx < 4 ? "eager" : "lazy"}
-                                                decoding="async"
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center">
-                                                <BookOpen size={20} className="text-slate-400" />
-                                            </div>
-                                        )}
+                                        <NovelCover
+                                            src={novel.coverUrl}
+                                            title={novel.title}
+                                            loading={idx < 4 ? "eager" : "lazy"}
+                                        />
                                     </div>
                                     <div className="flex-1 flex flex-col justify-center min-w-0">
                                         <p className="font-bold text-sm text-slate-900 dark:text-white line-clamp-2 leading-tight">{novel.title}</p>
@@ -188,28 +181,11 @@ export const NovelDiscoverSection = memo(({
                                 onClick={() => goToNovel(novel)}
                             >
                                 <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg group-active:scale-95 group-hover:-translate-y-1 transition-all duration-300 border border-slate-100 dark:border-white/5 bg-slate-200 dark:bg-[#1c1c1e]">
-                                    {novel.coverUrl ? (
-                                        <>
-                                            <img
-                                                src={novel.coverUrl}
-                                                className="absolute inset-0 w-full h-full object-cover"
-                                                alt={novel.title}
-                                                loading={idx < 4 ? "eager" : "lazy"}
-                                                decoding="async"
-                                                onError={(e) => {
-                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                    (e.target as HTMLImageElement).parentElement!.querySelector('.img-fallback')?.classList.remove('hidden');
-                                                }}
-                                            />
-                                            <div className="img-fallback hidden absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
-                                                <BookOpen className="text-4xl text-slate-400" />
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
-                                            <BookOpen className="text-4xl text-slate-400" />
-                                        </div>
-                                    )}
+                                    <NovelCover
+                                        src={novel.coverUrl}
+                                        title={novel.title}
+                                        loading={idx < 4 ? "eager" : "lazy"}
+                                    />
                                     <div className="absolute top-1.5 left-1.5 bg-black/60 backdrop-blur-sm text-white min-w-[24px] px-1.5 h-6 flex items-center justify-center rounded-lg font-bold text-[10px] shadow-sm">
                                         #{idx + 1}
                                     </div>
@@ -238,28 +214,11 @@ export const NovelDiscoverSection = memo(({
                                 onClick={() => goToNovel(novel)}
                             >
                                 <div className="aspect-[2/3] w-14 shrink-0 rounded-lg overflow-hidden shadow-md border border-slate-100 dark:border-white/10">
-                                    {novel.coverUrl ? (
-                                        <>
-                                            <img
-                                                src={novel.coverUrl}
-                                                className="w-full h-full object-cover"
-                                                alt={novel.title}
-                                                loading={idx < 4 ? "eager" : "lazy"}
-                                                decoding="async"
-                                                onError={(e) => {
-                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                    (e.target as HTMLImageElement).parentElement!.querySelector('.img-fallback')?.classList.remove('hidden');
-                                                }}
-                                            />
-                                            <div className="img-fallback hidden w-full h-full bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center text-slate-400">
-                                                <BookOpen size={20} />
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="w-full h-full bg-slate-200 dark:bg-[#2b2839] flex items-center justify-center text-slate-400">
-                                            <BookOpen size={20} />
-                                        </div>
-                                    )}
+                                    <NovelCover
+                                        src={novel.coverUrl}
+                                        title={novel.title}
+                                        loading={idx < 4 ? "eager" : "lazy"}
+                                    />
                                 </div>
                                 <div className="flex-1 min-w-0 flex flex-col justify-center">
                                     <h4 className="font-bold text-[15px] truncate text-slate-900 dark:text-white mb-1.5 leading-tight">{novel.title}</h4>
@@ -293,28 +252,11 @@ export const NovelDiscoverSection = memo(({
                                 onClick={() => goToNovel(novel)}
                             >
                                 <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-sm group-active:scale-95 group-hover:-translate-y-1 transition-all duration-300 border border-slate-100 dark:border-white/5 bg-slate-200 dark:bg-[#1c1c1e]">
-                                    {novel.coverUrl ? (
-                                        <>
-                                            <img
-                                                src={novel.coverUrl}
-                                                className="absolute inset-0 w-full h-full object-cover"
-                                                alt={novel.title}
-                                                loading={idx < 4 ? "eager" : "lazy"}
-                                                decoding="async"
-                                                onError={(e) => {
-                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                    (e.target as HTMLImageElement).parentElement!.querySelector('.img-fallback')?.classList.remove('hidden');
-                                                }}
-                                            />
-                                            <div className="img-fallback hidden absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
-                                                <BookOpen className="text-2xl text-slate-400" />
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
-                                            <BookOpen className="text-2xl text-slate-400" />
-                                        </div>
-                                    )}
+                                    <NovelCover
+                                        src={novel.coverUrl}
+                                        title={novel.title}
+                                        loading={idx < 4 ? "eager" : "lazy"}
+                                    />
                                     <div className="absolute top-1 left-1 bg-blue-500/90 backdrop-blur-sm text-white text-[8px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wide">NEW</div>
                                 </div>
                                 <div className="flex flex-col px-0.5">
@@ -341,28 +283,11 @@ export const NovelDiscoverSection = memo(({
                                 onClick={() => goToNovel(novel)}
                             >
                                 <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-lg group-active:scale-95 group-hover:-translate-y-1 transition-all duration-300 border border-slate-100 dark:border-white/5 bg-slate-200 dark:bg-[#1c1c1e]">
-                                    {novel.coverUrl ? (
-                                        <>
-                                            <img
-                                                src={novel.coverUrl}
-                                                className="absolute inset-0 w-full h-full object-cover"
-                                                alt={novel.title}
-                                                loading={idx < 4 ? "eager" : "lazy"}
-                                                decoding="async"
-                                                onError={(e) => {
-                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                    (e.target as HTMLImageElement).parentElement!.querySelector('.img-fallback')?.classList.remove('hidden');
-                                                }}
-                                            />
-                                            <div className="img-fallback hidden absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
-                                                <BookOpen className="text-4xl text-slate-400" />
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="absolute inset-0 bg-slate-300 dark:bg-[#2b2839] flex items-center justify-center">
-                                            <BookOpen className="text-4xl text-slate-400" />
-                                        </div>
-                                    )}
+                                    <NovelCover
+                                        src={novel.coverUrl}
+                                        title={novel.title}
+                                        loading={idx < 4 ? "eager" : "lazy"}
+                                    />
                                     <div className="absolute top-2 right-2 bg-emerald-500/90 backdrop-blur-sm shadow-lg text-white text-[8px] font-black px-2 py-0.5 rounded-lg uppercase tracking-tighter ring-1 ring-white/20">FINISH</div>
                                 </div>
                                 <div className="flex flex-col px-0.5">

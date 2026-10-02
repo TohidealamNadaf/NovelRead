@@ -231,6 +231,8 @@ export function useChapterData() {
                             const updatedNovel = {
                                 ...currentNovel,
                                 ...metadata,
+                                coverUrl: metadata.coverUrl || currentNovel.coverUrl,
+                                summary: metadata.summary || currentNovel.summary,
                                 title: (metadata.title && metadata.title !== 'Unknown Title' && metadata.title !== 'Unknown') ? metadata.title : currentNovel.title,
                                 author: (metadata.author && metadata.author !== 'Unknown') ? metadata.author : currentNovel.author,
                                 status: (metadata.status && metadata.status !== 'Unknown' && metadata.status !== 'Ongoing') ? metadata.status : (currentNovel.status || metadata.status),

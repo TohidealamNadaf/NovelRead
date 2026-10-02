@@ -6,6 +6,25 @@ import * as cheerio from 'cheerio';
 
 export class NovelFireScraper extends BaseScraper implements INovelScraper {
 
+    /**
+     * Extracts the novel status from the page.
+     * NovelFire now embeds status as text like "Ongoing Status" or "Completed Status"
+     * within .novel-info rather than using dedicated `strong.ongoing` elements.
+     */
+    private extractNovelStatus($: cheerio.CheerioAPI): string {
+        // Try old selectors first
+        const oldStatus = this.extractFirstText($, NOVELFIRE_SELECTORS.statusSelectors || []);
+        if (oldStatus) return oldStatus;
+
+        // Parse from .novel-info text: "...3202Chapters 70MViews 29KBookmarked Ongoing StatusGenres..."
+        const infoText = $('.novel-info').text();
+        if (/Completed\s*Status/i.test(infoText)) return 'Completed';
+        if (/Ongoing\s*Status/i.test(infoText)) return 'Ongoing';
+        if (/Hiatus\s*Status/i.test(infoText)) return 'Hiatus';
+
+        return 'Ongoing';
+    }
+
     async searchNovels(query: string): Promise<NovelMetadata[]> {
         const url = `https://novelfire.net/search?keyword=${encodeURIComponent(query)}`;
         console.log(`[NovelFire] Searching: ${url}`);
@@ -292,7 +311,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                     }
                     summary = this.cleanSummary(extractedSummary);
 
-                    status = this.extractFirstText($, NOVELFIRE_SELECTORS.statusSelectors || []) || 'Ongoing';
+                    status = this.extractNovelStatus($);
 
                     let extractedCover = $('meta[property="og:image"]').attr('content') || '';
                     if (!extractedCover || extractedCover.startsWith('data:image/')) {
@@ -420,7 +439,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                         }
                     }
                     summary = this.cleanSummary(extractedSummary);
-                    status = $('strong.ongoing').first().text().trim() || $('strong.status').first().text().trim() || 'Ongoing';
+                    status = this.extractNovelStatus($);
 
                     let extractedCover = $('meta[property="og:image"]').attr('content') || '';
                     if (!extractedCover || extractedCover.startsWith('data:image/')) {

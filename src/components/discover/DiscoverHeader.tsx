@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { RefreshCcw, Filter, Search, X } from 'lucide-react';
 import { Header } from '../Header';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useQuickReturnHeader } from '../../hooks/useQuickReturnHeader';
 
 interface DiscoverHeaderProps {
     profileImage: string;
@@ -39,7 +38,7 @@ export const DiscoverHeader = memo(({
     navigate,
     isCollapsed,
     onSearchIconClick,
-    scrollContainerRef,
+    scrollContainerRef: _scrollContainerRef,
     onClearSearch
 }: DiscoverHeaderProps) => {
     const headerWrapperRef = useRef<HTMLDivElement>(null);
@@ -67,16 +66,11 @@ export const DiscoverHeader = memo(({
     const TAB_BLOCK_HEIGHT = 54;
     const totalHeaderHeight = baseHeaderHeight + (isCollapsed ? 0 : SEARCH_BLOCK_HEIGHT + TAB_BLOCK_HEIGHT);
 
-    // Pass the precise dynamic `totalHeaderHeight` as the threshold to guarantee
-    // the header only hides after enough content has scrolled up behind it.
-    const { hidden: isHidden } = useQuickReturnHeader(scrollContainerRef, totalHeaderHeight);
-
     return (
         <>
             {/* 
-                FIX: Static spacer sized to the active header height.
+                Static spacer sized to the active header height.
                 It lives inside the scroll container and scrolls out of view naturally.
-                This breaks the feedback loop while reserving layout space.
             */}
             <motion.div 
                 initial={false}
@@ -85,15 +79,9 @@ export const DiscoverHeader = memo(({
                 className="shrink-0 w-full"
             />
             
-            <motion.div 
+            <div 
                 ref={headerWrapperRef}
-                variants={{
-                    visible: { y: 0 },
-                    hidden: { y: "-100%" },
-                }}
-                animate={isHidden ? "hidden" : "visible"}
-                transition={{ duration: 0.35, ease: "easeInOut" }}
-                className="fixed top-0 inset-x-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md"
+                className="fixed top-0 inset-x-0 z-20 bg-background-light/90 dark:bg-background-dark/90 backdrop-blur-xl border-b border-black/5 dark:border-white/5 transition-colors"
             >
             <Header
                 title="Discover"
@@ -232,7 +220,7 @@ export const DiscoverHeader = memo(({
                     ))}
                 </div>
             </motion.div>
-        </motion.div>
+        </div>
         </>
     );
 });

@@ -4,7 +4,6 @@ import type * as cheerio from 'cheerio';
 export abstract class BaseScraper {
     private PROXIES = [
         'https://api.allorigins.win/raw?url=',
-        'https://corsproxy.org/?',
         'https://corsproxy.io/?'
     ];
 

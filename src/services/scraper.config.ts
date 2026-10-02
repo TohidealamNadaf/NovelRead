@@ -48,7 +48,8 @@ export const NOVELFIRE_SELECTORS: ScraperSelectorConfig = {
         'strong.ongoing',
         'strong.status',
         '.novel-info .status',
-        '.novel-status'
+        '.novel-status',
+        '.novel-stats .status'
     ],
     chapterListSelectors: [
         '.chapter-list li a',
@@ -57,6 +58,7 @@ export const NOVELFIRE_SELECTORS: ScraperSelectorConfig = {
         '.chapters a'
     ],
     contentSelectors: [
+        '.d-chapter-content',
         '#content',
         '#chapter-container',
         '#chapter-content',
@@ -67,6 +69,7 @@ export const NOVELFIRE_SELECTORS: ScraperSelectorConfig = {
         '.entry-content'
     ],
     unwantedSelectors: [
+        '.nf-ads',
         '.ads',
         '.advertisement',
         'script',
@@ -81,7 +84,11 @@ export const NOVELFIRE_SELECTORS: ScraperSelectorConfig = {
         '.comments',
         '[id*="ad-"]',
         '[class*="ad-"]',
-        '.google-auto-placed'
+        '.google-auto-placed',
+        '#restore-scroll-btn',
+        '.box-notice',
+        '.report-container',
+        '.control-action'
     ],
     minContentLength: 80
 };
@@ -124,6 +131,7 @@ export const FREEWEBNOVEL_SELECTORS: ScraperSelectorConfig = {
     ],
     contentSelectors: [
         '.txt',
+        '#article',
         '#chapter-content',
         '#content',
         '.chapter-content',
@@ -132,6 +140,11 @@ export const FREEWEBNOVEL_SELECTORS: ScraperSelectorConfig = {
         'article'
     ],
     unwantedSelectors: [
+        '.read-ads',
+        '.reader-ad-skip',
+        '.fnw-content-state',
+        '.chapter-start',
+        '.chapter-end',
         '.ads',
         '.advertisement',
         'script',

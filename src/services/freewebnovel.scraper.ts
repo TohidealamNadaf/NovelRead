@@ -11,34 +11,58 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             return [
                 '',
                 'https://api.allorigins.win/raw?url=',
-                'https://corsproxy.org/?',
                 'https://corsproxy.io/?'
             ];
         }
         return [
             '/api/proxy?url=',
             'https://api.allorigins.win/raw?url=',
-            'https://corsproxy.org/?',
             'https://corsproxy.io/?'
         ];
     }
-    private parseFreeWebNovelsList($: cheerio.CheerioAPI, selector: string): (NovelMetadata & { sourceUrl: string })[] {
+    private parseFreeWebNovelsList(
+        $: cheerio.CheerioAPI, 
+        target: string | cheerio.Cheerio<any> = 'div.li, .li-row, ul.ul-list1 li, ul.ul-list6 li, ul.home-release-list li, .home-shelf-card, .col-l li:has(a[href*="/novel/"]), .ul-list li'
+    ): (NovelMetadata & { sourceUrl: string })[] {
         const novels: (NovelMetadata & { sourceUrl: string })[] = [];
         const origin = 'https://freewebnovel.com';
 
-        $(selector).each((_, el) => {
+        const elements = typeof target === 'string' ? $(target) : target;
+        elements.each((_, el) => {
             const $el = $(el);
-            const titleEl = $el.find('.tit a').first();
+
+            // 1. Title & URL extraction
+            let titleEl = $el.find('.tit a, h3 a, a.home-release-title, a.con, a.tit').first();
+            if (!titleEl.length) {
+                titleEl = $el.find('a[href*="/novel/"]').filter((_, a) => {
+                    const t = $(a).attr('title') || $(a).text().trim();
+                    const href = $(a).attr('href') || '';
+                    return t.length > 1 && !href.includes('/chapter-') && !t.toLowerCase().startsWith('chapter');
+                }).first();
+            }
+
             let title = titleEl.attr('title') || titleEl.text().trim();
             if (!title) return;
 
-            let url = titleEl.attr('href') || '';
+            let url = titleEl.attr('href') || $el.find('a[href*="/novel/"]').first().attr('href') || '';
+            if (url.includes('/chapter-')) {
+                const baseMatch = url.match(/(.*?\/novel\/[^/]+)/);
+                if (baseMatch) url = baseMatch[1];
+            }
             if (url && !url.startsWith('http')) {
                 if (!url.startsWith('/')) url = '/' + url;
                 url = `${origin}${url}`;
             }
 
-            let coverUrl = $el.find('.pic img').first().attr('src') || '';
+            // 2. Cover image extraction with webp/srcset and data-src fallbacks
+            let imgEl = $el.find('.pic img, .home-release-pic img, picture img, img').first();
+            let coverUrl = imgEl.attr('data-src') || imgEl.attr('data-original') || imgEl.attr('src') || '';
+            if (!coverUrl) {
+                const srcset = $el.find('picture source').first().attr('srcset');
+                if (srcset) {
+                    coverUrl = srcset.split(' ')[0].split(',')[0].trim();
+                }
+            }
             if (coverUrl && !coverUrl.startsWith('http')) {
                 if (!coverUrl.startsWith('/')) coverUrl = '/' + coverUrl;
                 coverUrl = `${origin}${coverUrl}`;
@@ -73,7 +97,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             const html = await this.fetchHtmlWithProxies(url);
             if (!html) return [];
             const $ = cheerio.load(html);
-            const novels = this.parseFreeWebNovelsList($, 'div.li');
+            const novels = this.parseFreeWebNovelsList($);
             return novels;
         } catch (e) {
             console.error(`[FreeWebNovel] Search failed`, e);
@@ -86,7 +110,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             const html = await this.fetchHtmlWithProxies(url);
             if (html) {
                 const $ = cheerio.load(html);
-                const novels = this.parseFreeWebNovelsList($, 'div.li');
+                const novels = this.parseFreeWebNovelsList($);
                 console.log(`[FreeWebNovel] Fetched ${novels.length} novels from ${url}`);
                 return novels;
             }
@@ -100,20 +124,67 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         const results: HomeData = { recommended: [], ranking: [], latest: [], recentlyAdded: [], completed: [] };
 
         try {
-            onProgress?.('Syncing Top Rankings...', 1, 4);
-            results.ranking = await this.fetchList('https://freewebnovel.com/sort/most-popular');
+            onProgress?.('Fetching FreeWebNovel Home...', 1, 5);
 
-            onProgress?.('Syncing Latest Updates...', 2, 4);
-            results.latest = await this.fetchList('https://freewebnovel.com/sort/latest-release');
+            // 1. Fetch homepage to reliably extract all primary sections in a single fast request
+            try {
+                const homeHtml = await this.fetchHtmlWithProxies('https://freewebnovel.com/');
+                if (homeHtml) {
+                    const $home = cheerio.load(homeHtml);
 
-            onProgress?.('Syncing Completed Stories...', 3, 4);
-            results.completed = await this.fetchList('https://freewebnovel.com/sort/completed-novel');
+                    // Latest release from homepage
+                    results.latest = this.parseFreeWebNovelsList($home, 'ul.home-release-list li');
 
-            onProgress?.('Syncing Recently Added...', 4, 4);
-            results.recentlyAdded = await this.fetchList('https://freewebnovel.com/sort/latest-novel');
+                    // Headings for shelves (Recently Added & Completed)
+                    $home('.g-tit').each((_, el) => {
+                        const heading = $home(el).text().toUpperCase();
+                        const nextContainer = $home(el).next();
+                        if (heading.includes('LATEST NOVEL')) {
+                            results.recentlyAdded = this.parseFreeWebNovelsList($home, nextContainer.find('.li, .home-shelf-card, li'));
+                        } else if (heading.includes('COMPLETED')) {
+                            results.completed = this.parseFreeWebNovelsList($home, nextContainer.find('.li, .home-shelf-card, li'));
+                        }
+                    });
 
-            onProgress?.('Generating Recommendations...', 5, 5);
-            results.recommended = [...results.ranking].sort(() => 0.5 - Math.random()).slice(0, 10);
+                    // Recommendations from homepage
+                    results.recommended = this.parseFreeWebNovelsList($home, '.home-rec-chapter-below, .m-top1, .m-rec, .banner');
+                }
+            } catch (err) {
+                console.warn('[FreeWebNovel] Homepage initial fetch failed:', err);
+            }
+
+            // 2. Fetch Top Rankings
+            onProgress?.('Syncing Top Rankings...', 2, 5);
+            const rankingList = await this.fetchList('https://freewebnovel.com/sort/most-popular');
+            if (rankingList.length > 0) {
+                results.ranking = rankingList;
+            } else if (results.recommended.length > 0) {
+                results.ranking = results.recommended;
+            }
+
+            // 3. Supplement Latest Updates if needed
+            if (results.latest.length === 0) {
+                onProgress?.('Syncing Latest Updates...', 3, 5);
+                results.latest = await this.fetchList('https://freewebnovel.com/sort/latest-release');
+            }
+
+            // 4. Supplement Completed Stories if needed
+            if (results.completed.length === 0) {
+                onProgress?.('Syncing Completed Stories...', 4, 5);
+                results.completed = await this.fetchList('https://freewebnovel.com/sort/completed-novel');
+            }
+
+            // 5. Supplement Recently Added if needed
+            if (results.recentlyAdded.length === 0) {
+                onProgress?.('Syncing Recently Added...', 5, 5);
+                results.recentlyAdded = await this.fetchList('https://freewebnovel.com/sort/latest-novel');
+            }
+
+            // Fallback for recommended
+            if (results.recommended.length === 0) {
+                const pool = results.ranking.length > 0 ? results.ranking : results.latest;
+                results.recommended = [...pool].sort(() => 0.5 - Math.random()).slice(0, 10);
+            }
 
             const dedupe = (arr: NovelMetadata[]) => {
                 const seen = new Set();
@@ -129,6 +200,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             results.latest = dedupe(results.latest);
             results.completed = dedupe(results.completed);
             results.recentlyAdded = dedupe(results.recentlyAdded);
+            results.recommended = dedupe(results.recommended);
         } catch (e) {
             console.error('[FreeWebNovel] Sync failed', e);
         }

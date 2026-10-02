@@ -110,7 +110,9 @@ export const Profile = () => {
                             <img
                                 src={profileImage}
                                 alt="Profile"
-                                className="size-full object-cover"
+                                draggable={false}
+                                onDragStart={(e) => e.preventDefault()}
+                                className="size-full object-cover select-none pointer-events-none"
                                 onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_AVATAR; }}
                             />
                         </div>

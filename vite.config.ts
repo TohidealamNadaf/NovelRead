@@ -54,30 +54,32 @@ export default defineConfig({
           const transport = isHttps ? https : http;
           const port = targetUrl.port ? parseInt(targetUrl.port) : (isHttps ? 443 : 80);
 
+          // Build dynamic cookie header from Puppeteer cookieJar (if available)
+          const domain = targetUrl.hostname;
+          const jarCookies = cookieJar.get(domain);
+          const cookieHeader = jarCookies
+            ? jarCookies.map((c: any) => `${c.name}=${c.value}`).join('; ')
+            : '';
+
+          const proxyHeaders: Record<string, string> = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Cache-Control': 'no-cache',
+          };
+          // Only send cookies if we have fresh ones from Puppeteer
+          if (cookieHeader) {
+            proxyHeaders['Cookie'] = cookieHeader;
+          }
+
           const options: http.RequestOptions = {
             hostname: targetUrl.hostname,
             port,
             path: targetUrl.pathname + targetUrl.search,
             method: req.method || 'GET',
-            headers: {
-              'Cookie': 'usertype=guest; cf_clearance=GyY43a9QaRKh0K22L9Xlv24BKZpp9lBo7E6O8_.M8ig-1744350198-1.2.1.1-xQttjYiNo3PzhoZ7JWg_j_ZOv4fgNF8WSB7Cqu279eFtN1aNKp1Bpkjz7hIWZ00Fn8MGd0xOi9vVdnq2iOTbW5OzOus8eIdka.DGyXkXDOC0g0o9n2lwDAEa1JYVZPXr4yjEnC5pP4xBBZZecUNwhQ37KNwKC7ECbyu0zssn3PbarKTe4SOUCXfNMNhNJh3xbDMN9xldKgIRZE2R1m8flWYujOg.NX7ByDAblvCNHjEnkGtROfH2gOBm_djbMIU_hr0hYTLxm60Dwu9WsqVjnTzpFCubIF4vU1oo0wa9BMHNxexn1Ut5bM.c93CMOyO.WCPmlx8Y73v7oNJ_yp9Tz.Q1A2M.lDPvMSs1bt.GycI',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.5',
-              'Accept-Encoding': 'gzip, deflate, br',
-              'Sec-Fetch-Dest': 'document',
-              'Sec-Fetch-Mode': 'navigate',
-              'Sec-Fetch-Site': 'same-origin',
-              'Sec-Fetch-User': '?1',
-              'Upgrade-Insecure-Requests': '1',
-              'sec-ch-ua': '"Chromium";v="135", "Google Chrome";v="135", "Not-A.Brand";v="99"',
-              'sec-ch-ua-mobile': '?0',
-              'sec-ch-ua-platform': '"Windows"',
-              'Referer': targetUrl.origin + '/',
-              'Origin': targetUrl.origin,
-              'Connection': 'keep-alive',
-              'Cache-Control': 'no-cache',
-            },
+            headers: proxyHeaders,
           };
 
           if (req.headers['content-type']) {
@@ -96,15 +98,18 @@ export default defineConfig({
           const triggerPuppeteer = () => {
             console.warn(`[Proxy] Cloudflare challenge/block detected for ${targetRaw} - Puppeteer fallback...`);
             
-            // 1. Return cached HTML if fresh
+            // 1. Return cached HTML if fresh (and not a challenge page)
             const cached = htmlCache.get(targetRaw);
             const ttl = targetRaw.includes('ajax=chapters') ? 300000 : 60000;
             if (cached && Date.now() - cached.t < ttl) {
-                if (!res.headersSent) {
-                    res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/html; charset=utf-8' });
+                const isChallenge = /cf-browser-verification|Just a moment|Verifying you are human|cf-challenge/i.test(cached.html.slice(0, 4096));
+                if (!isChallenge) {
+                    if (!res.headersSent) {
+                        res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/html; charset=utf-8' });
+                    }
+                    res.end(cached.html);
+                    return;
                 }
-                res.end(cached.html);
-                return;
             }
 
             // 2. Dedupe concurrent same-URL requests
@@ -197,7 +202,8 @@ export default defineConfig({
                     });
                 }
 
-                await page.goto(targetRaw, { waitUntil: 'domcontentloaded', timeout: 45000 });
+                const isCloudflareSite = targetRaw.includes('freewebnovel.com') || targetRaw.includes('novelfire.net');
+                await page.goto(targetRaw, { waitUntil: isCloudflareSite ? 'networkidle2' : 'domcontentloaded', timeout: 45000 });
                 if (targetRaw.includes('mangafire.to')) {
                     if (targetRaw.includes('/chapter/')) {
                         // Reader page: wait for reader to render
@@ -210,8 +216,28 @@ export default defineConfig({
                         await page.waitForSelector('.title-rows__link, .home-section__item, .unit-item, .manga-item', { timeout: 15000 }).catch(() => {});
                     }
                 } else {
-                    await page.waitForSelector('.chapter-list, .list-chapter, .manga-item, h1.tit, h1, .chapters', { timeout: 15000 }).catch(() => {});
+                    try {
+                        const title = await page.title();
+                        if (title.includes('Just a moment')) {
+                            await page.waitForFunction("() => !document.title.includes('Just a moment')", { timeout: 15000 }).catch(() => {});
+                        }
+                    } catch (_) {}
+                    await page.waitForSelector('.chapter-list, .list-chapter, .manga-item, h1.tit, .tit, div.li, .ul-list1, .ul-list6, .home-release-list, .chapters, .d-chapter-content, .novel-header', { timeout: 15000 }).catch(() => {});
                 }
+
+                // Guard: abort if Puppeteer followed a JS redirect to a different domain
+                const finalUrl = page.url();
+                try {
+                    const finalHost = new URL(finalUrl).hostname;
+                    if (finalHost !== domain) {
+                        console.warn(`[Proxy/Puppeteer] Cross-domain redirect detected: ${domain} → ${finalHost}, aborting`);
+                        await page.close();
+                        throw new Error(`Redirected to ${finalHost}`);
+                    }
+                } catch (e: any) {
+                    if (e.message?.includes('Redirected to')) throw e;
+                }
+
                 const cookies = await page.cookies();
                 cookieJar.set(domain, cookies);
                 let html = await page.content();
@@ -224,7 +250,10 @@ export default defineConfig({
                 }
 
                 await page.close();
-                htmlCache.set(targetRaw, { html, t: Date.now() });
+                const isChallengeResult = /cf-browser-verification|Just a moment|Verifying you are human|cf-challenge/i.test(html.slice(0, 4096));
+                if (!isChallengeResult) {
+                    htmlCache.set(targetRaw, { html, t: Date.now() });
+                }
                 return html;
             })();
 
@@ -261,6 +290,18 @@ export default defineConfig({
               if (redirectUrl.startsWith('/')) {
                 redirectUrl = targetUrl.origin + redirectUrl;
               }
+              // Block cross-domain redirects to unexpected sites (e.g. novelfire.net → readnovel.site)
+              try {
+                const redirectHost = new URL(redirectUrl).hostname;
+                if (redirectHost !== targetUrl.hostname) {
+                  console.warn(`[Proxy] Blocking cross-domain redirect: ${targetUrl.hostname} → ${redirectHost}`);
+                  if (!res.headersSent) {
+                    res.writeHead(502, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+                  }
+                  res.end(`Blocked redirect to ${redirectHost}`);
+                  return;
+                }
+              } catch { }
               res.writeHead(status, { 
                 'Location': `/api/proxy?url=${encodeURIComponent(redirectUrl)}`,
                 'Access-Control-Allow-Origin': '*'

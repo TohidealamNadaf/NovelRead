@@ -9,6 +9,7 @@ import { useProfileImage } from '../hooks/useProfileImage';
 import { motion, AnimatePresence } from 'framer-motion';
 import { NovelGrid } from '../components/NovelGrid';
 import { CollectionManagerModal } from '../components/collections';
+import { NovelCover } from '../components/common';
 
 // Custom hook for responsive grid columns
 function useResponsiveColumns() {
@@ -66,8 +67,6 @@ export const Home = () => {
     const location = useLocation();
 
     const COLUMN_COUNT = useResponsiveColumns();
-    
-    const [isHeaderHidden, setIsHeaderHidden] = useState(false);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -77,7 +76,6 @@ export const Home = () => {
         let lastY = el.scrollTop;
 
         // Local mirrors (avoid redundant setState)
-        let headerHidden = isHeaderHidden;
         let collapsed = isHeaderCollapsed;
         let scrolled = isScrolled;
         let showTop = showScrollTop;
@@ -87,18 +85,9 @@ export const Home = () => {
             rafId = requestAnimationFrame(() => {
                 const y = el.scrollTop;
 
-                // 1. Quick-return header (2px hysteresis deadzone)
-                if (y < 10) {
-                    if (headerHidden) { setIsHeaderHidden(false); headerHidden = false; }
-                } else if (y > lastY + 2 && y > 100) {
-                    if (!headerHidden) { setIsHeaderHidden(true); headerHidden = true; }
-                } else if (y < lastY - 2) {
-                    if (headerHidden) { setIsHeaderHidden(false); headerHidden = false; }
-                }
-
-                // 2. Collapse search bar (separate boundary + hysteresis)
-                const shouldCollapse = y > 120 && y > lastY + 2;
-                const shouldExpand = y < 15 || (y < lastY - 2 && y < 100);
+                // Collapse search bar smoothly on scroll
+                const shouldCollapse = y > 80 && y > lastY + 2;
+                const shouldExpand = y < 15 || (y < lastY - 2 && y < 60);
 
                 if (shouldCollapse && !collapsed) {
                     setIsHeaderCollapsed(true);
@@ -108,15 +97,15 @@ export const Home = () => {
                     collapsed = false;
                 }
 
-                // 3. Frosted background
+                // Frosted background elevation
                 const shouldScrolled = y > 10;
                 if (shouldScrolled !== scrolled) { setIsScrolled(shouldScrolled); scrolled = shouldScrolled; }
 
-                // 4. Scroll-to-top FAB
+                // Scroll-to-top FAB
                 const shouldShowTop = y > 500;
                 if (shouldShowTop !== showTop) { setShowScrollTop(shouldShowTop); showTop = shouldShowTop; }
 
-                // 5. Debounced session storage
+                // Debounced session storage
                 if (!sessionStorageTimeoutRef.current) {
                     sessionStorageTimeoutRef.current = setTimeout(() => {
                         sessionStorage.setItem('homeScroll', y.toString());
@@ -317,20 +306,9 @@ export const Home = () => {
                 />
 
                 {/* Header Section - Sticky Frosted Glass */}
-                <motion.div 
-                    variants={{
-                        visible: { y: 0 },
-                        hidden: { y: "-100%" },
-                    }}
-                    animate={isHeaderHidden ? "hidden" : "visible"}
-                    transition={{ duration: 0.35, ease: "easeInOut" }}
-                    className="fixed top-0 inset-x-0 z-30"
+                <div 
+                    className="fixed top-0 inset-x-0 z-30 bg-background-light/90 dark:bg-[#0f111a]/90 backdrop-blur-xl border-b border-black/5 dark:border-white/5 transition-colors"
                 >
-                    <div 
-                        className="absolute inset-0 bg-white/80 dark:bg-[#0f111a]/80 backdrop-blur-xl shadow-sm transition-opacity duration-300 pointer-events-none"
-                        style={{ opacity: isScrolled ? 1 : 0 }}
-                    />
-                    
                     <div className="relative z-10">
                         <div ref={headerRowRef}>
                             <Header
@@ -469,7 +447,7 @@ export const Home = () => {
                             </div>
                         </motion.div>
                     </div>
-                </motion.div>
+                </div>
 
             {/* Main Content Area */}
             <motion.div 
@@ -491,15 +469,22 @@ export const Home = () => {
                             <Link
                                 to={heroNovel.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(heroNovel.id)}` : `/novel/${encodeURIComponent(heroNovel.id)}`}
                                 state={{ from: '/' }}
-                                className="relative flex w-full rounded-3xl overflow-hidden shadow-2xl shadow-primary/10 active:scale-[0.98] transition-transform duration-300 group min-h-[160px]"
+                                draggable={false}
+                                onDragStart={(e) => e.preventDefault()}
+                                className="relative flex w-full rounded-3xl overflow-hidden shadow-2xl shadow-primary/10 active:scale-[0.98] transition-transform duration-300 group min-h-[160px] no-drag select-none"
                             >
                                 {/* Blurred Background Cover */}
-                                <div className="absolute inset-0 z-0">
-                                    <img 
-                                        src={heroNovel.coverUrl || '/placeholder-cover.jpg'} 
-                                        alt="" 
-                                        className="size-full object-cover blur-md scale-110 opacity-40 dark:opacity-30 group-hover:scale-125 transition-transform duration-700"
-                                    />
+                                <div className="absolute inset-0 z-0 pointer-events-none">
+                                    {heroNovel.coverUrl && (
+                                        <img 
+                                            src={heroNovel.coverUrl} 
+                                            alt="" 
+                                            aria-hidden="true"
+                                            draggable={false}
+                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                            className="size-full object-cover blur-md scale-110 opacity-40 dark:opacity-30 group-hover:scale-125 transition-transform duration-700"
+                                        />
+                                    )}
                                     <div className="absolute inset-0 bg-gradient-to-r from-background-light via-background-light/90 to-background-light/40 dark:from-[#0f111a] dark:via-[#0f111a]/90 dark:to-[#0f111a]/40" />
                                 </div>
 
@@ -507,8 +492,12 @@ export const Home = () => {
                                 <div className="relative z-10 flex w-full p-4 items-center gap-4">
                                     <div className="w-24 shrink-0 rounded-xl overflow-hidden shadow-lg ring-1 ring-white/20">
                                         <div className="aspect-[2/3] relative">
-                                            <img src={heroNovel.coverUrl || '/placeholder-cover.jpg'} alt={heroNovel.title} className="size-full object-cover" />
-                                            <div className="absolute bottom-0 inset-x-0 h-1 bg-black/50">
+                                            <NovelCover
+                                                src={heroNovel.coverUrl}
+                                                title={heroNovel.title}
+                                                category={heroNovel.category}
+                                            />
+                                            <div className="absolute bottom-0 inset-x-0 h-1 bg-black/50 z-10 pointer-events-none">
                                                 <div className="h-full bg-primary shadow-[0_0_8px_rgba(var(--color-primary),0.8)]" style={{ width: `${Math.min(100, ((heroNovel.readChapters || 0) / (heroNovel.totalChapters || 1)) * 100)}%` }} />
                                             </div>
                                         </div>
@@ -547,17 +536,18 @@ export const Home = () => {
                                         key={'recent-' + novel.id}
                                         to={novel.category === 'Manhwa' ? `/manhwa/${encodeURIComponent(novel.id)}` : `/novel/${encodeURIComponent(novel.id)}`}
                                         state={{ from: '/' }}
-                                        className="snap-start shrink-0 w-[100px] sm:w-[120px] flex flex-col gap-2 group active:scale-95 transition-transform"
+                                        draggable={false}
+                                        onDragStart={(e) => e.preventDefault()}
+                                        className="snap-start shrink-0 w-[100px] sm:w-[120px] flex flex-col gap-2 group active:scale-95 transition-transform select-none no-drag"
                                     >
                                         <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden shadow-md ring-1 ring-black/5 dark:ring-white/10 group-hover:shadow-lg transition-shadow">
-                                            <img
-                                                src={novel.coverUrl || '/placeholder-cover.jpg'}
-                                                alt={novel.title}
-                                                className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                                loading="lazy"
+                                            <NovelCover
+                                                src={novel.coverUrl}
+                                                title={novel.title}
+                                                category={novel.category}
                                             />
-                                            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-                                            <div className="absolute bottom-2 inset-x-2">
+                                            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none" />
+                                            <div className="absolute bottom-2 inset-x-2 pointer-events-none">
                                                 <div className="h-1 bg-white/20 rounded-full overflow-hidden backdrop-blur-md">
                                                     <div
                                                         className="h-full bg-primary"
