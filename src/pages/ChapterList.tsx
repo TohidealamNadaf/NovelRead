@@ -105,6 +105,7 @@ export const ChapterList = () => {
         chapters,
         liveChapters,
         locationState: location.state,
+        loadingPage,
         setChapters,
         setDownloadedLiveChapters,
         setAddedToLibrary,
@@ -450,6 +451,16 @@ export const ChapterList = () => {
                     </div>
                 </div>
 
+                {loadingPage > 0 && (
+                    <div className="px-4 py-2 bg-primary/10 border-b border-primary/20 flex items-center justify-between text-xs text-primary font-medium shrink-0 animate-pulse">
+                        <div className="flex items-center gap-2">
+                            <Loader2 size={13} className="animate-spin text-primary shrink-0" />
+                            <span>Fetching chapters... Page {loadingPage}{novel?.totalChapters ? ` (${totalChaptersData}/${novel.totalChapters})` : ` (${totalChaptersData} loaded)`}</span>
+                        </div>
+                        <span className="text-[10px] uppercase font-bold tracking-wider opacity-75 shrink-0">Live Sync</span>
+                    </div>
+                )}
+
                 {/* Virtualized Chapter List */}
                 <div
                     ref={listContainerRef}
@@ -459,18 +470,43 @@ export const ChapterList = () => {
                         position: 'relative',
                     }}
                 >
-                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                        const chapter = filteredChapters[virtualRow.index];
-                        if (!chapter) return null;
-
-                        const isDownloaded = isLiveMode ? downloadedLiveChapters.has(chapter.url) : (chapter.content || chapter.contentPath);
+                    {(() => {
                         const cleanNovelId = novel?.id ? novel.id.replace(/\/$/, '').replace(/\/chapters$/i, '') : '';
-                        const isRead = isLiveMode
-                            ? (readLiveChapters.has(chapter.url) || readLiveChapters.has(chapter.id) || novel?.lastReadChapterId === chapter.id || novel?.lastReadChapterId === chapter.url || novel?.lastReadChapterId === `${novel?.id}-ch-${chapter._index}` || novel?.lastReadChapterId === `${cleanNovelId}-ch-${chapter._index}`)
-                            : (Boolean(chapter.isRead) || novel?.lastReadChapterId === chapter.id || novel?.lastReadChapterId === chapter.url || novel?.lastReadChapterId === `${novel?.id}-ch-${chapter.orderIndex}` || novel?.lastReadChapterId === `${cleanNovelId}-ch-${chapter.orderIndex}`);
-                        const isDownloadingItem = isLiveMode ? downloadingLive.has(chapter.url) : downloading.has(chapter.id);
+                        let lastReadOrderIdx = -1;
+                        const lastReadMatch = novel?.lastReadChapterId?.match(/-ch-(\d+)$/);
+                        if (lastReadMatch) {
+                            lastReadOrderIdx = parseInt(lastReadMatch[1], 10);
+                        } else if (novel?.lastReadChapterId) {
+                            if (isLiveMode) {
+                                lastReadOrderIdx = liveChapters.findIndex(c => c.url === novel.lastReadChapterId);
+                            } else {
+                                lastReadOrderIdx = chapters.findIndex(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId);
+                            }
+                        }
+
+                        return rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                            const chapter = filteredChapters[virtualRow.index];
+                            if (!chapter) return null;
+                            const ch = chapter as any;
+
+                            const isDownloaded = isLiveMode ? downloadedLiveChapters.has(ch.url) : (ch.content || ch.contentPath);
+                            const isRead = isLiveMode
+                                ? (readLiveChapters.has(ch.url) ||
+                                   readLiveChapters.has(ch.id) ||
+                                   (lastReadOrderIdx >= 0 && ch._index <= lastReadOrderIdx) ||
+                                   novel?.lastReadChapterId === ch.id ||
+                                   novel?.lastReadChapterId === ch.url ||
+                                   novel?.lastReadChapterId === `${novel?.id}-ch-${ch._index}` ||
+                                   novel?.lastReadChapterId === `${cleanNovelId}-ch-${ch._index}`)
+                                : (Boolean(ch.isRead) ||
+                                   (lastReadOrderIdx >= 0 && ch.orderIndex <= lastReadOrderIdx) ||
+                                   novel?.lastReadChapterId === ch.id ||
+                                   novel?.lastReadChapterId === ch.url ||
+                                   novel?.lastReadChapterId === `${novel?.id}-ch-${ch.orderIndex}` ||
+                                   novel?.lastReadChapterId === `${cleanNovelId}-ch-${ch.orderIndex}`);
+                        const isDownloadingItem = isLiveMode ? downloadingLive.has(ch.url) : downloading.has(ch.id);
                         const displayIndex = sortOrder === 'asc'
-                            ? (isLiveMode ? (chapter._index + 1) : (chapter.orderIndex + 1))
+                            ? (isLiveMode ? (ch._index + 1) : (ch.orderIndex + 1))
                             : (totalChaptersData - virtualRow.index);
 
                         return (
@@ -497,15 +533,16 @@ export const ChapterList = () => {
                                     onDownload={(e) => {
                                         e?.stopPropagation();
                                         if (isLiveMode) {
-                                            handleLiveDownloadChapter(chapter, chapter._index);
+                                            handleLiveDownloadChapter(ch, ch._index);
                                         } else {
-                                            handleDownload(chapter);
+                                            handleDownload(ch);
                                         }
                                     }}
                                 />
                             </div>
                         );
-                    })}
+                    });
+                })()}
                 </div>
                 {/* Bottom spacer for FAB clearance */}
                 <div className="h-24" />

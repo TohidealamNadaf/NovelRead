@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { NovelGrid } from '../components/NovelGrid';
 import { CollectionManagerModal } from '../components/collections';
 import { NovelCover } from '../components/common';
+import { DEFAULT_AVATAR } from '../utils/profileImage.util';
 
 // Custom hook for responsive grid columns
 function useResponsiveColumns() {
@@ -316,7 +317,7 @@ export const Home = () => {
                             autoElevate={false}
                             leftContent={
                                 <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
-                                    <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${profileImage || 'https://img.freepik.com/free-psd/3d-illustration-person-with-sunglasses_23-2149436188.jpg'}")` }}></div>
+                                    <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${profileImage || DEFAULT_AVATAR}")` }}></div>
                                 </Link>
                             }
                             rightActions={

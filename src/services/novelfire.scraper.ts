@@ -287,7 +287,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         const infoUrl = url.replace(/\/chapters\/?(\?.*)?$/, '');
         let listUrl = url;
 
-        let title = '', author = '', coverUrl = '', summary = '', status = 'Ongoing';
+        let title = '', author = '', coverUrl = '', summary = '', status = 'Ongoing', totalChapters = 0;
 
         for (const proxyUrl of this.getProxies(infoUrl)) {
             try {
@@ -298,6 +298,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
 
                 const rawTitle = this.extractFirstText($, NOVELFIRE_SELECTORS.titleSelectors);
                 title = rawTitle.split(' Novel - Read')[0].split(' - Novel Fire')[0].trim();
+                totalChapters = this.extractTotalChapters($);
 
                 if (title) {
                     author = this.extractFirstText($, NOVELFIRE_SELECTORS.authorSelectors).replace(/^Author:\s*/i, '').trim() || 'Unknown';
@@ -383,7 +384,43 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
             if (pageCount > 0) await new Promise(resolve => setTimeout(resolve, 300));
         }
 
-        return { title: title || 'Unknown Title', author, coverUrl, summary, status, chapters: allChapters };
+        return { title: title || 'Unknown Title', author, coverUrl, summary, status, totalChapters: totalChapters || allChapters.length, chapters: allChapters };
+    }
+
+    private extractTotalChapters($: cheerio.CheerioAPI): number {
+        // 1. Text like "A total of 2195 chapters have been translated"
+        const pageText = $('body').text();
+        const totalMatch = pageText.match(/total of (\d+) chapters/i);
+        if (totalMatch) return parseInt(totalMatch[1], 10);
+
+        // 2. Input #gotochapno max attribute: e.g. <input id="gotochapno" ... max="2195">
+        const inputMax = $('#gotochapno').attr('max');
+        if (inputMax) {
+            const val = parseInt(inputMax, 10);
+            if (!isNaN(val) && val > 0) return val;
+        }
+
+        // 3. Stats like "2195Chapters" or "2195 Chapters"
+        let fromStats = 0;
+        $('.novel-stats, .header-stats, .item-body, .novel-info, .meta').each((_, el) => {
+            const txt = $(el).text();
+            const m = txt.match(/(\d+)\s*Chapters/i);
+            if (m) {
+                const num = parseInt(m[1], 10);
+                if (num > fromStats) fromStats = num;
+            }
+        });
+        if (fromStats > 0) return fromStats;
+
+        // 4. Check chapters link text: e.g. "Chapter 2195: Liberating The Archon"
+        const chLinkText = $('a[href*="/chapters"]').first().text();
+        const chMatch = chLinkText.match(/chapter\s+(\d+)/i);
+        if (chMatch) {
+            const num = parseInt(chMatch[1], 10);
+            if (!isNaN(num) && num > 0) return num;
+        }
+
+        return 0;
     }
 
     private findTotalPages($: cheerio.CheerioAPI): number {
@@ -412,7 +449,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         let listUrl = url;
         const userProvidedChapters = /\/chapters\/?(\?.*)?$/.test(url);
 
-        let title = '', author = '', coverUrl = '', summary = '', status = 'Ongoing';
+        let title = '', author = '', coverUrl = '', summary = '', status = 'Ongoing', totalChapters = 0;
         let workingProxy: string | undefined;
 
         for (const proxyUrl of this.getProxies(infoUrl)) {
@@ -428,6 +465,8 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                     $('h1').first().text().trim() ||
                     $('meta[property="og:title"]').attr('content') || ''
                 ).split(' Novel - Read')[0].split(' - Novel Fire')[0].trim();
+
+                totalChapters = this.extractTotalChapters($);
 
                 if (title) {
                     author = $('span[itemprop="author"]').first().text().trim() || $('.author a').first().text().trim() || 'Unknown';
@@ -459,7 +498,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                     }
                     coverUrl = extractedCover;
 
-                    onProgress?.([], 0, { title, author, summary, status, coverUrl });
+                    onProgress?.([], 0, { title, author, summary, status, coverUrl, totalChapters: totalChapters || undefined });
 
                     if (!userProvidedChapters) {
                         const chaptersLink = $('a[href*="/chapters"]').first().attr('href');
@@ -509,6 +548,14 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                 const chs = this.extractChaptersFromPage($, listUrl);
                 if (chs.length > 0) pageSize = chs.length;
                 totalPage = this.findTotalPages($);
+                if (!totalChapters) {
+                    totalChapters = this.extractTotalChapters($);
+                }
+                if (totalChapters > 0 && pageSize > 0) {
+                    totalPage = Math.max(totalPage, Math.ceil(totalChapters / pageSize));
+                } else if (!totalChapters && totalPage > 1) {
+                    totalChapters = (totalPage - 1) * pageSize + chs.length;
+                }
                 firstChapters = chs; // Do NOT skip if known > 0, we need them for deduplication and new chapters
                 break;
             } catch { }
@@ -519,7 +566,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         for (const ch of firstChapters) {
             if (!chapterUrlSet.has(ch.url)) { chapterUrlSet.add(ch.url); allChapters.push(ch); }
         }
-        onProgress?.(allChapters, 1, { title, author, summary, status, coverUrl });
+        onProgress?.(allChapters, 1, { title, author, summary, status, coverUrl, totalChapters: totalChapters || allChapters.length });
 
         // Step 2: Parallel batches (no 300ms delay)
         const CONCURRENCY = 3;
@@ -539,7 +586,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
                     if (!chapterUrlSet.has(ch.url)) { chapterUrlSet.add(ch.url); allChapters.push(ch); }
                 }
             }
-            onProgress?.(allChapters, Math.min(start + CONCURRENCY - 1, totalPage), { title, author, summary, status, coverUrl });
+            onProgress?.(allChapters, Math.min(start + CONCURRENCY - 1, totalPage), { title, author, summary, status, coverUrl, totalChapters: totalChapters || allChapters.length });
         }
 
         if (!title && allChapters.length === 0) {
@@ -549,6 +596,7 @@ export class NovelFireScraper extends BaseScraper implements INovelScraper {
         return {
             title: title || 'Unknown Title',
             author, coverUrl, summary, status,
+            totalChapters: totalChapters || allChapters.length,
             chapters: allChapters
         };
     }

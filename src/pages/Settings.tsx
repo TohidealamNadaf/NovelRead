@@ -10,7 +10,7 @@ import type { UpdateState } from '../services/update.service';
 import { cacheService } from '../services/cache.service';
 import { ChevronRight, Palette, Globe, MoveVertical, BookOpen, Trash2, FolderOpen, Shield, Cloud, RefreshCw, Download, CheckCircle2, AlertTriangle, RotateCcw, BrainCircuit, ChevronUp, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
-import { Preferences } from '@capacitor/preferences';
+import { useProfileImage } from '../hooks/useProfileImage';
 
 // Helper to render toggle switch
 const Toggle = ({ active }: { active: boolean }) => (
@@ -22,7 +22,7 @@ const Toggle = ({ active }: { active: boolean }) => (
 export const Settings = () => {
     const [settings, setSettings] = useState<AppSettings>(settingsService.getSettings());
     const [cacheSize, setCacheSize] = useState("Calculating...");
-    const [profileImage, setProfileImage] = useState<string>("https://img.freepik.com/free-psd/3d-illustration-person-with-sunglasses_23-2149436188.jpg");
+    const profileImage = useProfileImage();
     const [updateState, setUpdateState] = useState<UpdateState>({
         status: 'idle',
         currentVersion: '1.2.0', // Updated build version
@@ -43,7 +43,6 @@ export const Settings = () => {
             setUpdateState(state);
         });
 
-        loadProfileImage();
         calculateCache();
 
         return () => {
@@ -51,13 +50,6 @@ export const Settings = () => {
             updateUnsub();
         };
     }, []);
-
-    const loadProfileImage = async () => {
-        const { value } = await Preferences.get({ key: 'profileImage' });
-        if (value) {
-            setProfileImage(value);
-        }
-    };
 
     const calculateCache = async () => {
         setCacheSize("Calculating...");

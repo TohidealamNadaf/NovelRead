@@ -923,19 +923,47 @@ class DatabaseService {
     async getChapter(novelId: string, chapterId: string): Promise<Chapter | null> {
         const db = await this.getDB();
         if (!db) return null;
-        const result = await db.query('SELECT * FROM chapters WHERE novelId = ? AND id = ?', [novelId, chapterId]);
+
+        const cleanNovelId = novelId ? novelId.replace(/\/$/, '').replace(/\/chapters$/i, '') : '';
+        const decodedNovelId = novelId && novelId.includes('%') ? decodeURIComponent(novelId).replace(/\/$/, '').replace(/\/chapters$/i, '') : cleanNovelId;
+        const novelIdVariants = Array.from(new Set([novelId, cleanNovelId, decodedNovelId, cleanNovelId + '/', cleanNovelId + '/chapters'])).filter(Boolean);
+        const placeholders = novelIdVariants.map(() => '?').join(' OR novelId = ');
+
+        // 1. Exact match on id or audioPath (source URL)
+        let result = await db.query(
+            `SELECT * FROM chapters WHERE (${placeholders ? `novelId = ${placeholders}` : '1=1'}) AND (id = ? OR audioPath = ? OR id = ?) LIMIT 1`,
+            [...novelIdVariants, chapterId, chapterId, `${cleanNovelId}-ch-${chapterId}`]
+        );
+
+        // 2. OrderIndex match if chapterId contains -ch-(\d+)
+        if ((!result.values || result.values.length === 0) && chapterId) {
+            const match = chapterId.match(/-ch-(\d+)$/);
+            if (match) {
+                const orderIdx = parseInt(match[1], 10);
+                result = await db.query(
+                    `SELECT * FROM chapters WHERE (${placeholders ? `novelId = ${placeholders}` : '1=1'}) AND orderIndex = ? LIMIT 1`,
+                    [...novelIdVariants, orderIdx]
+                );
+            }
+        }
+
+        // 3. Fallback: Search globally by id or audioPath if novelId didn't match
+        if (!result.values || result.values.length === 0) {
+            result = await db.query(
+                'SELECT * FROM chapters WHERE id = ? OR audioPath = ? LIMIT 1',
+                [chapterId, chapterId]
+            );
+        }
 
         if (result.values && result.values.length > 0) {
             const chapter = result.values[0] as Chapter;
-            // 1. Try reading from FileSystem if contentPath exists
+            // Try reading from FileSystem if contentPath exists
             if (chapter.contentPath) {
                 const fsContent = await this.readChapterContent(chapter.contentPath);
                 if (fsContent) {
                     chapter.content = fsContent;
                 }
             }
-            // 2. Fallback: If content is in DB (legacy), it's already in chapter.content
-
             return chapter;
         }
         return null;
@@ -1188,9 +1216,21 @@ class DatabaseService {
                 }
 
                 // Mark chapter as read (and ensure stub exists in DB for live chapters)
-                let orderIdx = 0;
+                let orderIdx = -1;
                 const matchIdx = chapterId.match(/-ch-(\d+)$/);
-                if (matchIdx) orderIdx = parseInt(matchIdx[1], 10);
+                if (matchIdx) {
+                    orderIdx = parseInt(matchIdx[1], 10);
+                } else {
+                    // Try looking up orderIndex from existing chapter record
+                    const found = await db.query(
+                        'SELECT orderIndex FROM chapters WHERE (novelId = ? OR novelId = ? OR novelId = ?) AND (id = ? OR audioPath = ?) LIMIT 1',
+                        [novelId, cleanNovelId, decodedNovelId, chapterId, chapterUrl || chapterId]
+                    );
+                    if (found.values && found.values.length > 0 && typeof found.values[0].orderIndex === 'number') {
+                        orderIdx = found.values[0].orderIndex;
+                    }
+                }
+                if (orderIdx < 0) orderIdx = 0;
 
                 const targetNovelId = cleanNovelId || novelId;
 
@@ -1216,9 +1256,27 @@ class DatabaseService {
                     `, [chapterUrl, targetNovelId, orderIdx, chapterUrl]);
                 }
 
+                // Mark this specific chapter as read
                 await db.run(
                     'UPDATE chapters SET isRead = 1 WHERE (novelId = ? OR novelId = ? OR novelId = ?) AND (id = ? OR id = ? OR audioPath = ?)',
                     [novelId, cleanNovelId, decodedNovelId, chapterId, `${novelId}-ch-${chapterId}`, chapterUrl || chapterId]
+                );
+
+                // Mark ALL chapters up to current orderIndex as read
+                if (orderIdx >= 0) {
+                    await db.run(
+                        'UPDATE chapters SET isRead = 1 WHERE (novelId = ? OR novelId = ? OR novelId = ? OR novelId = ? OR novelId = ?) AND orderIndex <= ?',
+                        [novelId, cleanNovelId, decodedNovelId, cleanNovelId + '/', cleanNovelId + '/chapters', orderIdx]
+                    );
+                }
+
+                // Update the novel's total readChapters count
+                await db.run(
+                    `UPDATE novels SET readChapters = (
+                        SELECT COUNT(DISTINCT orderIndex) FROM chapters 
+                        WHERE (novelId = ? OR novelId = ? OR novelId = ?) AND isRead = 1
+                    ) WHERE id = ? OR id = ? OR id = ?`,
+                    [novelId, cleanNovelId, decodedNovelId, novelId, cleanNovelId, decodedNovelId]
                 );
 
                 await this.save();

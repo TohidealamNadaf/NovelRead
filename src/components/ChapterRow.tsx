@@ -33,13 +33,20 @@ export const ChapterRow = memo(({
         >
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 mb-0.5">
-                    <span className="text-slate-400 font-sans text-xs font-bold w-8 text-right shrink-0">
+                    <span className={`font-sans text-xs font-bold w-8 text-right shrink-0 ${isRead ? 'text-green-600 dark:text-green-400' : 'text-slate-400'}`}>
                         {index}
                     </span>
                     <div className="flex flex-col min-w-0">
-                        <h3 className={`text-sm font-bold line-clamp-2 dark:text-slate-100 ${isRead ? 'opacity-60 font-normal' : ''}`}>
-                            {chapter.title}
-                        </h3>
+                        <div className="flex items-center gap-2">
+                            <h3 className={`text-sm font-bold line-clamp-2 dark:text-slate-100 ${isRead ? 'opacity-60 font-normal' : ''}`}>
+                                {chapter.title}
+                            </h3>
+                            {isRead && (
+                                <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400">
+                                    Read
+                                </span>
+                            )}
+                        </div>
                         {/* Show date if available (mainly for Live chapters) */}
                         {'date' in chapter && chapter.date && (
                             <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">

@@ -9,6 +9,7 @@ interface UseChapterActionsProps {
     chapters: Chapter[];
     liveChapters: { title: string; url: string; _index: number; date?: string }[];
     locationState: any;
+    loadingPage?: number;
     setChapters: React.Dispatch<React.SetStateAction<Chapter[]>>;
     setDownloadedLiveChapters: React.Dispatch<React.SetStateAction<Set<string>>>;
     setAddedToLibrary: React.Dispatch<React.SetStateAction<boolean>>;
@@ -22,6 +23,7 @@ export function useChapterActions({
     chapters,
     liveChapters,
     locationState,
+    loadingPage,
     setChapters,
     setDownloadedLiveChapters,
     setAddedToLibrary,
@@ -52,7 +54,7 @@ export function useChapterActions({
         await dbService.initialize();
         
         const source = novel.sourceUrl?.includes('freewebnovel') ? 'FreeWebNovel' : 'NovelFire';
-        const totalChapters = (novel.totalChapters && novel.totalChapters > 100) ? novel.totalChapters : 0;
+        const totalChapters = novel.totalChapters || liveChapters.length || 0;
 
         await dbService.addNovel({
             id: novelDbId,
@@ -259,14 +261,6 @@ export function useChapterActions({
 
     const handleAddToLibrary = async () => {
         try {
-            if (novel?.totalChapters && liveChapters.length < novel.totalChapters) {
-                onShowToast(
-                    `Still loading chapters (${liveChapters.length}/${novel.totalChapters}) — wait for the list to finish before adding to library.`,
-                    'info'
-                );
-                return;
-            }
-            
             const novelDbId = await ensureLiveNovelInDB();
             
             if (liveChapters && liveChapters.length > 0) {
@@ -279,12 +273,17 @@ export function useChapterActions({
                     date: ch.date || undefined,
                     isRead: 0
                 }));
-                // We use addChapters (which does bulk insert)
                 await dbService.addChapters(mappedChapters);
+                setChapters(mappedChapters);
             }
 
             setAddedToLibrary(true);
-            onShowToast("Added to library", 'success');
+            const isStillSyncing = (loadingPage !== undefined && loadingPage > 0) || (novel?.totalChapters && liveChapters.length < novel.totalChapters);
+            if (isStillSyncing) {
+                onShowToast("Added to library! Remaining chapters will continue syncing in background.", 'success');
+            } else {
+                onShowToast("Added to library", 'success');
+            }
         } catch (error) {
             console.error('Failed to add to library:', error);
             onShowToast('Failed to add to library.', 'error');

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { RefreshCcw, Filter, Search, X } from 'lucide-react';
 import { Header } from '../Header';
 import { motion, AnimatePresence } from 'framer-motion';
+import { DEFAULT_AVATAR } from '../../utils/profileImage.util';
 
 interface DiscoverHeaderProps {
     profileImage: string;
@@ -88,7 +89,7 @@ export const DiscoverHeader = memo(({
                 transparent
                 leftContent={
                     <Link to="/profile" className="flex size-10 shrink-0 items-center overflow-hidden rounded-full ring-2 ring-primary/20 transition-transform active:scale-95">
-                        <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${profileImage || 'https://img.freepik.com/free-psd/3d-illustration-person-with-sunglasses_23-2149436188.jpg'}")` }}></div>
+                        <div className="bg-center bg-no-repeat aspect-square bg-cover size-full" style={{ backgroundImage: `url("${profileImage || DEFAULT_AVATAR}")` }}></div>
                     </Link>
                 }
                 rightActions={

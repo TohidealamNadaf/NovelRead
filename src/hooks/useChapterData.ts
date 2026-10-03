@@ -36,87 +36,118 @@ export function useChapterData() {
     const [scrapingProgress, setScrapingProgress] = useState<ScraperProgress>(scraperService.progress);
     const [isGlobalScraping, setIsGlobalScraping] = useState(scraperService.isScraping);
 
+    // Active lifecycle refs
+    const isMountedRef = useRef(true);
     const activeLoadRef = useRef<AbortController | null>(null);
+    const addedToLibraryRef = useRef(false);
+    addedToLibraryRef.current = addedToLibrary;
+    const dbNovelRef = useRef<Novel | null>(null);
 
     const loadData = async (externalSignal?: AbortSignal) => {
         if (!novelId) return;
 
-        // Abort any previous in-flight load, then create a FRESH controller
-        activeLoadRef.current?.abort();
+        // Abort previous in-flight load if it was not a library background sync
+        if (!addedToLibraryRef.current && !dbNovelRef.current) {
+            activeLoadRef.current?.abort();
+        }
         const controller = new AbortController();
         activeLoadRef.current = controller;
 
         if (externalSignal) {
             if (externalSignal.aborted) controller.abort();
-            else externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+            else externalSignal.addEventListener('abort', () => {
+                if (!addedToLibraryRef.current && !dbNovelRef.current) {
+                    controller.abort();
+                }
+            }, { once: true });
         }
 
         const signal = controller.signal;
-
         let knownChapters: Chapter[] = [];
+        let accumulatedLive: { title: string; url: string; _index: number; date?: string }[] = [];
 
         try {
+            // Check cache for instant rendering
             const cached = chapterListCache.get(novelId);
             if (cached) {
-                setNovel(cached.novel);
-                setChapters(cached.chapters);
-                setLiveChapters(cached.liveChapters);
-                knownChapters = cached.chapters;
-                setLoading(false);
+                if (cached.novel && isMountedRef.current) setNovel(cached.novel);
+                if (cached.chapters?.length > 0 && isMountedRef.current) setChapters(cached.chapters);
+                if (cached.liveChapters?.length > 0) {
+                    accumulatedLive = [...cached.liveChapters];
+                    if (isMountedRef.current) setLiveChapters(accumulatedLive);
+                }
+                knownChapters = cached.chapters || [];
+                if (isMountedRef.current) setLoading(false);
             } else {
-                setLoading(true);
+                if (isMountedRef.current) setLoading(true);
             }
+
             await dbService.initialize();
 
             // 1. Load from DB
             const dbNovel = await dbService.getNovel(novelId);
+            dbNovelRef.current = dbNovel;
             let currentNovel = dbNovel;
-
             let dbChaptersCount = 0;
+
             if (dbNovel) {
-                console.log(`[useChapterData] Novel loaded from DB: id=${dbNovel.id}, lastReadChapterId=${dbNovel.lastReadChapterId}, lastReadAt=${dbNovel.lastReadAt}`);
-                setNovel(dbNovel);
+                if (isMountedRef.current) {
+                    setNovel(dbNovel);
+                    setAddedToLibrary(true);
+                    setIsPreviewMode(false);
+                }
+                addedToLibraryRef.current = true;
+
                 let dbChapters = await dbService.getChapters(novelId);
 
-                // Auto-repair: fix duplicate chapters left by previous sync bugs.
-                // Runs once — if no duplicates exist, it returns false immediately.
+                // Auto-repair duplicates if any
                 const wasRepaired = await dbService.repairDuplicateChapters(novelId);
                 if (wasRepaired) {
-                    console.log('[useChapterData] Duplicates repaired, reloading chapters from DB');
                     dbChapters = await dbService.getChapters(novelId);
                 }
 
-                setChapters(dbChapters);
-                knownChapters = dbChapters; // keep in sync manually
+                if (isMountedRef.current) {
+                    setChapters(dbChapters);
+                    setLoading(false);
+                }
+                knownChapters = dbChapters;
                 dbChaptersCount = dbChapters.length;
-                setAddedToLibrary(true);
-                setIsPreviewMode(false);
-                setLoading(false); // Show DB content immediately
 
                 // Map DB state to Live trackers
-                // Check both content (legacy DB storage) AND contentPath (filesystem storage)
                 const savedUrls = new Set(
                     dbChapters
-                        .filter(c => c.content || c.contentPath) // Downloaded if either exists
+                        .filter(c => c.content || c.contentPath)
                         .map(c => c.audioPath)
                         .filter(Boolean) as string[]
                 );
+                let lastReadIdx = -1;
+                const m = dbNovel.lastReadChapterId?.match(/-ch-(\d+)$/);
+                if (m) {
+                    lastReadIdx = parseInt(m[1], 10);
+                } else if (dbNovel.lastReadChapterId) {
+                    const matchCh = dbChapters.find(c => c.id === dbNovel.lastReadChapterId || c.audioPath === dbNovel.lastReadChapterId);
+                    if (matchCh && typeof matchCh.orderIndex === 'number') {
+                        lastReadIdx = matchCh.orderIndex;
+                    }
+                }
+
                 const readUrls = new Set(
                     dbChapters
-                        .filter(c => c.isRead)
+                        .filter(c => c.isRead || (lastReadIdx >= 0 && c.orderIndex <= lastReadIdx))
                         .flatMap(c => [c.audioPath, c.id])
                         .filter(Boolean) as string[]
                 );
 
-                // Add lastReadChapterId to readUrls if present
                 if (dbNovel.lastReadChapterId) {
                     readUrls.add(dbNovel.lastReadChapterId);
                 }
 
-                setDownloadedLiveChapters(savedUrls);
-                setReadLiveChapters(readUrls);
+                if (isMountedRef.current) {
+                    setDownloadedLiveChapters(savedUrls);
+                    setReadLiveChapters(readUrls);
+                }
 
-                // Populate liveChapters from DB initially so list isn't empty
+                // Populate liveChapters from DB
                 if (dbChapters.length > 0) {
                     const indexedChapters = dbChapters.map(ch => ({
                         title: ch.title,
@@ -124,10 +155,11 @@ export function useChapterData() {
                         _index: ch.orderIndex,
                         date: ch.date
                     }));
-                    setLiveChapters(indexedChapters);
+                    accumulatedLive = indexedChapters;
+                    if (isMountedRef.current) setLiveChapters(indexedChapters);
                 }
 
-                // Hydrate reading progress from localStorage if missing from DB
+                // Hydrate reading progress
                 if (!dbNovel.lastReadChapterId && typeof localStorage !== 'undefined') {
                     const cleanId = novelId.replace(/\/$/, '').replace(/\/chapters$/i, '');
                     const savedLastRead = localStorage.getItem(`lastRead:${novelId}`) ||
@@ -136,11 +168,10 @@ export function useChapterData() {
                     const savedLastReadAt = localStorage.getItem(`lastReadAt:${novelId}`) || (dbNovel.sourceUrl ? localStorage.getItem(`lastReadAt:${dbNovel.sourceUrl}`) : null);
                     if (savedLastRead) {
                         dbNovel.lastReadChapterId = savedLastRead;
-                        dbNovel.lastReadAt = savedLastReadAt ? parseInt(savedLastReadAt) : Date.now();
+                        dbNovel.lastReadAt = savedLastReadAt ? parseInt(savedLastReadAt, 10) : Date.now();
                     }
                 }
 
-                // Update missing sourceUrl from state if available
                 if (!dbNovel.sourceUrl && location.state?.novel?.sourceUrl) {
                     dbNovel.sourceUrl = location.state.novel.sourceUrl;
                 }
@@ -152,7 +183,6 @@ export function useChapterData() {
                     summary: location.state.novel.summary || ''
                 } as Novel;
 
-                // Hydrate reading progress from localStorage if available (for Live novels)
                 if (typeof localStorage !== 'undefined') {
                     const cleanId = novelId.replace(/\/$/, '').replace(/\/chapters$/i, '');
                     const savedLastRead = localStorage.getItem(`lastRead:${novelId}`) ||
@@ -162,196 +192,173 @@ export function useChapterData() {
                     if (savedLastRead) {
                         currentNovel.lastReadChapterId = savedLastRead;
                         currentNovel.lastReadAt = savedLastReadAt ? parseInt(savedLastReadAt, 10) : Date.now();
-                        setReadLiveChapters(prev => new Set(prev).add(savedLastRead));
+                        if (isMountedRef.current) setReadLiveChapters(prev => new Set(prev).add(savedLastRead));
                     }
                 }
 
-                setNovel(currentNovel);
-                setIsPreviewMode(true);
-                setAddedToLibrary(false);
-                setLoading(false); // Render shell immediately while fetching chapters in bg
+                if (isMountedRef.current) {
+                    setNovel(currentNovel);
+                    setIsPreviewMode(true);
+                    setAddedToLibrary(false);
+                    setLoading(false);
+                }
             }
 
-            // 2. Live Sync / Smart Caching
+            // 2. Smart Caching and Resumption
             const sourceUrl = currentNovel?.sourceUrl || location.state?.novel?.sourceUrl;
-
-            // Check if we need to fetch
             const now = Math.floor(Date.now() / 1000);
             const lastFetched = currentNovel?.lastFetchedAt || 0;
-            const isFresh = (now - lastFetched) < 21600; // 6 hours cache
-            const hasChapters = dbChaptersCount > 0;
+            const isFresh = (now - lastFetched) < 21600; // 6 hours
 
-            // Critical check: Do we actually HAVE all the chapters in DB?
-            // If totalChapters is <= 100 (initial page batch) or dbChaptersCount is less than full list, trigger live sync.
             const totalCount = currentNovel?.totalChapters || 0;
-            const isCacheComplete = totalCount > 100 ? (dbChaptersCount >= totalCount * 0.95) : false;
+            const cachedLiveCount = (!dbNovel && cached?.liveChapters) ? cached.liveChapters.length : 0;
+            const effectiveKnownCount = Math.max(dbChaptersCount, cachedLiveCount, accumulatedLive.length);
 
-            // Should we skip fetching? 
-            const isCachedMetadataComplete = cached?.novel?.author && cached.novel.author !== 'Unknown' && !!cached.novel.summary;
-            const hasLiveCache = cached && cached.liveChapters && cached.liveChapters.length > 0 && (totalCount > 100 ? cached.liveChapters.length >= (totalCount * 0.95) : false) && isCachedMetadataComplete;
+            // Complete check
+            const isCacheComplete = totalCount > 100 ? (effectiveKnownCount >= totalCount * 0.95) : false;
             const isDbMetadataComplete = dbNovel?.author && dbNovel.author !== 'Unknown' && !!dbNovel.summary;
-            const shouldSkipFetch = (dbNovel && isFresh && hasChapters && isCacheComplete && isDbMetadataComplete) || hasLiveCache;
-
-            console.log(`[useChapterData] shouldSkipFetch=${shouldSkipFetch} dbCount=${dbChaptersCount} total=${currentNovel?.totalChapters} fresh=${isFresh}`);
+            const shouldSkipFetch = (dbNovel && isFresh && dbChaptersCount > 0 && isCacheComplete && isDbMetadataComplete) ||
+                (!dbNovel && cached && isCacheComplete && cached.novel?.author && cached.novel.author !== 'Unknown');
 
             if (sourceUrl && navigator.onLine && !shouldSkipFetch) {
-                // console.log(`[useChapterData] Triggering Live Sync for ${novelId}`);
                 try {
-                    const data = await scraperService.fetchNovelFast(sourceUrl, async (chaptersFound, page, metadata) => {
-                        setLoadingPage(page);
+                    const data = await scraperService.fetchNovelFast(
+                        sourceUrl,
+                        async (chaptersFound, page, metadata) => {
+                            if (isMountedRef.current) setLoadingPage(page);
 
-                        // Incremental Update: Show chapters as they arrive!
-                        if (chaptersFound.length > 0) {
-                            const existingUrls = new Set(knownChapters.map(ch => ch.audioPath).filter(Boolean));
-                            const newChapters = chaptersFound.filter(ch => !existingUrls.has(ch.url));
+                            if (chaptersFound.length > 0) {
+                                // Deduplicate against all existing URLs
+                                const existingUrls = new Set(accumulatedLive.map(ch => ch.url).filter(Boolean));
+                                const newChapters = chaptersFound.filter(ch => !existingUrls.has(ch.url));
 
-                            const indexedChapters = newChapters.map((ch, idx) => ({
-                                ...ch,
-                                _index: knownChapters.length + idx,
-                                date: ch.date
-                            }));
-                            // The scraper returns the growing list of NEW chapters, so we prepend the old ones
-                            setLiveChapters([...knownChapters.map(ch => ({
-                                title: ch.title,
-                                url: ch.audioPath || '',
-                                _index: ch.orderIndex,
-                                date: ch.date
-                            })), ...indexedChapters]);
+                                if (newChapters.length > 0) {
+                                    const baseIndex = accumulatedLive.length;
+                                    const indexedChapters = newChapters.map((ch, idx) => ({
+                                        title: ch.title,
+                                        url: ch.url,
+                                        _index: baseIndex + idx,
+                                        date: ch.date
+                                    }));
 
-                            // Unlock UI immediately after first batch
-                            if (page === 1 || chaptersFound.length > 0) {
-                                setLoading(false);
+                                    accumulatedLive = [...accumulatedLive, ...indexedChapters];
+                                    if (isMountedRef.current) {
+                                        setLiveChapters(accumulatedLive);
+                                        setLoading(false);
+                                    }
+
+                                    // If novel is in library (either from DB or user tapped Add to Library)
+                                    // Save every batch of chapters to SQLite immediately!
+                                    const isInLibrary = addedToLibraryRef.current || dbNovelRef.current !== null;
+                                    const targetDbId = dbNovelRef.current?.id || currentNovel?.id || novelId;
+
+                                    if (isInLibrary && targetDbId) {
+                                        const incrementalDbChapters: Chapter[] = indexedChapters.map(ch => ({
+                                            id: `${targetDbId}-ch-${ch._index}`,
+                                            novelId: targetDbId,
+                                            title: ch.title,
+                                            orderIndex: ch._index,
+                                            audioPath: ch.url,
+                                            date: ch.date
+                                        }));
+
+                                        await dbService.addChapters(incrementalDbChapters);
+                                        if (isMountedRef.current) {
+                                            setChapters(prev => [...prev, ...incrementalDbChapters]);
+                                        }
+                                    }
+
+                                    // Keep persistent cache updated with progress
+                                    chapterListCache.set(novelId, {
+                                        novel: currentNovel,
+                                        chapters: knownChapters,
+                                        liveChapters: accumulatedLive
+                                    });
+                                }
                             }
-                        }
 
-                        // Early Metadata Update (e.g. cover/synopsis from page 0)
-                        if (metadata && currentNovel) {
-                            const updatedNovel = {
-                                ...currentNovel,
-                                ...metadata,
-                                coverUrl: metadata.coverUrl || currentNovel.coverUrl,
-                                summary: metadata.summary || currentNovel.summary,
-                                title: (metadata.title && metadata.title !== 'Unknown Title' && metadata.title !== 'Unknown') ? metadata.title : currentNovel.title,
-                                author: (metadata.author && metadata.author !== 'Unknown') ? metadata.author : currentNovel.author,
-                                status: (metadata.status && metadata.status !== 'Unknown' && metadata.status !== 'Ongoing') ? metadata.status : (currentNovel.status || metadata.status),
-                                totalChapters: metadata.totalChapters ?? currentNovel.totalChapters
-                            } as Novel;
-                            // Only update state if meaningful change to avoid flickering
-                            if (updatedNovel.coverUrl !== currentNovel.coverUrl || 
-                                updatedNovel.summary !== currentNovel.summary || 
-                                updatedNovel.author !== currentNovel.author || 
-                                updatedNovel.status !== currentNovel.status ||
-                                updatedNovel.totalChapters !== currentNovel.totalChapters) {
-                                setNovel(updatedNovel);
-                                currentNovel = updatedNovel; // Update local ref
+                            // Early Metadata Update
+                            if (metadata && currentNovel) {
+                                const updatedNovel = {
+                                    ...currentNovel,
+                                    ...metadata,
+                                    coverUrl: metadata.coverUrl || currentNovel.coverUrl,
+                                    summary: metadata.summary || currentNovel.summary,
+                                    title: (metadata.title && metadata.title !== 'Unknown Title' && metadata.title !== 'Unknown') ? metadata.title : currentNovel.title,
+                                    author: (metadata.author && metadata.author !== 'Unknown') ? metadata.author : currentNovel.author,
+                                    status: (metadata.status && metadata.status !== 'Unknown' && metadata.status !== 'Ongoing') ? metadata.status : (currentNovel.status || metadata.status),
+                                    totalChapters: metadata.totalChapters ?? currentNovel.totalChapters
+                                } as Novel;
+
+                                if (isMountedRef.current) setNovel(updatedNovel);
+                                currentNovel = updatedNovel;
                             }
-                        }
-                    }, dbChaptersCount, signal); // pass knownChapterCount and signal
+                        },
+                        effectiveKnownCount,
+                        signal
+                    );
 
                     if (data) {
-                        const existingUrls = new Set(knownChapters.map(ch => ch.audioPath).filter(Boolean));
-                        const newChapters = data.chapters.filter(ch => !existingUrls.has(ch.url));
+                        const targetDbId = dbNovelRef.current?.id || (addedToLibraryRef.current ? (currentNovel?.id || novelId) : null);
 
-                        const indexedChapters = newChapters.map((ch, idx) => ({ ...ch, _index: knownChapters.length + idx }));
-                        const fullLiveList = [...knownChapters.map(ch => ({
-                            title: ch.title,
-                            url: ch.audioPath || '',
-                            _index: ch.orderIndex,
-                            date: ch.date
-                        })), ...indexedChapters];
-
-                        setLiveChapters(fullLiveList);
-
-                        // Update readLiveChapters with lastReadChapterId
-                        const lastReadId = currentNovel?.lastReadChapterId;
-                        if (lastReadId) {
-                            setReadLiveChapters(prev => new Set(prev).add(lastReadId));
-                        }
-
-                        // Update State & DB
-                        if (dbNovel) {
+                        if (targetDbId) {
                             try {
-                                // 1. Update Novel Metadata FIRST (skipSave: addChapters will do the final save)
                                 await dbService.addNovel({
-                                    ...dbNovel,
-                                    title: (data.title && data.title !== 'Unknown Title' && data.title !== 'Unknown') ? data.title : dbNovel.title,
-                                    author: (data.author && data.author !== 'Unknown') ? data.author : dbNovel.author,
-                                    coverUrl: data.coverUrl || dbNovel.coverUrl,
-                                    summary: data.summary || dbNovel.summary,
-                                    status: (data.status && data.status !== 'Unknown' && data.status !== 'Ongoing') ? data.status : (dbNovel.status || data.status),
-                                    totalChapters: data.totalChapters ?? Math.max(dbNovel.totalChapters || 0, dbChaptersCount + newChapters.length),
+                                    ...currentNovel,
+                                    id: targetDbId,
+                                    title: (data.title && data.title !== 'Unknown Title' && data.title !== 'Unknown') ? data.title : currentNovel!.title,
+                                    author: (data.author && data.author !== 'Unknown') ? data.author : currentNovel!.author,
+                                    coverUrl: data.coverUrl || currentNovel!.coverUrl,
+                                    summary: data.summary || currentNovel!.summary,
+                                    status: (data.status && data.status !== 'Unknown' && data.status !== 'Ongoing') ? data.status : (currentNovel!.status || data.status),
+                                    totalChapters: data.totalChapters ?? Math.max(currentNovel?.totalChapters || 0, accumulatedLive.length),
                                     lastFetchedAt: Math.floor(Date.now() / 1000)
-                                }, true);
+                                } as Novel, false);
 
-                                // 2. Save all chapters to DB
-                                // Standardize ID format: {novelId}-ch-{index}
-                                const chaptersToSave: Chapter[] = indexedChapters.map(ch => ({
-                                    id: `${novelId}-ch-${ch._index}`, // Deterministic ID matching Reader.tsx
-                                    novelId: novelId,
-                                    title: ch.title,
-                                    orderIndex: ch._index,
-                                    audioPath: ch.url, // Storing URL in audioPath
-                                    date: ch.date
-                                }));
-
-                                await dbService.addChapters(chaptersToSave);
-                                await dbService.repairDuplicateChapters(novelId);
-
-                                // 3. Reload chapters from DB to ensure UI is in sync with DB state
-                                const updatedDbChapters = await dbService.getChapters(novelId);
-                                setChapters(updatedDbChapters);
-                                knownChapters = updatedDbChapters; // keep in sync here too
-        } catch (error) {
-                                console.error("Failed to update DB in loadData", error);
-                            }
-                        } else {
-                            // Preview Mode: Just update state, don't save to DB
-                            // Ensure we preserve the coverUrl and other info from location state
-                            if (currentNovel) {
-                                setNovel(prev => prev ? {
-                                    ...prev,
-                                    title: (data.title && data.title !== 'Unknown Title' && data.title !== 'Unknown') ? data.title : prev.title,
-                                    author: (data.author && data.author !== 'Unknown') ? data.author : prev.author,
-                                    coverUrl: data.coverUrl || prev.coverUrl,
-                                    summary: data.summary || prev.summary,
-                                    status: (data.status && data.status !== 'Unknown' && data.status !== 'Ongoing') ? data.status : (prev.status || data.status),
-                                    totalChapters: data.totalChapters ?? Math.max(prev.totalChapters || 0, dbChaptersCount + newChapters.length),
-                                    lastFetchedAt: Math.floor(Date.now() / 1000)
-                                } : null);
+                                const updatedDbChapters = await dbService.getChapters(targetDbId);
+                                if (isMountedRef.current) {
+                                    setChapters(updatedDbChapters);
+                                    setNovel(prev => prev ? { ...prev, totalChapters: data.totalChapters || updatedDbChapters.length } : null);
+                                }
+                            } catch (error) {
+                                console.error('[useChapterData] DB finalize error:', error);
                             }
                         }
 
-                        setLoading(false);
+                        // Final cache refresh
+                        chapterListCache.set(novelId, {
+                            novel: currentNovel,
+                            chapters: knownChapters,
+                            liveChapters: accumulatedLive
+                        });
+
+                        if (isMountedRef.current) setLoading(false);
                     }
                 } catch (e) {
-                    console.error("Failed to fetch live chapters", e);
-                    setLoading(false);
+                    if (!signal?.aborted) console.error('[useChapterData] Live sync error:', e);
+                    if (isMountedRef.current) setLoading(false);
                 }
             } else {
-                if (shouldSkipFetch) {
-                    console.log(`[useChapterData] Skipping fetch. Data is fresh & complete. Last fetched: ${new Date(lastFetched * 1000).toLocaleString()}`);
-                    setLoading(false);
-                } else {
-                    // Offline or other case
-                    setLoading(false);
-                }
+                if (isMountedRef.current) setLoading(false);
             }
-
         } catch (e) {
-            if (!signal?.aborted) console.error("Failed to load novel data", e);
-            setLoading(false);
+            if (!signal?.aborted) console.error('[useChapterData] Failed to load data:', e);
+            if (isMountedRef.current) setLoading(false);
         } finally {
-            setLoadingPage(0);
+            if (isMountedRef.current) setLoadingPage(0);
             if (activeLoadRef.current === controller) activeLoadRef.current = null;
         }
     };
 
     useEffect(() => {
+        isMountedRef.current = true;
         const extController = new AbortController();
 
         const unsub = scraperService.subscribe((progress: ScraperProgress, isScraping: boolean) => {
-            setScrapingProgress(progress);
-            setIsGlobalScraping(isScraping);
+            if (isMountedRef.current) {
+                setScrapingProgress(progress);
+                setIsGlobalScraping(isScraping);
+            }
 
             // Reload if scraping finished for this novel
             if (!isScraping && progress.current > 0 && progress.current === progress.total) {
@@ -360,16 +367,20 @@ export function useChapterData() {
         });
 
         loadData(extController.signal);
-        
+
         return () => {
+            isMountedRef.current = false;
             unsub();
-            extController.abort();
-            console.log('[useChapterData] unmounted, aborting scrape');
+            // Only abort if novel is NOT in the library (preview mode only)
+            if (!addedToLibraryRef.current && !dbNovelRef.current) {
+                extController.abort();
+            }
         };
     }, [novelId]);
 
+    // Keep cache synchronized on state changes
     useEffect(() => {
-        if (novelId && novel) {
+        if (novelId && novel && (chapters.length > 0 || liveChapters.length > 0)) {
             chapterListCache.set(novelId, {
                 novel,
                 chapters,
@@ -380,32 +391,59 @@ export function useChapterData() {
 
     // Computed filtered chapters
     const filteredChapters = useMemo(() => {
-        let result: any[] = [];
-
-        if (isLiveMode) {
-            result = liveChapters.filter(ch => ch.title.toLowerCase().includes(searchQuery.toLowerCase()));
-            // Apply sort order only (no read/unread filter for live list usually, but we can add if needed)
-        } else {
-            result = chapters.filter(chapter => {
-                const matchesSearch = chapter.title.toLowerCase().includes(searchQuery.toLowerCase());
-                if (!matchesSearch) return false;
-
-                switch (filter) {
-                    case 'read': return chapter.isRead;
-                    case 'unread': return !chapter.isRead;
-                    case 'downloaded': return chapter.content;
-                    default: return true;
-                }
-            });
+        let lastReadIdx = -1;
+        const lastReadMatch = novel?.lastReadChapterId?.match(/-ch-(\d+)$/);
+        if (lastReadMatch) {
+            lastReadIdx = parseInt(lastReadMatch[1], 10);
+        } else if (novel?.lastReadChapterId) {
+            if (isLiveMode) {
+                lastReadIdx = liveChapters.findIndex(c => c.url === novel.lastReadChapterId);
+            } else {
+                lastReadIdx = chapters.findIndex(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId);
+            }
         }
 
-        return result.sort((a, b) => {
+        const isItemRead = (item: any) => {
+            if (isLiveMode) {
+                return readLiveChapters.has(item.url) ||
+                    readLiveChapters.has(item.id) ||
+                    (lastReadIdx >= 0 && item._index <= lastReadIdx) ||
+                    novel?.lastReadChapterId === item.url;
+            } else {
+                return Boolean(item.isRead) ||
+                    (lastReadIdx >= 0 && item.orderIndex <= lastReadIdx) ||
+                    novel?.lastReadChapterId === item.id ||
+                    novel?.lastReadChapterId === item.audioPath;
+            }
+        };
+
+        const isItemDownloaded = (item: any) => {
+            if (isLiveMode) {
+                return downloadedLiveChapters.has(item.url);
+            } else {
+                return Boolean(item.content || item.contentPath);
+            }
+        };
+
+        const source = isLiveMode ? liveChapters : chapters;
+        const result = source.filter((item: any) => {
+            const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
+            if (!matchesSearch) return false;
+
+            switch (filter) {
+                case 'read': return isItemRead(item);
+                case 'unread': return !isItemRead(item);
+                case 'downloaded': return isItemDownloaded(item);
+                default: return true;
+            }
+        });
+
+        return result.sort((a: any, b: any) => {
             const indexA = isLiveMode ? a._index : a.orderIndex;
             const indexB = isLiveMode ? b._index : b.orderIndex;
             return sortOrder === 'asc' ? indexA - indexB : indexB - indexA;
         });
-
-    }, [chapters, liveChapters, isLiveMode, filter, searchQuery, sortOrder]);
+    }, [chapters, liveChapters, isLiveMode, filter, searchQuery, sortOrder, novel?.lastReadChapterId, readLiveChapters, downloadedLiveChapters]);
 
     return {
         novel,
@@ -430,6 +468,6 @@ export function useChapterData() {
         setSortOrder,
         filteredChapters,
         loadData,
-        setChapters // Exposed for manual updates (like single download)
+        setChapters
     };
 }
