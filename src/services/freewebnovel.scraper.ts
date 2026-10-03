@@ -223,41 +223,44 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         return this.fetchList(`https://freewebnovel.com/sort/latest-novel${page > 1 ? `/${page}` : ''}`);
     }
 
+    private decodeHtmlEntities(html: string): string {
+        if (!html || !html.includes('&lt;')) return html;
+        return html
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&amp;/g, '&');
+    }
+
     private extractChapters($: cheerio.CheerioAPI, baseUrl: string): ScrapedChapter[] {
         const chapters: ScrapedChapter[] = [];
         const seenLinks = new Set<string>();
 
-        // Primary selector should target the full list container, not the "latest" widget.
-        // Usually `.m-newest1` or similar. We use multiple known chapter list classes.
-        $('ul.list-chapter li a, .chapters li a, .chapter-list li a, li a.con').each((_, el: any) => {
-            const link = el.attribs?.href;
-            if (!link) return;
+        // FreeWebNovel selectors:
+        // - In novel page: #idData li a (chapters 1..40 in proper order, avoiding the 6 latest reversed chapters in .m-newest1)
+        // - In AJAX JSON response: <li><span class="..."></span><a href="/novel/.../chapter-1" title="...">Chapter 1</a></li>
+        const chapterSelectors = [
+            '#idData li a',
+            '.m-newest2 ul li a',
+            '.m-newest2 .ul-list5 li a',
+            'li:has(a[href*="/chapter-"]) a',
+            'li a[href*="/chapter-"]',
+            'a[href*="/chapter-"]',
+            '.ul-list5 li a',
+            'ul.list-chapter li a',
+            '.chapters li a',
+            '.chapter-list li a',
+            'li a.con',
+            'li a'
+        ];
 
-            const anchor = $(el);
-            const rawTitle = anchor.text().trim() || el.attribs?.title?.trim() || '';
-            const cleanTitle = this.cleanChapterTitle(rawTitle);
-            const fullUrl = this.resolveUrl(baseUrl, link);
-
-            let finalTitle = cleanTitle;
-            if (!finalTitle || /^Chapter$/i.test(finalTitle)) {
-                const urlMatch = fullUrl.match(/chapter[_\-]?(\d+)/i);
-                if (urlMatch) finalTitle = `Chapter ${urlMatch[1]}`;
-            }
-
-            if (this.isValidChapterTitle(finalTitle) && !seenLinks.has(fullUrl)) {
-                chapters.push({ title: finalTitle, url: fullUrl });
-                seenLinks.add(fullUrl);
-            }
-        });
-
-        // Final fallback for AJAX fragments which might just be raw <li> tags without a <ul>
-        if (chapters.length === 0) {
-            $('a').each((_, el: any) => {
+        for (const sel of chapterSelectors) {
+            $(sel).each((_, el: any) => {
                 const link = el.attribs?.href;
-                if (!link || (!link.toLowerCase().includes('chapter') && !link.match(/\/\d+/))) return;
+                if (!link) return;
 
                 const anchor = $(el);
-                const rawTitle = el.attribs?.title?.trim() || anchor.text().trim() || '';
+                const rawTitle = anchor.attr('title')?.trim() || anchor.text().trim() || el.attribs?.title?.trim() || '';
                 const cleanTitle = this.cleanChapterTitle(rawTitle);
                 const fullUrl = this.resolveUrl(baseUrl, link);
 
@@ -272,6 +275,7 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     seenLinks.add(fullUrl);
                 }
             });
+            if (chapters.length > 0) break;
         }
 
         return chapters;
@@ -372,10 +376,15 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
 
                     let htmlToParse = rawHtml;
                     let knownTotalPage: number | null = null;
-                    if (rawHtml.trim().startsWith('{')) {
+                    let jsonCandidate = rawHtml.trim();
+                    if (jsonCandidate.includes('<pre')) {
+                        const preMatch = jsonCandidate.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+                        if (preMatch) jsonCandidate = preMatch[1].trim();
+                    }
+                    if (jsonCandidate.startsWith('{')) {
                         try {
-                            const data = JSON.parse(rawHtml);
-                            if (data.html) htmlToParse = data.html;
+                            const data = JSON.parse(jsonCandidate);
+                            if (data.html) htmlToParse = this.decodeHtmlEntities(data.html);
                             if (typeof data.totalPage === 'number') knownTotalPage = data.totalPage;
                         } catch (e) { }
                     }
@@ -476,7 +485,11 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
         signal?: AbortSignal
     ): Promise<NovelMetadata> {
         let title = '', author = 'Unknown', coverUrl = '', summary = '', status = 'Ongoing';
+        let totalChapters: number | undefined;
+        let totalPage = 1;
         let workingProxy: string | undefined;
+        const allChapters: ScrapedChapter[] = [];
+        const chapterUrlSet = new Set<string>();
 
         for (const proxyUrl of this.getProxies(url)) {
             try {
@@ -515,15 +528,25 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                         $('.right:contains("Status")').text().replace(/Status\s*:?/i, '').trim();
                     if (extractedStatus) status = extractedStatus;
 
-                    let totalChapters: number | undefined;
-                    const lastOption = $('#indexselect option').last();
-                    if (lastOption.length) {
+                    const indexSelectOptions = $('#indexselect option');
+                    if (indexSelectOptions.length > 0) {
+                        totalPage = indexSelectOptions.length;
+                        const lastOption = indexSelectOptions.last();
                         const optText = lastOption.text().trim();
                         const rangeMatch = optText.match(/C\.?\s*\d+\s*-\s*C\.?\s*(\d+)/i);
                         if (rangeMatch) totalChapters = parseInt(rangeMatch[1], 10);
                     }
 
-                    onProgress?.([], 0, { title, author, summary, status, coverUrl, totalChapters });
+                    // Extract any chapters already present on this initial page
+                    const initialChapters = this.extractChapters($, url);
+                    for (const ch of initialChapters) {
+                        if (!chapterUrlSet.has(ch.url)) {
+                            chapterUrlSet.add(ch.url);
+                            allChapters.push(ch);
+                        }
+                    }
+
+                    onProgress?.(allChapters, allChapters.length > 0 ? 1 : 0, { title, author, summary, status, coverUrl, totalChapters });
                     workingProxy = proxyUrl;
                     break;
                 }
@@ -532,8 +555,6 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             }
         }
 
-        const allChapters: ScrapedChapter[] = [];
-        const chapterUrlSet = new Set<string>();
         const proxyOrder = workingProxy ? [workingProxy, ...this.getProxies(url).filter(p => p !== workingProxy)] : this.getProxies(url);
 
         // Helper to fetch a single AJAX page
@@ -544,10 +565,15 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
                     const rawHtml = await this.fetchHtml(ajaxUrl, proxyUrl, 60000, signal);
                     if (!rawHtml || rawHtml.length < 10) continue;
                     let htmlToParse = rawHtml;
-                    if (rawHtml.trim().startsWith('{')) {
+                    let jsonCandidate = rawHtml.trim();
+                    if (jsonCandidate.includes('<pre')) {
+                        const preMatch = jsonCandidate.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+                        if (preMatch) jsonCandidate = preMatch[1].trim();
+                    }
+                    if (jsonCandidate.startsWith('{')) {
                         try {
-                            const data = JSON.parse(rawHtml);
-                            if (data.html) htmlToParse = data.html;
+                            const data = JSON.parse(jsonCandidate);
+                            if (data.html) htmlToParse = this.decodeHtmlEntities(data.html);
                         } catch { }
                     }
                     const $ = cheerio.load(htmlToParse);
@@ -559,53 +585,46 @@ export class FreeWebNovelScraper extends BaseScraper implements INovelScraper {
             return [];
         };
 
-        // Step 1: Fetch page 1 from the AJAX endpoint, and derive totalPage from
-        // the SAME response — not from #indexselect, which groups chapters in
-        // ranges of 50 while the AJAX endpoint paginates in chunks of 40. Mixing
-        // the two undercounts totalPage and silently truncates the chapter list.
-        let totalPage = 1;
-        let firstChapters: ScrapedChapter[] = [];
-        const cleanUrlForAjax = url.split('?')[0];
-        
-        for (const proxyUrl of proxyOrder) {
-            if (signal?.aborted) break;
-            try {
-                const rawHtml = await this.fetchHtml(`${cleanUrlForAjax}?ajax=chapters&page=1&pageSize=40`, proxyUrl, 60000, signal);
-                if (!rawHtml) continue;
+        // If we already have page 1 chapters from the initial page load, skip fetching page 1 via AJAX.
+        // Only fetch page 1 from the AJAX endpoint if the initial page didn't contain chapters.
+        if (allChapters.length === 0) {
+            const cleanUrlForAjax = url.split('?')[0];
+            for (const proxyUrl of proxyOrder) {
+                if (signal?.aborted) break;
+                try {
+                    const rawHtml = await this.fetchHtml(`${cleanUrlForAjax}?ajax=chapters&page=1&pageSize=40`, proxyUrl, 60000, signal);
+                    if (!rawHtml) continue;
 
-                let htmlToParse = rawHtml;
-                let knownTotalPage: number | null = null;
-                if (rawHtml.trim().startsWith('{')) {
-                    try {
-                        const data = JSON.parse(rawHtml);
-                        if (data.html) htmlToParse = data.html;
-                        if (typeof data.totalPage === 'number') knownTotalPage = data.totalPage;
-                    } catch { }
-                }
-
-                const $ = cheerio.load(htmlToParse);
-                firstChapters = this.extractChapters($, url);
-
-                if (knownTotalPage) {
-                    totalPage = knownTotalPage;
-                } else {
-                    const scripts = $('script').map((_, el) => $(el).html()).get().join(' ');
-                    const totalPageMatch = scripts.match(/totalPage\s*:\s*(\d+)/);
-                    if (totalPageMatch) {
-                        totalPage = parseInt(totalPageMatch[1], 10);
-                    } else if ($('#indexselect option').length > 0) {
-                        // Last-resort fallback only — known to undercount for pageSize=40
-                        totalPage = $('#indexselect option').length;
+                    let htmlToParse = rawHtml;
+                    let knownTotalPage: number | null = null;
+                    let jsonCandidate = rawHtml.trim();
+                    if (jsonCandidate.includes('<pre')) {
+                        const preMatch = jsonCandidate.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+                        if (preMatch) jsonCandidate = preMatch[1].trim();
                     }
-                }
-                break;
-            } catch { }
-        }
+                    if (jsonCandidate.startsWith('{')) {
+                        try {
+                            const data = JSON.parse(jsonCandidate);
+                            if (data.html) htmlToParse = this.decodeHtmlEntities(data.html);
+                            if (typeof data.totalPage === 'number') knownTotalPage = data.totalPage;
+                            if (typeof data.totalChapters === 'number' && !totalChapters) totalChapters = data.totalChapters;
+                        } catch { }
+                    }
 
-        for (const ch of firstChapters) {
-            if (!chapterUrlSet.has(ch.url)) { chapterUrlSet.add(ch.url); allChapters.push(ch); }
+                    const $ = cheerio.load(htmlToParse);
+                    const firstChapters = this.extractChapters($, url);
+                    for (const ch of firstChapters) {
+                        if (!chapterUrlSet.has(ch.url)) { chapterUrlSet.add(ch.url); allChapters.push(ch); }
+                    }
+
+                    if (knownTotalPage) {
+                        totalPage = knownTotalPage;
+                    }
+                    onProgress?.(allChapters, 1, { title, author, summary, status, coverUrl, totalChapters });
+                    break;
+                } catch { }
+            }
         }
-        onProgress?.(allChapters, 1, { title, author, summary, status, coverUrl });
 
         // Step 3: Fetch remaining pages sequentially (1 page per batch with 200ms pacing) to prevent proxy 429/522 rate limits
         const CONCURRENCY = 1;

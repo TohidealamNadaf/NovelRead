@@ -1194,6 +1194,14 @@ class DatabaseService {
 
                 const targetNovelId = cleanNovelId || novelId;
 
+                // Ensure novel exists in novels table to satisfy FOREIGN KEY constraint for chapters
+                if (changes === 0) {
+                    await db.run(`
+                        INSERT OR IGNORE INTO novels (id, title, sourceUrl, lastReadChapterId, lastReadAt)
+                        VALUES (?, 'Unknown', ?, ?, ?)
+                    `, [targetNovelId, novelId, chapterId, Date.now()]);
+                }
+
                 await db.run(`
                     INSERT INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
                     VALUES (?, ?, 'Chapter', NULL, NULL, ?, ?, 1, NULL)

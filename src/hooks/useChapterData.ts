@@ -202,23 +202,21 @@ export function useChapterData() {
 
                         // Incremental Update: Show chapters as they arrive!
                         if (chaptersFound.length > 0) {
-                            if (page <= 1 || page % 3 === 0) {
-                                const existingUrls = new Set(knownChapters.map(ch => ch.audioPath).filter(Boolean));
-                                const newChapters = chaptersFound.filter(ch => !existingUrls.has(ch.url));
+                            const existingUrls = new Set(knownChapters.map(ch => ch.audioPath).filter(Boolean));
+                            const newChapters = chaptersFound.filter(ch => !existingUrls.has(ch.url));
 
-                                const indexedChapters = newChapters.map((ch, idx) => ({
-                                    ...ch,
-                                    _index: knownChapters.length + idx,
-                                    date: ch.date
-                                }));
-                                // The scraper returns the growing list of NEW chapters, so we prepend the old ones
-                                setLiveChapters([...knownChapters.map(ch => ({
-                                    title: ch.title,
-                                    url: ch.audioPath || '',
-                                    _index: ch.orderIndex,
-                                    date: ch.date
-                                })), ...indexedChapters]);
-                            }
+                            const indexedChapters = newChapters.map((ch, idx) => ({
+                                ...ch,
+                                _index: knownChapters.length + idx,
+                                date: ch.date
+                            }));
+                            // The scraper returns the growing list of NEW chapters, so we prepend the old ones
+                            setLiveChapters([...knownChapters.map(ch => ({
+                                title: ch.title,
+                                url: ch.audioPath || '',
+                                _index: ch.orderIndex,
+                                date: ch.date
+                            })), ...indexedChapters]);
 
                             // Unlock UI immediately after first batch
                             if (page === 1 || chaptersFound.length > 0) {

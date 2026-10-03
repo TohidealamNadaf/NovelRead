@@ -7,12 +7,26 @@ import zlib from 'zlib'
 
 let browserSingleton: any = null;
 const getBrowser = async () => {
+    if (browserSingleton && browserSingleton.stealthVersion !== 2) {
+        await browserSingleton.close().catch(() => {});
+        browserSingleton = null;
+    }
     if (!browserSingleton || !browserSingleton.connected) {
         const puppeteer = await import('puppeteer');
         browserSingleton = await puppeteer.default.launch({
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--disable-blink-features=AutomationControlled',
+                '--window-size=1920,1080'
+            ]
         });
+        browserSingleton.hasStealth = true;
+        browserSingleton.stealthVersion = 2;
     }
     return browserSingleton;
 };
@@ -61,14 +75,18 @@ export default defineConfig({
             ? jarCookies.map((c: any) => `${c.name}=${c.value}`).join('; ')
             : '';
 
+          const standardUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
           const proxyHeaders: Record<string, string> = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'User-Agent': standardUA,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
             'Cache-Control': 'no-cache',
           };
+          if (targetRaw.includes('freewebnovel.com')) {
+            proxyHeaders['Referer'] = targetRaw.split('?')[0];
+          }
           // Only send cookies if we have fresh ones from Puppeteer
           if (cookieHeader) {
             proxyHeaders['Cookie'] = cookieHeader;
@@ -131,130 +149,197 @@ export default defineConfig({
 
             const solvePromise = (async (): Promise<string> => {
                 const browser = await getBrowser();
-                const page = await browser.newPage();
-                const domain = targetUrl.hostname;
-                const cachedCookies = cookieJar.get(domain);
-                if (cachedCookies) await page.setCookie(...cachedCookies);
-                await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+                const isCfTarget = targetRaw.includes('freewebnovel.com') || targetRaw.includes('novelfire.net');
+                const context = isCfTarget ? await browser.createBrowserContext() : null;
+                const page = context ? await context.newPage() : await browser.newPage();
 
-                // Special handling for MangaFire AJAX endpoints:
-                // Navigate to homepage first (to get cookies/session), then fetch the AJAX URL
-                // from within the browser context with proper XHR headers.
-                const isMangafireAjax = targetRaw.includes('mangafire.to') && targetRaw.includes('/ajax/');
-                
-                if (isMangafireAjax) {
-                    // Navigate to homepage to establish Cloudflare cookies
-                    await page.goto('https://mangafire.to/home', { waitUntil: 'networkidle2', timeout: 45000 });
-                    await page.waitForSelector('body', { timeout: 10000 }).catch(() => {});
+                try {
+                    await page.evaluateOnNewDocument(() => {
+                        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                        // @ts-ignore
+                        window.chrome = { runtime: {} };
+                        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                    });
+                    const domain = targetUrl.hostname;
+                    const cachedCookies = cookieJar.get(domain);
+                    if (cachedCookies && !isCfTarget) await page.setCookie(...cachedCookies);
+                    await page.setUserAgent(standardUA);
+
+                    // Special handling for MangaFire AJAX endpoints:
+                    // Navigate to homepage first (to get cookies/session), then fetch the AJAX URL
+                    // from within the browser context with proper XHR headers.
+                    const isMangafireAjax = targetRaw.includes('mangafire.to') && targetRaw.includes('/ajax/');
                     
-                    // Use the browser's fetch() to call the AJAX endpoint (shares cookies)
-                    const ajaxResult = await page.evaluate(async (url: string) => {
-                        try {
-                            const resp = await fetch(url, {
-                                headers: {
-                                    'X-Requested-With': 'XMLHttpRequest',
-                                    'Accept': 'application/json, text/plain, */*'
-                                }
-                            });
-                            return await resp.text();
-                        } catch (e: any) {
-                            return JSON.stringify({ error: e.message });
+                    if (isMangafireAjax) {
+                        // Navigate to homepage to establish Cloudflare cookies
+                        await page.goto('https://mangafire.to/home', { waitUntil: 'networkidle2', timeout: 45000 });
+                        await page.waitForSelector('body', { timeout: 10000 }).catch(() => {});
+                        
+                        // Use the browser's fetch() to call the AJAX endpoint (shares cookies)
+                        const ajaxResult = await page.evaluate(async (url: string) => {
+                            try {
+                                const resp = await fetch(url, {
+                                    headers: {
+                                        'X-Requested-With': 'XMLHttpRequest',
+                                        'Accept': 'application/json, text/plain, */*'
+                                    }
+                                });
+                                return await resp.text();
+                            } catch (e: any) {
+                                return JSON.stringify({ error: e.message });
+                            }
+                        }, targetRaw);
+                        
+                        const cookies = await page.cookies();
+                        cookieJar.set(domain, cookies);
+                        htmlCache.set(targetRaw, { html: ajaxResult, t: Date.now() });
+                        return ajaxResult;
+                    }
+
+                    // Normal page navigation
+                    let capturedMeta: any = null;
+                    const capturedChaptersMap = new Map<string, any>();
+
+                    if (targetRaw.includes('mangafire.to')) {
+                        page.on('response', async (res: any) => {
+                            const resUrl = res.url();
+                            if (resUrl.includes('/api/titles/')) {
+                                try {
+                                    const text = await res.text();
+                                    const json = JSON.parse(text);
+                                    if (json.data && json.data.title && !json.items) {
+                                        capturedMeta = json.data;
+                                    }
+                                    if (json.items && Array.isArray(json.items)) {
+                                        json.items.forEach((item: any) => {
+                                            const chId = item.id || `num-${item.number}`;
+                                            if (!capturedChaptersMap.has(chId)) {
+                                                capturedChaptersMap.set(chId, {
+                                                    id: item.id,
+                                                    number: item.number,
+                                                    title: item.name ? `Ch. ${item.number} - ${item.name}` : `Chapter ${item.number}`,
+                                                    url: item.id ? `https://mangafire.to/read/${item.id}` : '',
+                                                    date: item.createdAt ? new Date(item.createdAt * 1000).toLocaleDateString() : ''
+                                                });
+                                            }
+                                        });
+                                    }
+                                } catch (e) {}
+                            }
+                        });
+                    }
+
+                    const isCloudflareSite = isCfTarget;
+                    await page.setViewport({ width: 1920, height: 1080 });
+                    await page.goto(targetRaw, { waitUntil: 'domcontentloaded', timeout: 45000 });
+                    if (targetRaw.includes('mangafire.to')) {
+                        if (targetRaw.includes('/chapter/')) {
+                            // Reader page: wait for reader to render
+                            await page.waitForSelector('.reader-img, .reader, .reader-swiper__img', { timeout: 15000 }).catch(() => {});
+                            await new Promise(r => setTimeout(r, 3000));
+                        } else if (targetRaw.includes('/title/') || targetRaw.includes('/manga/')) {
+                            // Title page: wait for SPA API responses to finish
+                            await new Promise(r => setTimeout(r, 2500));
+                        } else {
+                            await page.waitForSelector('.title-rows__link, .home-section__item, .unit-item, .manga-item', { timeout: 15000 }).catch(() => {});
                         }
-                    }, targetRaw);
-                    
+                    } else {
+                        if (isCloudflareSite) {
+                            try {
+                                await page.waitForFunction(
+                                    `() => {
+                                        const t = document.title || '';
+                                        const b = (document.body && document.body.innerText) || '';
+                                        const hasPre = !!document.querySelector('pre');
+                                        if (hasPre) return true;
+                                        return t.length > 0 && 
+                                               !t.includes('Just a moment') && 
+                                               !t.includes('Attention Required') && 
+                                               !b.includes('Verifying you are human');
+                                    }`,
+                                    { timeout: 30000 }
+                                ).catch(() => {});
+                            } catch (_) {}
+                        }
+                        if (targetRaw.includes('ajax=')) {
+                            await page.waitForSelector('pre', { timeout: 15000 }).catch(() => {});
+                        } else {
+                            await page.waitForSelector('.chapter-list, .list-chapter, .manga-item, h1.tit, .tit, div.li, .ul-list1, .ul-list6, .home-release-list, .chapters, .d-chapter-content, .novel-header, #idData, .txt, #article, #chapter-content', { timeout: 15000 }).catch(() => {});
+                        }
+                    }
+
+                    // Guard: abort if Puppeteer followed a JS redirect to a different domain
+                    const finalUrl = page.url();
+                    try {
+                        const finalHost = new URL(finalUrl).hostname;
+                        if (finalHost !== domain) {
+                            console.warn(`[Proxy/Puppeteer] Cross-domain redirect detected: ${domain} → ${finalHost}, aborting`);
+                            throw new Error(`Redirected to ${finalHost}`);
+                        }
+                    } catch (e: any) {
+                        if (e.message?.includes('Redirected to')) throw e;
+                    }
+
+                    let html = await page.content();
+
+                    if (targetRaw.includes('ajax=') || targetRaw.includes('/ajax/')) {
+                        const preText = await page.evaluate(() => {
+                            const doc = (globalThis as any).document;
+                            const pre = doc ? doc.querySelector('pre') : null;
+                            return pre ? (pre.textContent || pre.innerText) : null;
+                        }).catch(() => null);
+                        if (preText && typeof preText === 'string' && preText.trim().startsWith('{')) {
+                            html = preText.trim();
+                        }
+                    }
+
+                    if (targetRaw.includes('mangafire.to') && capturedChaptersMap.size > 0) {
+                        const chaptersList = Array.from(capturedChaptersMap.values()).sort((a: any, b: any) => (a.number || 0) - (b.number || 0));
+                        const payload = JSON.stringify({ meta: capturedMeta, chapters: chaptersList });
+                        const injectedTag = `<script id="__MANGAFIRE_DATA__" type="application/json">${payload}</script>`;
+                        html = html.replace('</body>', `${injectedTag}</body>`);
+                    }
+
+                    let isChallengeResult = targetRaw.includes('ajax=')
+                        ? (!html.trim().startsWith('{') && /cf-browser-verification|Just a moment|Verifying you are human|cf-challenge/i.test(html.slice(0, 4096)))
+                        : /cf-browser-verification|Just a moment|Verifying you are human|cf-challenge/i.test(html.slice(0, 4096));
+
+                    if (isChallengeResult) {
+                        for (let attempt = 0; attempt < 10; attempt++) {
+                            await new Promise(r => setTimeout(r, 1000));
+                            if (targetRaw.includes('ajax=')) {
+                                const preText = await page.evaluate(() => {
+                                    const doc = (globalThis as any).document;
+                                    const pre = doc ? doc.querySelector('pre') : null;
+                                    return pre ? (pre.textContent || pre.innerText) : null;
+                                }).catch(() => null);
+                                if (preText && preText.trim().startsWith('{')) {
+                                    html = preText.trim();
+                                    isChallengeResult = false;
+                                    break;
+                                }
+                            }
+                            html = await page.content();
+                            isChallengeResult = /cf-browser-verification|Just a moment|Verifying you are human|cf-challenge/i.test(html.slice(0, 4096));
+                            if (!isChallengeResult) break;
+                        }
+                        if (isChallengeResult) {
+                            cookieJar.delete(domain);
+                            console.warn(`[Proxy/Puppeteer] Cloudflare challenge not cleared for ${targetRaw}`);
+                            throw new Error('Cloudflare challenge could not be cleared');
+                        }
+                    }
+
                     const cookies = await page.cookies();
                     cookieJar.set(domain, cookies);
-                    await page.close();
-                    htmlCache.set(targetRaw, { html: ajaxResult, t: Date.now() });
-                    return ajaxResult;
-                }
-                
-                // Normal page navigation
-                let capturedMeta: any = null;
-                const capturedChaptersMap = new Map<string, any>();
 
-                if (targetRaw.includes('mangafire.to')) {
-                    page.on('response', async (res: any) => {
-                        const resUrl = res.url();
-                        if (resUrl.includes('/api/titles/')) {
-                            try {
-                                const text = await res.text();
-                                const json = JSON.parse(text);
-                                if (json.data && json.data.title && !json.items) {
-                                    capturedMeta = json.data;
-                                }
-                                if (json.items && Array.isArray(json.items)) {
-                                    json.items.forEach((item: any) => {
-                                        const chId = item.id || `num-${item.number}`;
-                                        if (!capturedChaptersMap.has(chId)) {
-                                            capturedChaptersMap.set(chId, {
-                                                id: item.id,
-                                                number: item.number,
-                                                title: item.name ? `Ch. ${item.number} - ${item.name}` : `Chapter ${item.number}`,
-                                                url: item.id ? `https://mangafire.to/read/${item.id}` : '',
-                                                date: item.createdAt ? new Date(item.createdAt * 1000).toLocaleDateString() : ''
-                                            });
-                                        }
-                                    });
-                                }
-                            } catch (e) {}
-                        }
-                    });
-                }
-
-                const isCloudflareSite = targetRaw.includes('freewebnovel.com') || targetRaw.includes('novelfire.net');
-                await page.goto(targetRaw, { waitUntil: isCloudflareSite ? 'networkidle2' : 'domcontentloaded', timeout: 45000 });
-                if (targetRaw.includes('mangafire.to')) {
-                    if (targetRaw.includes('/chapter/')) {
-                        // Reader page: wait for reader to render
-                        await page.waitForSelector('.reader-img, .reader, .reader-swiper__img', { timeout: 15000 }).catch(() => {});
-                        await new Promise(r => setTimeout(r, 3000));
-                    } else if (targetRaw.includes('/title/') || targetRaw.includes('/manga/')) {
-                        // Title page: wait for SPA API responses to finish
-                        await new Promise(r => setTimeout(r, 2500));
-                    } else {
-                        await page.waitForSelector('.title-rows__link, .home-section__item, .unit-item, .manga-item', { timeout: 15000 }).catch(() => {});
-                    }
-                } else {
-                    try {
-                        const title = await page.title();
-                        if (title.includes('Just a moment')) {
-                            await page.waitForFunction("() => !document.title.includes('Just a moment')", { timeout: 15000 }).catch(() => {});
-                        }
-                    } catch (_) {}
-                    await page.waitForSelector('.chapter-list, .list-chapter, .manga-item, h1.tit, .tit, div.li, .ul-list1, .ul-list6, .home-release-list, .chapters, .d-chapter-content, .novel-header', { timeout: 15000 }).catch(() => {});
-                }
-
-                // Guard: abort if Puppeteer followed a JS redirect to a different domain
-                const finalUrl = page.url();
-                try {
-                    const finalHost = new URL(finalUrl).hostname;
-                    if (finalHost !== domain) {
-                        console.warn(`[Proxy/Puppeteer] Cross-domain redirect detected: ${domain} → ${finalHost}, aborting`);
-                        await page.close();
-                        throw new Error(`Redirected to ${finalHost}`);
-                    }
-                } catch (e: any) {
-                    if (e.message?.includes('Redirected to')) throw e;
-                }
-
-                const cookies = await page.cookies();
-                cookieJar.set(domain, cookies);
-                let html = await page.content();
-
-                if (targetRaw.includes('mangafire.to') && capturedChaptersMap.size > 0) {
-                    const chaptersList = Array.from(capturedChaptersMap.values()).sort((a: any, b: any) => (a.number || 0) - (b.number || 0));
-                    const payload = JSON.stringify({ meta: capturedMeta, chapters: chaptersList });
-                    const injectedTag = `<script id="__MANGAFIRE_DATA__" type="application/json">${payload}</script>`;
-                    html = html.replace('</body>', `${injectedTag}</body>`);
-                }
-
-                await page.close();
-                const isChallengeResult = /cf-browser-verification|Just a moment|Verifying you are human|cf-challenge/i.test(html.slice(0, 4096));
-                if (!isChallengeResult) {
                     htmlCache.set(targetRaw, { html, t: Date.now() });
+                    return html;
+                } finally {
+                    await page.close().catch(() => {});
+                    if (context) await context.close().catch(() => {});
                 }
-                return html;
             })();
 
             solvingCache.set(targetRaw, solvePromise);
@@ -269,6 +354,7 @@ export default defineConfig({
                 }
             }).catch(err => {
                 solvingCache.delete(targetRaw);
+                cookieJar.delete(targetUrl.hostname);
                 if (!res.writableEnded) {
                     if (!res.headersSent) {
                         res.writeHead(502, { 'Content-Type': 'text/plain' });
@@ -336,7 +422,8 @@ export default defineConfig({
             else if (encoding === 'br') decodedStream = proxyRes.pipe(zlib.createBrotliDecompress().on('error', handleError));
             else if (encoding === 'deflate') decodedStream = proxyRes.pipe(zlib.createInflate().on('error', handleError));
             
-            if (status === 200 && contentType.includes('text/html')) {
+            const isCfSite = targetRaw.includes('freewebnovel.com') || targetRaw.includes('novelfire.net');
+            if (status === 200 && (contentType.includes('text/html') || isCfSite)) {
                 let chunks: Buffer[] = [];
                 decodedStream.on('data', chunk => chunks.push(chunk));
                 decodedStream.on('end', () => {
