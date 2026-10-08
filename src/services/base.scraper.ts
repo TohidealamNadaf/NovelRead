@@ -77,7 +77,7 @@ export abstract class BaseScraper {
                     : `/api/proxy?url=${encodeURIComponent(url)}`;
 
                 const isLocalProxy = fetchUrl.startsWith('/api/proxy');
-                const effectiveTimeout = isLocalProxy ? 60000 : timeoutMs;
+                const effectiveTimeout = Math.max(timeoutMs, 8000);
 
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
@@ -213,6 +213,8 @@ export abstract class BaseScraper {
 
         const removeSelectors = [
             '.ads', '.advertisement', '.social-share', '.chapter-nav',
+            '.chapternav', 'select', '.chapindex', '.titles',
+            '.box-notice', '.report-container', '.control-action', 'dialog',
             '.support-author', '.donate', '#comments', '.comments',
             '[id*="ad-"]', '[class*="ad-"]', '.google-auto-placed'
         ];

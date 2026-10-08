@@ -7,6 +7,15 @@ import { chapterListCache } from '../services/chapterListCache';
 export type FilterType = 'all' | 'read' | 'unread' | 'downloaded';
 export type SortOrder = 'asc' | 'desc';
 
+/**
+ * One in-flight load per novel across all hook instances. Library syncs intentionally
+ * outlive the screen (so chapters keep persisting), but when the same novel is opened
+ * again the old sync is cancelled and the new one resumes from the DB count, instead of
+ * two syncs writing the same rows concurrently.
+ */
+const inFlightLoads = new Map<string, AbortController>();
+const loadKey = (id: string) => id.replace(/\/$/, '').replace(/\/chapters$/i, '').toLowerCase();
+
 export function useChapterData() {
     const { novelId } = useParams<{ novelId: string }>();
     const location = useLocation();
@@ -21,6 +30,7 @@ export function useChapterData() {
     const [loadingPage, setLoadingPage] = useState(0);
     const [isPreviewMode, setIsPreviewMode] = useState(false);
     const [addedToLibrary, setAddedToLibrary] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     // Filtering & Sorting
     const [filter, setFilter] = useState<FilterType>('all');
@@ -46,12 +56,12 @@ export function useChapterData() {
     const loadData = async (externalSignal?: AbortSignal) => {
         if (!novelId) return;
 
-        // Abort previous in-flight load if it was not a library background sync
-        if (!addedToLibraryRef.current && !dbNovelRef.current) {
-            activeLoadRef.current?.abort();
-        }
+        const key = loadKey(novelId);
+        inFlightLoads.get(key)?.abort();
         const controller = new AbortController();
         activeLoadRef.current = controller;
+        inFlightLoads.set(key, controller);
+        if (isMountedRef.current) setLoadError(null);
 
         if (externalSignal) {
             if (externalSignal.aborted) controller.abort();
@@ -77,7 +87,10 @@ export function useChapterData() {
                     if (isMountedRef.current) setLiveChapters(accumulatedLive);
                 }
                 knownChapters = cached.chapters || [];
-                if (isMountedRef.current) setLoading(false);
+                // Only mark loading as complete if chapters were actually in the cache
+                if ((cached.chapters?.length > 0 || cached.liveChapters?.length > 0) && isMountedRef.current) {
+                    setLoading(false);
+                }
             } else {
                 if (isMountedRef.current) setLoading(true);
             }
@@ -98,18 +111,24 @@ export function useChapterData() {
                 }
                 addedToLibraryRef.current = true;
 
-                let dbChapters = await dbService.getChapters(novelId);
-
-                // Auto-repair duplicates if any
-                const wasRepaired = await dbService.repairDuplicateChapters(novelId);
-                if (wasRepaired) {
-                    dbChapters = await dbService.getChapters(novelId);
-                }
+                const targetNovelId = dbNovel.id || novelId;
+                const dbChapters = await dbService.getChapters(targetNovelId);
 
                 if (isMountedRef.current) {
                     setChapters(dbChapters);
-                    setLoading(false);
+                    if (dbChapters.length > 0) {
+                        setLoading(false);
+                    }
                 }
+
+                // Duplicate cleanup is maintenance: never block or fail the visible list on it.
+                dbService.repairDuplicateChapters(targetNovelId)
+                    .then(async repaired => {
+                        if (!repaired || signal.aborted) return;
+                        const fresh = await dbService.getChapters(targetNovelId);
+                        if (isMountedRef.current && !signal.aborted) setChapters(fresh);
+                    })
+                    .catch(err => console.warn('[useChapterData] Background repair failed', err));
                 knownChapters = dbChapters;
                 dbChaptersCount = dbChapters.length;
 
@@ -120,20 +139,10 @@ export function useChapterData() {
                         .map(c => c.audioPath)
                         .filter(Boolean) as string[]
                 );
-                let lastReadIdx = -1;
-                const m = dbNovel.lastReadChapterId?.match(/-ch-(\d+)$/);
-                if (m) {
-                    lastReadIdx = parseInt(m[1], 10);
-                } else if (dbNovel.lastReadChapterId) {
-                    const matchCh = dbChapters.find(c => c.id === dbNovel.lastReadChapterId || c.audioPath === dbNovel.lastReadChapterId);
-                    if (matchCh && typeof matchCh.orderIndex === 'number') {
-                        lastReadIdx = matchCh.orderIndex;
-                    }
-                }
-
+                // Only include chapters with explicit isRead=1 — no bulk index inference
                 const readUrls = new Set(
                     dbChapters
-                        .filter(c => c.isRead || (lastReadIdx >= 0 && c.orderIndex <= lastReadIdx))
+                        .filter(c => c.isRead)
                         .flatMap(c => [c.audioPath, c.id])
                         .filter(Boolean) as string[]
                 );
@@ -200,7 +209,9 @@ export function useChapterData() {
                     setNovel(currentNovel);
                     setIsPreviewMode(true);
                     setAddedToLibrary(false);
-                    setLoading(false);
+                    if (!navigator.onLine) {
+                        setLoading(false);
+                    }
                 }
             }
 
@@ -342,11 +353,15 @@ export function useChapterData() {
                 if (isMountedRef.current) setLoading(false);
             }
         } catch (e) {
-            if (!signal?.aborted) console.error('[useChapterData] Failed to load data:', e);
+            if (!signal?.aborted) {
+                console.error('[useChapterData] Failed to load data:', e);
+                if (isMountedRef.current) setLoadError('Could not load chapters.');
+            }
             if (isMountedRef.current) setLoading(false);
         } finally {
             if (isMountedRef.current) setLoadingPage(0);
             if (activeLoadRef.current === controller) activeLoadRef.current = null;
+            if (inFlightLoads.get(key) === controller) inFlightLoads.delete(key);
         }
     };
 
@@ -391,43 +406,35 @@ export function useChapterData() {
 
     // Computed filtered chapters
     const filteredChapters = useMemo(() => {
-        let lastReadIdx = -1;
-        const lastReadMatch = novel?.lastReadChapterId?.match(/-ch-(\d+)$/);
-        if (lastReadMatch) {
-            lastReadIdx = parseInt(lastReadMatch[1], 10);
-        } else if (novel?.lastReadChapterId) {
-            if (isLiveMode) {
-                lastReadIdx = liveChapters.findIndex(c => c.url === novel.lastReadChapterId);
-            } else {
-                lastReadIdx = chapters.findIndex(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId);
-            }
-        }
-
         const isItemRead = (item: any) => {
-            if (isLiveMode) {
-                return readLiveChapters.has(item.url) ||
-                    readLiveChapters.has(item.id) ||
-                    (lastReadIdx >= 0 && item._index <= lastReadIdx) ||
-                    novel?.lastReadChapterId === item.url;
-            } else {
-                return Boolean(item.isRead) ||
-                    (lastReadIdx >= 0 && item.orderIndex <= lastReadIdx) ||
-                    novel?.lastReadChapterId === item.id ||
-                    novel?.lastReadChapterId === item.audioPath;
-            }
+            const url = item.url || item.audioPath;
+            const id = item.id;
+            const order = item._index !== undefined ? item._index : item.orderIndex;
+            return Boolean(item.isRead) ||
+                (url && readLiveChapters.has(url)) ||
+                (id && readLiveChapters.has(id)) ||
+                (url && novel?.lastReadChapterId === url) ||
+                (id && novel?.lastReadChapterId === id) ||
+                (order !== undefined && (novel?.lastReadChapterId === `${novel?.id}-ch-${order}` || novel?.lastReadChapterId?.endsWith(`-ch-${order}`)));
         };
 
         const isItemDownloaded = (item: any) => {
-            if (isLiveMode) {
-                return downloadedLiveChapters.has(item.url);
-            } else {
-                return Boolean(item.content || item.contentPath);
-            }
+            const url = item.url || item.audioPath;
+            const id = item.id;
+            return Boolean(item.content || item.contentPath) ||
+                (url && downloadedLiveChapters.has(url)) ||
+                (id && downloadedLiveChapters.has(id));
         };
 
-        const source = isLiveMode ? liveChapters : chapters;
+        const hasDbChapters = chapters.length > 0;
+        const hasLiveChapters = liveChapters.length > 0;
+        const source = isLiveMode
+            ? (hasLiveChapters ? liveChapters : chapters)
+            : (hasDbChapters ? chapters : liveChapters);
+
         const result = source.filter((item: any) => {
-            const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
+            const title = item.title || '';
+            const matchesSearch = title.toLowerCase().includes(searchQuery.toLowerCase());
             if (!matchesSearch) return false;
 
             switch (filter) {
@@ -439,11 +446,11 @@ export function useChapterData() {
         });
 
         return result.sort((a: any, b: any) => {
-            const indexA = isLiveMode ? a._index : a.orderIndex;
-            const indexB = isLiveMode ? b._index : b.orderIndex;
+            const indexA = a._index !== undefined ? a._index : (a.orderIndex ?? 0);
+            const indexB = b._index !== undefined ? b._index : (b.orderIndex ?? 0);
             return sortOrder === 'asc' ? indexA - indexB : indexB - indexA;
         });
-    }, [chapters, liveChapters, isLiveMode, filter, searchQuery, sortOrder, novel?.lastReadChapterId, readLiveChapters, downloadedLiveChapters]);
+    }, [chapters, liveChapters, isLiveMode, filter, searchQuery, sortOrder, novel?.id, novel?.lastReadChapterId, readLiveChapters, downloadedLiveChapters]);
 
     return {
         novel,
@@ -454,6 +461,7 @@ export function useChapterData() {
         isPreviewMode,
         addedToLibrary,
         setAddedToLibrary,
+        loadError,
         isLiveMode,
         downloadedLiveChapters,
         setDownloadedLiveChapters,

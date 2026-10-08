@@ -58,8 +58,8 @@ export const NOVELFIRE_SELECTORS: ScraperSelectorConfig = {
         '.chapters a'
     ],
     contentSelectors: [
-        '.d-chapter-content',
         '#content',
+        '.d-chapter-content',
         '#chapter-container',
         '#chapter-content',
         '.chapter-content',
@@ -78,6 +78,12 @@ export const NOVELFIRE_SELECTORS: ScraperSelectorConfig = {
         'ins',
         '.social-share',
         '.chapter-nav',
+        '.chapternav',
+        'select',
+        '.chapindex',
+        '.titles',
+        '.memberonly',
+        'dialog',
         '.support-author',
         '.donate',
         '#comments',
@@ -130,8 +136,9 @@ export const FREEWEBNOVEL_SELECTORS: ScraperSelectorConfig = {
         '.chapter-list a'
     ],
     contentSelectors: [
-        '.txt',
         '#article',
+        '.txt #article',
+        '.txt',
         '#chapter-content',
         '#content',
         '.chapter-content',
@@ -153,12 +160,19 @@ export const FREEWEBNOVEL_SELECTORS: ScraperSelectorConfig = {
         'ins',
         '.social-share',
         '.chapter-nav',
+        '.chapternav',
+        'select',
+        '.catalog',
         '.support-author',
         '.donate',
         '#comments',
         '.comments',
+        'subtxt',
         '[id*="ad-"]',
         '[class*="ad-"]',
+        '[id*="bg-ssp"]',
+        '[id*="pf-"]',
+        '.slot-frame',
         '.google-auto-placed'
     ],
     minContentLength: 80

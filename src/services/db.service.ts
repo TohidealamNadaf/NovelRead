@@ -976,13 +976,42 @@ class DatabaseService {
         const cleanId = novelId ? novelId.replace(/\/$/, '').replace(/\/chapters$/i, '') : '';
         const decodedId = novelId && novelId.includes('%') ? decodeURIComponent(novelId).replace(/\/$/, '').replace(/\/chapters$/i, '') : cleanId;
 
+        const idSet = new Set<string>([novelId, cleanId, decodedId, cleanId + '/', cleanId + '/chapters'].filter(Boolean));
+
+        try {
+            // Also resolve canonical novel id & sourceUrl if novel exists in DB
+            const novelRes = await db.query(
+                `SELECT id, sourceUrl FROM novels 
+                 WHERE id = ? OR id = ? OR id = ? OR id = ? OR id = ?
+                    OR sourceUrl = ? OR sourceUrl = ? OR sourceUrl = ? OR sourceUrl = ?
+                 LIMIT 1`,
+                [novelId, cleanId, decodedId, cleanId + '/', cleanId + '/chapters', novelId, cleanId, decodedId, cleanId + '/']
+            );
+            if (novelRes.values && novelRes.values.length > 0) {
+                const n = novelRes.values[0];
+                if (n.id) {
+                    idSet.add(n.id);
+                    idSet.add(n.id.replace(/\/$/, '').replace(/\/chapters$/i, ''));
+                }
+                if (n.sourceUrl) {
+                    idSet.add(n.sourceUrl);
+                    idSet.add(n.sourceUrl.replace(/\/$/, '').replace(/\/chapters$/i, ''));
+                }
+            }
+        } catch {
+            // ignore lookup error
+        }
+
+        const idList = Array.from(idSet);
+        const placeholders = idList.map(() => '?').join(' OR novelId = ');
+
         let query = `
             SELECT id, novelId, title, orderIndex, audioPath, isRead, date, contentPath 
             FROM chapters 
-            WHERE novelId = ? OR novelId = ? OR novelId = ? OR novelId = ? OR novelId = ?
+            WHERE novelId = ${placeholders}
             ORDER BY orderIndex ASC
         `;
-        const params: any[] = [novelId, cleanId, decodedId, cleanId + '/', cleanId + '/chapters'];
+        const params: any[] = [...idList];
 
         if (limit !== undefined && offset !== undefined) {
             query += ' LIMIT ? OFFSET ?';
@@ -1021,66 +1050,46 @@ class DatabaseService {
                 byUrl.set(key, group);
             }
 
-            // Check if there are actually any duplicates
-            const hasDuplicates = Array.from(byUrl.values()).some(group => group.length > 1);
-            if (!hasDuplicates) return false;
+            const duplicateGroups = Array.from(byUrl.values()).filter(group => group.length > 1);
+            if (duplicateGroups.length === 0) return false;
 
-            console.log(`[DB:repair] Found duplicates in ${novelId}, repairing...`);
+            // Canonical rows use the `<novelId>-ch-<n>` id scheme that the rest of the app
+            // relies on for index lookups. Prefer them over URL-keyed stub rows.
+            const isCanonical = (c: Chapter) => /-ch-\d+$/.test(c.id);
+            const statements: { statement: string; values: unknown[] }[] = [];
+            let removed = 0;
 
-            // Pick the best copy from each group: prefer read > downloaded > first
-            const survivors: Chapter[] = [];
-            const idsToDelete: string[] = [];
-
-            for (const [, group] of byUrl) {
-                // Sort: read first, then downloaded (contentPath), then lowest orderIndex
+            for (const group of duplicateGroups) {
                 group.sort((a, b) => {
-                    if (a.isRead && !b.isRead) return -1;
-                    if (!a.isRead && b.isRead) return 1;
-                    if (a.contentPath && !b.contentPath) return -1;
-                    if (!a.contentPath && b.contentPath) return 1;
+                    if (isCanonical(a) !== isCanonical(b)) return isCanonical(a) ? -1 : 1;
+                    if (Boolean(a.contentPath) !== Boolean(b.contentPath)) return a.contentPath ? -1 : 1;
                     return (a.orderIndex ?? 0) - (b.orderIndex ?? 0);
                 });
 
-                survivors.push(group[0]); // Keep the best one
+                const keep = group[0];
+                // Merge user state from the duplicates so nothing is lost.
+                const anyRead = group.some(c => Boolean(c.isRead));
+                const contentPath = keep.contentPath || group.find(c => c.contentPath)?.contentPath || null;
+                statements.push({
+                    statement: 'UPDATE chapters SET isRead = ?, contentPath = ? WHERE id = ?',
+                    values: [anyRead ? 1 : 0, contentPath, keep.id]
+                });
                 for (let i = 1; i < group.length; i++) {
-                    idsToDelete.push(group[i].id);
+                    statements.push({ statement: 'DELETE FROM chapters WHERE id = ?', values: [group[i].id] });
+                    removed++;
                 }
             }
 
-            if (idsToDelete.length === 0) return false;
+            console.log(`[DB:repair] Removing ${removed} duplicate chapters in ${novelId}`);
 
-            console.log(`[DB:repair] Removing ${idsToDelete.length} duplicate chapters, keeping ${survivors.length}`);
-
-            // Delete duplicates
-            return this.enqueueWrite(async () => {
+            // Single transaction; primary keys are never renamed, so no UNIQUE collisions.
+            return await this.enqueueWrite(async () => {
                 const db2 = await this.getDB();
                 if (!db2) return false;
-
-                // Delete in batches
-                const BATCH = 100;
-                for (let i = 0; i < idsToDelete.length; i += BATCH) {
-                    const batch = idsToDelete.slice(i, i + BATCH);
-                    const placeholders = batch.map(() => '?').join(',');
-                    await db2.run(`DELETE FROM chapters WHERE id IN (${placeholders})`, batch);
-                }
-
-                // Re-index survivors sequentially by their original order
-                survivors.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
-                for (let i = 0; i < survivors.length; i++) {
-                    const ch = survivors[i];
-                    const newId = `${novelId}-ch-${i}`;
-                    if (ch.orderIndex !== i || ch.id !== newId) {
-                        await db2.run(
-                            'UPDATE chapters SET orderIndex = ?, id = ? WHERE id = ?',
-                            [i, newId, ch.id]
-                        );
-                    }
-                }
-
+                await db2.executeSet(statements as { statement: string; values: any[] }[]);
                 await this.save();
-                console.log(`[DB:repair] Repair complete for ${novelId}: ${survivors.length} chapters, ${idsToDelete.length} duplicates removed`);
                 return true;
-            }) as Promise<boolean>;
+            });
         } catch (e) {
             console.error(`[DB:repair] Failed for ${novelId}`, e);
             return false;
@@ -1242,33 +1251,28 @@ class DatabaseService {
                     `, [targetNovelId, novelId, chapterId, Date.now()]);
                 }
 
-                await db.run(`
-                    INSERT INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
-                    VALUES (?, ?, 'Chapter', NULL, NULL, ?, ?, 1, NULL)
-                    ON CONFLICT(id) DO UPDATE SET isRead = 1, audioPath = COALESCE(excluded.audioPath, audioPath);
-                `, [chapterId, targetNovelId, orderIdx, chapterUrl || chapterId]);
-
-                if (chapterUrl && chapterUrl !== chapterId) {
+                // Reuse an existing row (matched by id or source URL) instead of inserting a
+                // second URL-keyed stub — duplicates forced a costly repair on every list open.
+                const sourceKey = chapterUrl || chapterId;
+                const existing = await db.query(
+                    'SELECT id FROM chapters WHERE (novelId = ? OR novelId = ? OR novelId = ?) AND (id = ? OR audioPath = ? OR id = ?) LIMIT 1',
+                    [novelId, cleanNovelId, decodedNovelId, chapterId, sourceKey, sourceKey]
+                );
+                if (existing.values && existing.values.length > 0) {
+                    await db.run('UPDATE chapters SET isRead = 1 WHERE id = ?', [existing.values[0].id]);
+                } else {
                     await db.run(`
                         INSERT INTO chapters (id, novelId, title, content, contentPath, orderIndex, audioPath, isRead, date)
                         VALUES (?, ?, 'Chapter', NULL, NULL, ?, ?, 1, NULL)
-                        ON CONFLICT(id) DO UPDATE SET isRead = 1;
-                    `, [chapterUrl, targetNovelId, orderIdx, chapterUrl]);
+                        ON CONFLICT(id) DO UPDATE SET isRead = 1, audioPath = COALESCE(excluded.audioPath, audioPath);
+                    `, [chapterId, targetNovelId, orderIdx, sourceKey]);
                 }
 
-                // Mark this specific chapter as read
+                // Mark ONLY this specific chapter as read (do NOT mark all preceding chapters)
                 await db.run(
                     'UPDATE chapters SET isRead = 1 WHERE (novelId = ? OR novelId = ? OR novelId = ?) AND (id = ? OR id = ? OR audioPath = ?)',
                     [novelId, cleanNovelId, decodedNovelId, chapterId, `${novelId}-ch-${chapterId}`, chapterUrl || chapterId]
                 );
-
-                // Mark ALL chapters up to current orderIndex as read
-                if (orderIdx >= 0) {
-                    await db.run(
-                        'UPDATE chapters SET isRead = 1 WHERE (novelId = ? OR novelId = ? OR novelId = ? OR novelId = ? OR novelId = ?) AND orderIndex <= ?',
-                        [novelId, cleanNovelId, decodedNovelId, cleanNovelId + '/', cleanNovelId + '/chapters', orderIdx]
-                    );
-                }
 
                 // Update the novel's total readChapters count
                 await db.run(

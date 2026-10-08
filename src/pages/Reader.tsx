@@ -143,21 +143,11 @@ export const Reader = () => {
             ? allChapters
             : (navChapters.length > 0 ? navChapters : allChapters);
 
-        // Derive highest read index so far
-        let lastReadOrderIdx = -1;
-        const lastReadStr = novel?.lastReadChapterId;
-        if (lastReadStr) {
-            const m = lastReadStr.match(/-ch-(\d+)$/);
-            if (m) lastReadOrderIdx = parseInt(m[1], 10);
-        }
-        const effectiveReadIdx = Math.max(lastReadOrderIdx, navIndex);
-
-        return source.map((ch, idx) => {
-            const order = ch.orderIndex ?? idx;
+        return source.map(ch => {
+            // Only mark as read if EXPLICITLY tracked — no "all before X" inference
             const isRead = readChapterIds.has(ch.id) ||
                 (ch.audioPath && readChapterIds.has(ch.audioPath)) ||
                 ((ch as any).url && readChapterIds.has((ch as any).url)) ||
-                (effectiveReadIdx >= 0 && order <= effectiveReadIdx) ||
                 Boolean(ch.isRead);
 
             return {
@@ -165,7 +155,7 @@ export const Reader = () => {
                 isRead: isRead ? 1 : 0
             };
         });
-    }, [navChapters, allChapters, readChapterIds, novel?.lastReadChapterId, navIndex]);
+    }, [navChapters, allChapters, readChapterIds]);
 
 
     const edgeSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -256,13 +246,17 @@ export const Reader = () => {
     const loadData = async (nid: string, cid: string) => {
         setLoading(true);
         try {
-            await dbService.initialize();
-            let cData = await dbService.getChapter(nid, cid);
             const nData = await dbService.getNovel(nid);
             setNovel(nData);
+            const canonicalNovelId = nData?.id || nid;
+
+            let cData = await dbService.getChapter(canonicalNovelId, cid);
+            if (!cData && canonicalNovelId !== nid) {
+                cData = await dbService.getChapter(nid, cid);
+            }
 
             // Fetch local chapters from DB for sidebar & fallback resolution
-            let localChapters = await dbService.getChapters(nid);
+            let localChapters = await dbService.getChapters(canonicalNovelId);
 
             // If not found in DB, fallback to search in localChapters, navChapters, or router state
             if (!cData) {
@@ -317,7 +311,7 @@ export const Reader = () => {
                         const fetchedContent = await Promise.race([
                             scraperService.fetchChapterContent(cData.audioPath),
                             new Promise<string>((_, reject) =>
-                                setTimeout(() => reject(new Error('Auto-fetch timed out')), 15000)
+                                setTimeout(() => reject(new Error('Auto-fetch timed out')), 30000)
                             )
                         ]);
                         if (fetchedContent && fetchedContent.length > 50) {
@@ -349,10 +343,7 @@ export const Reader = () => {
 
                 // Restore navigation state if missing (Continue button flow)
                 if (navChapters.length === 0 && localChapters.length > 0) {
-                    const index = localChapters.findIndex(c => c.id === cid || c.audioPath === cData?.audioPath);
-                    if (index !== -1) {
-                        setNavChapters(localChapters);
-                    }
+                    setNavChapters(localChapters);
                 }
 
                 // Show content immediately — mark loading as done BEFORE background sync
@@ -367,7 +358,7 @@ export const Reader = () => {
                                 novelId: nid,
                                 title: ch.title,
                                 orderIndex: idx,
-                                isRead: (cData?.orderIndex !== undefined && idx <= cData.orderIndex) ? 1 : 0
+                                isRead: 0
                             } as Chapter));
                             setAllChapters(mappedWeb);
 
@@ -398,6 +389,12 @@ export const Reader = () => {
                     setNavChapters(localChapters);
                 }
             } else {
+                if (localChapters.length > 0) {
+                    setAllChapters(localChapters);
+                    if (navChapters.length === 0) {
+                        setNavChapters(localChapters);
+                    }
+                }
                 setLoading(false);
             }
         } catch (error) {
@@ -577,11 +574,11 @@ export const Reader = () => {
                         )
                     ]);
                 try {
-                    content = await fetchWithTimeout(chapterUrl, 15000);
+                    content = await fetchWithTimeout(chapterUrl, 30000);
                 } catch (fetchErr) {
                     console.warn('[Reader] First fetch attempt failed, retrying...', fetchErr);
                     try {
-                        content = await fetchWithTimeout(chapterUrl, 15000);
+                        content = await fetchWithTimeout(chapterUrl, 30000);
                     } catch {
                         content = '<p>Chapter content could not be loaded. Please try again or check your connection.</p>';
                     }
@@ -628,7 +625,7 @@ export const Reader = () => {
                     // Hybrid ID matching: try both URL and stable ID format
                     const stableId = `${stableNovelId}-ch-${idx}`;
                     const chUrl = (ch as any).url || (ch as any).audioPath || '';
-                    const isRead = readStatusMap.has(stableId) || (chUrl && readStatusMap.has(chUrl)) || (currentIdx >= 0 && idx <= currentIdx) || Boolean(ch.isRead);
+                    const isRead = readStatusMap.has(stableId) || (chUrl && readStatusMap.has(chUrl)) || Boolean(ch.isRead);
 
                     return {
                         id: chUrl || stableId,

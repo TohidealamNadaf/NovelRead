@@ -34,6 +34,7 @@ export const ChapterList = () => {
         loadingPage,
         addedToLibrary,
         setAddedToLibrary,
+        loadError,
         isLiveMode,
         downloadedLiveChapters,
         setDownloadedLiveChapters,
@@ -46,7 +47,7 @@ export const ChapterList = () => {
         sortOrder,
         setSortOrder,
         filteredChapters,
-        // loadData, // Unused in this component (handled in hook)
+        loadData,
         setChapters
     } = useChapterData();
 
@@ -167,20 +168,28 @@ export const ChapterList = () => {
 
     // --- Handlers ---
     const handleChapterClick = useCallback((chapter: any) => {
-        if (isLiveMode) {
+        const isLiveChapter = isLiveMode || !chapter.id;
+        if (isLiveChapter) {
+            const targetUrl = chapter.url || chapter.audioPath;
             const realIndex = liveChapters.findIndex((c: any) =>
-                (c.url && c.url === chapter.url)
+                (c.url && c.url === targetUrl)
             );
-            navigate(`/read/live/${encodeURIComponent(chapter.url)}`, {
+            const effectiveChapters = liveChapters.length > 0 ? liveChapters : chapters.map(c => ({
+                title: c.title,
+                url: c.audioPath || '',
+                _index: c.orderIndex,
+                date: c.date
+            }));
+            navigate(`/read/live/${encodeURIComponent(targetUrl)}`, {
                 state: {
                     liveMode: true,
-                    chapterUrl: chapter.url,
+                    chapterUrl: targetUrl,
                     chapterTitle: chapter.title,
                     novelTitle: novel?.title,
                     novelCoverUrl: novel?.coverUrl,
                     novelSourceUrl: novel?.sourceUrl,
-                    currentIndex: realIndex !== -1 ? realIndex : 0,
-                    chapters: [...liveChapters],
+                    currentIndex: realIndex !== -1 ? realIndex : (chapter._index ?? 0),
+                    chapters: effectiveChapters,
                     from: originFromPath
                 }
             });
@@ -209,7 +218,7 @@ export const ChapterList = () => {
     }
 
     // Determine total chapters count for display
-    const totalChaptersData = isLiveMode ? liveChapters.length : chapters.length;
+    const totalChaptersData = isLiveMode ? liveChapters.length : (chapters.length || liveChapters.length);
 
     return (
         <div className="h-screen w-full flex flex-col bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans overflow-hidden">
@@ -472,76 +481,66 @@ export const ChapterList = () => {
                 >
                     {(() => {
                         const cleanNovelId = novel?.id ? novel.id.replace(/\/$/, '').replace(/\/chapters$/i, '') : '';
-                        let lastReadOrderIdx = -1;
-                        const lastReadMatch = novel?.lastReadChapterId?.match(/-ch-(\d+)$/);
-                        if (lastReadMatch) {
-                            lastReadOrderIdx = parseInt(lastReadMatch[1], 10);
-                        } else if (novel?.lastReadChapterId) {
-                            if (isLiveMode) {
-                                lastReadOrderIdx = liveChapters.findIndex(c => c.url === novel.lastReadChapterId);
-                            } else {
-                                lastReadOrderIdx = chapters.findIndex(c => c.id === novel.lastReadChapterId || c.audioPath === novel.lastReadChapterId);
-                            }
-                        }
 
                         return rowVirtualizer.getVirtualItems().map((virtualRow) => {
                             const chapter = filteredChapters[virtualRow.index];
                             if (!chapter) return null;
                             const ch = chapter as any;
 
-                            const isDownloaded = isLiveMode ? downloadedLiveChapters.has(ch.url) : (ch.content || ch.contentPath);
-                            const isRead = isLiveMode
-                                ? (readLiveChapters.has(ch.url) ||
-                                   readLiveChapters.has(ch.id) ||
-                                   (lastReadOrderIdx >= 0 && ch._index <= lastReadOrderIdx) ||
-                                   novel?.lastReadChapterId === ch.id ||
-                                   novel?.lastReadChapterId === ch.url ||
-                                   novel?.lastReadChapterId === `${novel?.id}-ch-${ch._index}` ||
-                                   novel?.lastReadChapterId === `${cleanNovelId}-ch-${ch._index}`)
-                                : (Boolean(ch.isRead) ||
-                                   (lastReadOrderIdx >= 0 && ch.orderIndex <= lastReadOrderIdx) ||
-                                   novel?.lastReadChapterId === ch.id ||
-                                   novel?.lastReadChapterId === ch.url ||
-                                   novel?.lastReadChapterId === `${novel?.id}-ch-${ch.orderIndex}` ||
-                                   novel?.lastReadChapterId === `${cleanNovelId}-ch-${ch.orderIndex}`);
-                        const isDownloadingItem = isLiveMode ? downloadingLive.has(ch.url) : downloading.has(ch.id);
-                        const displayIndex = sortOrder === 'asc'
-                            ? (isLiveMode ? (ch._index + 1) : (ch.orderIndex + 1))
-                            : (totalChaptersData - virtualRow.index);
+                            const isLiveChapter = isLiveMode || ch.orderIndex === undefined;
+                            const chUrl = ch.url || ch.audioPath || '';
+                            const chId = ch.id || `${novel?.id}-ch-${ch._index}`;
+                            const chIndex = ch._index !== undefined ? ch._index : ch.orderIndex;
 
-                        return (
-                            <div
-                                key={virtualRow.key}
-                                data-index={virtualRow.index}
-                                ref={rowVirtualizer.measureElement}
-                                style={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    width: '100%',
-                                    transform: `translateY(${virtualRow.start - listScrollMargin}px)`,
-                                }}
-                            >
-                                <ChapterRow
-                                    chapter={chapter}
-                                    index={displayIndex}
-                                    isLiveMode={isLiveMode}
-                                    isDownloaded={Boolean(isDownloaded)}
-                                    isDownloading={isDownloadingItem}
-                                    isRead={!!isRead}
-                                    onClick={() => handleChapterClick(chapter)}
-                                    onDownload={(e) => {
-                                        e?.stopPropagation();
-                                        if (isLiveMode) {
-                                            handleLiveDownloadChapter(ch, ch._index);
-                                        } else {
-                                            handleDownload(ch);
-                                        }
+                            const isDownloaded = Boolean(ch.content || ch.contentPath) || (chUrl && downloadedLiveChapters.has(chUrl)) || (chId && downloadedLiveChapters.has(chId));
+                            const isRead = Boolean(ch.isRead) ||
+                                (chUrl && readLiveChapters.has(chUrl)) ||
+                                (chId && readLiveChapters.has(chId)) ||
+                                novel?.lastReadChapterId === chId ||
+                                novel?.lastReadChapterId === chUrl ||
+                                (chIndex !== undefined && (
+                                    novel?.lastReadChapterId === `${novel?.id}-ch-${chIndex}` ||
+                                    novel?.lastReadChapterId === `${cleanNovelId}-ch-${chIndex}`
+                                ));
+
+                            const isDownloadingItem = isLiveChapter ? (downloadingLive.has(chUrl) || (chId && downloading.has(chId))) : downloading.has(chId);
+                            const displayIndex = sortOrder === 'asc'
+                                ? (chIndex !== undefined ? (chIndex + 1) : (virtualRow.index + 1))
+                                : (totalChaptersData - virtualRow.index);
+
+                            return (
+                                <div
+                                    key={virtualRow.key}
+                                    data-index={virtualRow.index}
+                                    ref={rowVirtualizer.measureElement}
+                                    style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        width: '100%',
+                                        transform: `translateY(${virtualRow.start - listScrollMargin}px)`,
                                     }}
-                                />
-                            </div>
-                        );
-                    });
+                                >
+                                    <ChapterRow
+                                        chapter={chapter}
+                                        index={displayIndex}
+                                        isLiveMode={isLiveChapter}
+                                        isDownloaded={Boolean(isDownloaded)}
+                                        isDownloading={isDownloadingItem}
+                                        isRead={!!isRead}
+                                        onClick={() => handleChapterClick(chapter)}
+                                        onDownload={(e) => {
+                                            e?.stopPropagation();
+                                            if (isLiveChapter) {
+                                                handleLiveDownloadChapter(ch, chIndex ?? virtualRow.index);
+                                            } else {
+                                                handleDownload(ch);
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            );
+                        });
                 })()}
                 </div>
                 {/* Bottom spacer for FAB clearance */}
@@ -556,7 +555,20 @@ export const ChapterList = () => {
                 )}
 
                 {filteredChapters.length === 0 && !loading && (
-                    <div className="p-8 text-center text-slate-500">No chapters found.</div>
+                    loadError || (!searchTerm && filter === 'all' && loadingPage === 0) ? (
+                        <div className="p-8 flex flex-col items-center gap-3 text-center text-slate-500">
+                            <p>{loadError || (isOffline ? 'You are offline. Chapters will appear once you reconnect.' : 'No chapters found.')}</p>
+                            <button
+                                type="button"
+                                onClick={() => loadData()}
+                                className="min-h-11 px-5 rounded-full bg-primary text-white text-sm font-semibold active:scale-95 transition-transform"
+                            >
+                                Retry
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="p-8 text-center text-slate-500">No chapters found.</div>
+                    )
                 )}
             </main>
 
